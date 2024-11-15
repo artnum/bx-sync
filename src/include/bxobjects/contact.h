@@ -1,12 +1,13 @@
-#ifndef BX_OBJECT_CONTACT__
-#define BX_OBJECT_CONTACT__
+#ifndef BX_OBJECT_CONTACT_H__
+#define BX_OBJECT_CONTACT_H__
 
+#include <bx_object.h>
 #include <bx_object_value.h>
 #include <jansson.h>
 
 typedef struct s_BXObjectContact BXObjectContact;
 struct s_BXObjectContact {
-    const char * type;
+    enum e_BXObjectType type;
 
     uint64_t id;
     uint64_t checksum;
@@ -49,4 +50,4 @@ void bx_object_contact_dump(void * data);
 void * bx_object_contact_decode(void * object);
 void bx_object_contact_free(void * data);
 
-#endif /* BX_OBJECT_CONTACT__ */
+#endif /* BX_OBJECT_CONTACT_H__ */

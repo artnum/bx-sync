@@ -5,8 +5,9 @@
 #include <bx_net.h>
 #include <bx_object.h>
 
+#include <bx_object_functions.h>
 
-const BXObjectFunctions * bx_decode_select_decoder(const char * decoder);
+const BXObjectFunctions * bx_decode_select_decoder(enum e_BXObjectType decoder);
 json_t * bx_decode_net(BXNetRequest * request);
 
 #endif /* BX_DECODE_H__ */

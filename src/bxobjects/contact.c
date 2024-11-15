@@ -1,11 +1,10 @@
-#include "bx_object_value.h"
-#include "bx_utils.h"
+#include <bx_object_value.h>
+#include <bx_utils.h>
 #include <bxobjects/contact.h>
 #include <bx_object.h>
 #include <jansson.h>
 #include <stddef.h>
 
-static const char * type = "contact";
 void bx_object_contact_free(void * data)
 {
     BXObjectContact * contact = (BXObjectContact *)data;
@@ -78,7 +77,7 @@ void * bx_object_contact_decode(void * jroot)
     if (contact == NULL) {
         return NULL;
     }
-    contact->type = type;
+    contact->type = BXTypeContact;
     bx_utils_gen_id(&contact->id);
 
     /* integer */

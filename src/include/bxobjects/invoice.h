@@ -1,7 +1,9 @@
 #ifndef BX_OBJECT_INVOICE_H__
 #define BX_OBJECT_INVOICE_H__
 
+#include <bx_object.h>
 #include <bx_object_value.h>
+#include <bxobjects/tax.h>
 
 typedef struct s_BXObjectPositions BXObjectPositions;
 struct s_BXObjectPositions
@@ -31,20 +33,9 @@ struct s_BXObjectPositions
     BXString remote_type;
 };
 
-typedef struct s_BXObjectTaxes BXObjectTaxes;
-struct s_BXObjectTaxes {
-    const char * type;
-
-    uint64_t id;
-    uint64_t checksum;
-
-    BXFloat remote_percentage;
-    BXFloat remote_value;
-};
-
 typedef struct s_BXObjectInvoice BXObjectInvoice;
 struct s_BXObjectInvoice {
-    const char * type;
+    enum e_BXObjectType type;
 
     uint64_t id;
     uint64_t checksum;
@@ -84,7 +75,7 @@ struct s_BXObjectInvoice {
     BXString remote_viewed_by_client_at;
 
     int bx_object_taxes_count;
-    BXObjectTaxes * remote_taxes;
+    BXObjectTax ** remote_taxes;
     int bx_object_remote_positions_count;
     BXObjectPositions * remote_positions;
 };

@@ -1,11 +1,12 @@
+#include "bx_object.h"
 #include <bx_decode.h>
 
-const BXObjectFunctions * bx_decode_select_decoder(const char * decoder)
+const BXObjectFunctions * bx_decode_select_decoder(enum e_BXObjectType decoder)
 {
-    assert(decoder != NULL);
+    assert(decoder != BXTypeNone);
 
-    for (int i = 0; FunctionHandlers[i].name != NULL; i++) {
-        if (strcmp(FunctionHandlers[i].name, decoder) == 0) {
+    for (int i = 0; FunctionHandlers[i].type != BXTypeNone; i++) {
+        if (FunctionHandlers[i].type == decoder) {
             return &FunctionHandlers[i];
         }
     }

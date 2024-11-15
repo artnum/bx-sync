@@ -365,7 +365,7 @@ int bx_net_request_list_count(BXNetRequestList * list)
 }
 
 BXNetRequest * bx_net_request_new(
-    const char * decoder,
+    enum e_BXObjectType decoder,
     const char * version,
     const char * path,
     json_t * body
@@ -379,7 +379,7 @@ BXNetRequest * bx_net_request_new(
     if (new == NULL) {
         return NULL;
     }
-    new->decoder = strdup(decoder);
+    new->decoder = decoder;
     new->decoded = NULL;
     new->done = false;
     new->next = NULL;

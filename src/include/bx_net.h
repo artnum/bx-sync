@@ -5,6 +5,7 @@
 #include <bx_conf.h>
 #include <curl/curl.h>
 #include <jansson.h>
+#include <bx_object.h>
 
 typedef struct s_BXNet BXNet;
 struct s_BXNet {
@@ -32,7 +33,7 @@ struct s_BXNetURLParams {
 typedef struct s_BXNetRequest BXNetRequest;
 struct s_BXNetRequest {
     bool done;
-    char * decoder;
+    enum e_BXObjectType decoder;
     char * version;
     char * path;
     json_t * decoded;
@@ -62,7 +63,7 @@ int bx_net_request_list_count(BXNetRequestList * list);
 void bx_net_request_list_destroy(BXNetRequestList * list);
 bool bx_net_request_add_param(BXNetRequest * request, const char * name, const char * value);
 BXNetRequest * bx_net_request_new(
-    const char * decoder,
+    enum e_BXObjectType decoder,
     const char * version,
     const char * path,
     json_t * body

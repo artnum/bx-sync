@@ -1,9 +1,9 @@
+#include <bxobjects/tax.h>
 #include <bxobjects/invoice.h>
 #include <bx_object.h>
 #include <bx_utils.h>
 #include <assert.h>
 
-static const char * type = "invoice";
 void bx_object_invoice_free(void * data)
 {
     BXObjectInvoice * invoice = (BXObjectInvoice *)data;
@@ -18,7 +18,12 @@ void bx_object_invoice_free(void * data)
     bx_object_free_value(&invoice->remote_reference);
     bx_object_free_value(&invoice->remote_api_reference);
     bx_object_free_value(&invoice->remote_viewed_by_client_at);
-    if (invoice->remote_taxes != NULL) { free(invoice->remote_taxes); }
+    if (invoice->remote_taxes != NULL) { 
+        for(int i = 0; i < invoice->bx_object_taxes_count; i++) {
+            bx_object_tax_free(invoice->remote_taxes[i]);
+        }
+        free(invoice->remote_taxes); 
+    }
     if (invoice->remote_positions != NULL) {
         for (int i = 0; i < invoice->bx_object_remote_positions_count; i++) {
             bx_object_free_value(&invoice->remote_positions[i].remote_unit_name);
@@ -105,8 +110,7 @@ void bx_object_invoice_dump(void * data)
 
     _bx_dump_print_subtitle("Taxes");
     for (int i = 0; i < invoice->bx_object_taxes_count; i++) {
-        _bx_dump_any("value", &invoice->remote_taxes[i].remote_value, 2);
-        _bx_dump_any("percentage", &invoice->remote_taxes[i].remote_percentage, 2);
+        bx_object_tax_dump(invoice->remote_taxes[i]);
     }
     
     _bx_dump_print_subtitle("Positions");
@@ -144,7 +148,7 @@ void * bx_object_invoice_decode(void * object)
     if (invoice == NULL) {
         return NULL;
     }
-    invoice->type = type;
+    invoice->type = BXTypeInvoice;
     bx_utils_gen_id(&invoice->id);
 
     /* integer */
@@ -187,12 +191,10 @@ void * bx_object_invoice_decode(void * object)
     json_t * value = json_object_get(object, "taxs");
     if (value != NULL && json_is_array(value)) {
         invoice->bx_object_taxes_count = json_array_size(value);
-        invoice->remote_taxes = calloc(invoice->bx_object_taxes_count, sizeof(*invoice->remote_taxes));
+        invoice->remote_taxes = calloc(invoice->bx_object_taxes_count, sizeof(invoice->remote_taxes));
         if (invoice->remote_taxes != NULL) {
             for (int i = 0; i < invoice->bx_object_taxes_count; i++) {
-                json_t * o = json_array_get(value, i);
-                invoice->remote_taxes[i].remote_value = bx_object_get_json_double(o, "value", hashState);
-                invoice->remote_taxes[i].remote_percentage = bx_object_get_json_double(o, "percentage", hashState);
+                invoice->remote_taxes[i] = bx_object_tax_decode(json_array_get(value, i));
             }
         }
     }

@@ -36,14 +36,14 @@ int main(void)
     BXNetRequest * request = NULL;
     int c = 0;
     do {
-        request = bx_net_request_new("invoice", "2.0", "kb_invoice/1", NULL);
+        request = bx_net_request_new(BXTypeInvoice, "2.0", "kb_invoice/1", NULL);
 
         bx_net_request_add_param(request, "limit", "100");
         bx_net_request_add_param(request, "offset", "0");
 
         bx_net_request_list_add(queue, request);
 
-        request = bx_net_request_new("contact", "2.0", "contact", NULL);
+        request = bx_net_request_new(BXTypeContact, "2.0", "contact", NULL);
         bx_net_request_list_add(queue, request);
 
         request = bx_net_request_list_remove(queue, true);
@@ -59,19 +59,19 @@ int main(void)
                         const BXObjectFunctions * decoder = bx_decode_select_decoder(request->decoder);
                         void * object = NULL;
                         if (decoder->decode_function == NULL) {
-                            fprintf(stderr, "No decoder found for '%s'\n", request->decoder);
+                            fprintf(stderr, "No decoder found for '%d'\n", request->decoder);
 
                         } else {
                             if (json_is_array(request->decoded)) {
                                 for (size_t i = 0; i < json_array_size(jroot); i++) {
                                     object = decoder->decode_function(json_array_get(jroot, i));
-                                    decoder = bx_decode_select_decoder(*(const char **)object);
+                                    decoder = bx_decode_select_decoder(*(enum e_BXObjectType *)object);
                                     if (decoder->dump_function != NULL) { decoder->dump_function(object); }
                                     if (decoder->free_function != NULL) { decoder->free_function(object); }
                                 }
                             } else {
                                 object = decoder->decode_function(jroot);
-                                decoder = bx_decode_select_decoder(*(const char **)object);
+                                decoder = bx_decode_select_decoder(*(enum e_BXObjectType *)object);
                                 if (decoder->dump_function != NULL) { decoder->dump_function(object); }
                                 if (decoder->free_function != NULL) { decoder->free_function(object); }
                             }
