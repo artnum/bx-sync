@@ -1,4 +1,4 @@
-#include <bxobjects/tax.h>
+#include "bxobjects/position.h"
 #include <bxobjects/invoice.h>
 #include <bx_object.h>
 #include <bx_utils.h>
@@ -26,9 +26,7 @@ void bx_object_invoice_free(void * data)
     }
     if (invoice->remote_positions != NULL) {
         for (int i = 0; i < invoice->bx_object_remote_positions_count; i++) {
-            bx_object_free_value(&invoice->remote_positions[i].remote_unit_name);
-            bx_object_free_value(&invoice->remote_positions[i].remote_text);
-            bx_object_free_value(&invoice->remote_positions[i].remote_type);
+            bx_object_position_free(invoice->remote_positions[i]);
         }
         free(invoice->remote_positions);
     }
@@ -115,23 +113,7 @@ void bx_object_invoice_dump(void * data)
     
     _bx_dump_print_subtitle("Positions");
     for (int i = 0; i < invoice->bx_object_remote_positions_count; i++) {
-        _bx_dump_any("id", &invoice->remote_positions[i].remote_id, 2);
-        _bx_dump_any("unit_id", &invoice->remote_positions[i].remote_unit_id, 2);
-        _bx_dump_any("account_id", &invoice->remote_positions[i].remote_account_id, 2);
-        _bx_dump_any("tax_id", &invoice->remote_positions[i].remote_tax_id, 2);
-        _bx_dump_any("pos", &invoice->remote_positions[i].remote_pos, 2);
-        _bx_dump_any("internal_pos", &invoice->remote_positions[i].remote_internal_pos, 2);
-        _bx_dump_any("parent_id", &invoice->remote_positions[i].remote_parent_id, 2);
-
-        _bx_dump_any("amount", &invoice->remote_positions[i].remote_amount, 2);
-        _bx_dump_any("tax_value", &invoice->remote_positions[i].remote_tax_value, 2);
-        _bx_dump_any("unit_price", &invoice->remote_positions[i].remote_unit_price, 2);
-        _bx_dump_any("discount_in_percent", &invoice->remote_positions[i].remote_discount_in_percent, 2);
-        _bx_dump_any("position_total", &invoice->remote_positions[i].remote_position_total, 2);
-
-        _bx_dump_any("unit_name", &invoice->remote_positions[i].remote_unit_name, 2);
-        _bx_dump_any("text", &invoice->remote_positions[i].remote_text, 2);
-        _bx_dump_any("type", &invoice->remote_positions[i].remote_type, 2);
+        bx_object_position_dump(invoice->remote_positions[i]);
     }
 }
 
@@ -206,28 +188,7 @@ void * bx_object_invoice_decode(void * object)
         invoice->remote_positions = calloc(invoice->bx_object_remote_positions_count, sizeof(*invoice->remote_positions));
         if (invoice->remote_positions != NULL) {
             for(int i = 0; i < invoice->bx_object_remote_positions_count; i++) {
-                json_t * o = json_array_get(value, i);
-                BXObjectPositions * p = &invoice->remote_positions[i];
-
-                p->remote_id = bx_object_get_json_int(o, "id", hashState);
-                p->remote_unit_id = bx_object_get_json_int(o, "unit_id", hashState);
-                p->remote_account_id = bx_object_get_json_int(o, "account_id", hashState);
-                p->remote_tax_id = bx_object_get_json_int(o, "tax_id", hashState);
-                p->remote_pos = bx_object_get_json_int(o, "pos", hashState);
-                p->remote_internal_pos = bx_object_get_json_int(o, "internal_pos", hashState);
-                p->remote_parent_id = bx_object_get_json_int(o, "parent_id", hashState);
-
-                p->remote_amount = bx_object_get_json_double(o, "amount", hashState);
-                p->remote_tax_value = bx_object_get_json_double(o, "tax_value", hashState);
-                p->remote_unit_price = bx_object_get_json_double(o, "unit_price", hashState);
-                p->remote_discount_in_percent = bx_object_get_json_double(o, "discount_in_percent", hashState);
-                p->remote_position_total = bx_object_get_json_double(o, "position_total", hashState);
-
-                p->remote_unit_name = bx_object_get_json_string(o, "unit_name", hashState);
-                p->remote_text = bx_object_get_json_string(o, "text", hashState);
-                p->remote_type = bx_object_get_json_string(o, "type", hashState);
-
-                p->remote_is_optional = bx_object_get_json_bool(o, "is_optional", hashState);
+                invoice->remote_positions[i] = bx_object_position_decode(json_array_get(value, i));
             }
         }
     }

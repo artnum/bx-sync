@@ -4,6 +4,7 @@
 #include <bx_object.h>
 #include <bx_object_value.h>
 #include <bxobjects/tax.h>
+#include <bxobjects/position.h>
 
 typedef struct s_BXObjectPositions BXObjectPositions;
 struct s_BXObjectPositions
@@ -77,7 +78,7 @@ struct s_BXObjectInvoice {
     int bx_object_taxes_count;
     BXObjectTax ** remote_taxes;
     int bx_object_remote_positions_count;
-    BXObjectPositions * remote_positions;
+    BXObjectGenericPosition ** remote_positions;
 };
 
 void * bx_object_invoice_decode(void * data);

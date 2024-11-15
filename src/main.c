@@ -36,15 +36,15 @@ int main(void)
     BXNetRequest * request = NULL;
     int c = 0;
     do {
-        request = bx_net_request_new(BXTypeInvoice, "2.0", "kb_invoice/1", NULL);
+        request = bx_net_request_new(BXTypeInvoice, "2.0", "kb_invoice", NULL);
 
         bx_net_request_add_param(request, "limit", "100");
         bx_net_request_add_param(request, "offset", "0");
 
         bx_net_request_list_add(queue, request);
 
-        request = bx_net_request_new(BXTypeContact, "2.0", "contact", NULL);
-        bx_net_request_list_add(queue, request);
+        /*request = bx_net_request_new(BXTypeContact, "2.0", "contact", NULL);
+        bx_net_request_list_add(queue, request);*/
 
         request = bx_net_request_list_remove(queue, true);
         if (request != NULL) {

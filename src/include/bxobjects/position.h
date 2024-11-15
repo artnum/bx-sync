@@ -5,6 +5,11 @@
 #include <stdint.h>
 #include <bx_object_value.h>
 
+typedef struct s_BXObjectGenericPosition BXObjectGenericPosition;
+struct s_BXObjectGenericPosition {
+    enum e_BXObjectType type;
+};
+
 typedef struct s_BXObjectPositionCE BXObjectPositionCE;
 struct s_BXObjectPositionCE {
     enum e_BXObjectType type;

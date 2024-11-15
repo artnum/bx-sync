@@ -354,31 +354,103 @@ void bx_object_position_free(void * data)
 static inline void _bx_object_position_ce_dump(void * data) 
 {
     if (data == NULL) { return; }
+    BXObjectPositionCE * position = (BXObjectPositionCE *)data;
+
+    _bx_dump_print_title("### DUMP ID:%lx CS:%lx ###", position->id, position->checksum);
+    _bx_dump_any("id", &position->remote_id, 1);
+    _bx_dump_any("unit_id", &position->remote_unit_id, 1);
+    _bx_dump_any("account_id", &position->remote_account_id, 1);
+    _bx_dump_any("tax_id", &position->remote_tax_id, 1);
+    _bx_dump_any("internal_pos", &position->remote_internal_pos, 1);
+    _bx_dump_any("parent_id", &position->remote_parent_id, 1);
+    _bx_dump_any("unit_name", &position->remote_unit_name, 1);
+    _bx_dump_any("text", &position->remote_text, 1);
+    _bx_dump_any("pos", &position->remote_pos, 1);
+    _bx_dump_any("is_optional", &position->remote_is_optional, 1);
+    _bx_dump_any("amount", &position->remote_amount, 1);
+    _bx_dump_any("tax_value", &position->remote_tax_value, 1);
+    _bx_dump_any("unit_price", &position->remote_unit_price, 1);
+    _bx_dump_any("discount_in_percent", &position->remote_discount_in_percent, 1);
+    _bx_dump_any("position_total", &position->remote_position_total, 1);
 }
 
 static inline void _bx_object_position_ae_dump(void * data) 
 {
     if (data == NULL) { return; }
+    BXObjectPositionAE * position = (BXObjectPositionAE *)data;
+
+    _bx_dump_print_title("### DUMP ID:%lx CS:%lx ###", position->id, position->checksum);
+    _bx_dump_any("id", &position->remote_id, 1);
+    _bx_dump_any("unit_id", &position->remote_unit_id, 1);
+    _bx_dump_any("account_id", &position->remote_account_id, 1);
+    _bx_dump_any("tax_id", &position->remote_tax_id, 1);
+    _bx_dump_any("internal_pos", &position->remote_internal_pos, 1);
+    _bx_dump_any("parent_id", &position->remote_parent_id, 1);
+    _bx_dump_any("article_id", &position->remote_article_id, 1);
+    _bx_dump_any("unit_name", &position->remote_unit_name, 1);
+    _bx_dump_any("text", &position->remote_text, 1);
+    _bx_dump_any("pos", &position->remote_pos, 1);
+    _bx_dump_any("is_optional", &position->remote_is_optional, 1);
+    _bx_dump_any("amount", &position->remote_amount, 1);
+    _bx_dump_any("tax_value", &position->remote_tax_value, 1);
+    _bx_dump_any("unit_price", &position->remote_unit_price, 1);
+    _bx_dump_any("discount_in_percent", &position->remote_discount_in_percent, 1);
+    _bx_dump_any("position_total", &position->remote_position_total, 1);
 }
 
 static inline void _bx_object_position_te_dump(void * data) 
 {
     if (data == NULL) { return; }
+    BXObjectPositionTE * position = (BXObjectPositionTE *)data;
+
+    _bx_dump_print_title("### DUMP ID:%lx CS:%lx ###", position->id, position->checksum);
+    _bx_dump_any("id", &position->remote_id, 1);
+    _bx_dump_any("internal_pos", &position->remote_internal_pos, 1);
+    _bx_dump_any("parent_id", &position->remote_parent_id, 1);
+    _bx_dump_any("text", &position->remote_text, 1);
+    _bx_dump_any("pos", &position->remote_pos, 1);
+    _bx_dump_any("is_optional", &position->remote_is_optional, 1);
+    _bx_dump_any("show_pos_nr", &position->remote_show_pos_nr, 1);
 }
 
 static inline void _bx_object_position_se_dump(void * data) 
 {
     if (data == NULL) { return; }
+    BXObjectPositionSE * position = (BXObjectPositionSE *)data;
+
+    _bx_dump_print_title("### DUMP ID:%lx CS:%lx ###", position->id, position->checksum);
+    _bx_dump_any("id", &position->remote_id, 1);
+    _bx_dump_any("internal_pos", &position->remote_internal_pos, 1);
+    _bx_dump_any("parent_id", &position->remote_parent_id, 1);
+    _bx_dump_any("text", &position->remote_text, 1);
+    _bx_dump_any("is_optional", &position->remote_is_optional, 1);
+    _bx_dump_any("value", &position->remote_value, 1);
 }
 
 static inline void _bx_object_position_pe_dump(void * data) 
 {
     if (data == NULL) { return; }
+    BXObjectPositionPE * position = (BXObjectPositionPE *)data;
+
+    _bx_dump_print_title("### DUMP ID:%lx CS:%lx ###", position->id, position->checksum);
+    _bx_dump_any("id", &position->remote_id, 1);
+    _bx_dump_any("internal_pos", &position->remote_internal_pos, 1);
+    _bx_dump_any("parent_id", &position->remote_parent_id, 1);
+    _bx_dump_any("is_optional", &position->remote_is_optional, 1);
+
 }
 
 static inline void _bx_object_position_de_dump(void * data) 
 {
     if (data == NULL) { return; }
+    BXObjectPositionDE * position = (BXObjectPositionDE *)data;
+
+    _bx_dump_print_title("### DUMP ID:%lx CS:%lx ###", position->id, position->checksum);
+    _bx_dump_any("id", &position->remote_id, 1);
+    _bx_dump_any("text", &position->remote_text, 1);
+    _bx_dump_any("is_percentual", &position->remote_is_percentual, 1);
+    _bx_dump_any("value", &position->remote_value, 1);
+    _bx_dump_any("discount_total", &position->remote_discount_total, 1);
 }
 
 void bx_object_position_dump(void * data)
