@@ -13,6 +13,8 @@
 #define BX_OBJECT_TYPE_BOOL      4
 #define BX_OBJECT_TYPE_BYTES     5
 
+typedef uint8_t BXGeneric;
+
 typedef struct s_BXInteger BXInteger;
 struct s_BXInteger {
     uint8_t type;
