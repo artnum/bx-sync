@@ -32,7 +32,8 @@ struct s_BXNetURLParams {
 
 typedef struct s_BXNetRequest BXNetRequest;
 struct s_BXNetRequest {
-    bool done;
+    atomic_bool done;
+    uint64_t id;
     enum e_BXObjectType decoder;
     char * version;
     char * path;
@@ -46,6 +47,7 @@ struct s_BXNetRequest {
 typedef struct s_BXNetRequestList BXNetRequestList;
 struct s_BXNetRequestList {
     atomic_bool run;
+    uint64_t next_id;
     BXNet * net;
     BXNetRequest * head;
     BXMutex mutex;
@@ -57,7 +59,7 @@ void bx_net_destroy(BXNet ** net);
 pthread_t  bx_net_loop(BXNetRequestList * list);
 
 BXNetRequestList * bx_net_request_list_init(BXNet * net);
-bool bx_net_request_list_add(BXNetRequestList * list, BXNetRequest * request);
+uint64_t bx_net_request_list_add(BXNetRequestList * list, BXNetRequest * request);
 BXNetRequest * bx_net_request_list_remove(BXNetRequestList * list, bool done);
 int bx_net_request_list_count(BXNetRequestList * list);
 void bx_net_request_list_destroy(BXNetRequestList * list);
@@ -67,6 +69,10 @@ BXNetRequest * bx_net_request_new(
     const char * version,
     const char * path,
     json_t * body
+);
+BXNetRequest * bx_net_request_list_get_finished(
+    BXNetRequestList * list,
+    uint64_t request_id
 );
 void bx_net_request_free(BXNetRequest * request);
 #endif

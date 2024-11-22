@@ -1,9 +1,12 @@
+#include "bx_net.h"
 #include <bx_object_value.h>
 #include <bx_utils.h>
 #include <bxobjects/contact.h>
 #include <bx_object.h>
 #include <jansson.h>
 #include <stddef.h>
+#include <mysql/mysql.h>
+#include <bx_database.h>
 
 void bx_object_contact_free(void * data)
 {
@@ -28,41 +31,77 @@ void bx_object_contact_free(void * data)
     bx_object_free_value(&contact->remote_remarks);
     bx_object_free_value(&contact->remote_language_id);
     bx_object_free_value(&contact->remote_contact_groupd_ids);
-    bx_object_free_value(&contact->remote_branch_ids);
+    bx_object_free_value(&contact->remote_contact_branch_ids);
     bx_object_free_value(&contact->remote_updated_at);
     bx_object_free_value(&contact->remote_profile_image);
 
     free(contact);
 }
 
-static void * get(BXObjectContact * contact, const char * key)
+void bx_object_contact_store(MYSQL * mysql, BXObjectContact * contact)
 {
-    if (contact == NULL) { return NULL; }
-    if (key == NULL) { return NULL; }
-    if (strcasecmp(key, "postcode") == 0) { return &contact->remote_postcode; }
-    if (strcasecmp(key, "nr") == 0) { return &contact->remote_nr; }
-    if (strcasecmp(key, "name_1") == 0) { return &contact->remote_name_1; }
-    if (strcasecmp(key, "name_2") == 0) { return &contact->remote_name_2; }
-    if (strcasecmp(key, "birthday") == 0) { return &contact->remote_birthday; }
-    if (strcasecmp(key, "address") == 0) { return &contact->remote_address; }
-    if (strcasecmp(key, "city") == 0) { return &contact->remote_city; }
-    if (strcasecmp(key, "mail") == 0) { return &contact->remote_mail; }
-    if (strcasecmp(key, "mail_second") == 0) { return &contact->remote_mail_second; }
-    if (strcasecmp(key, "phone_fixed") == 0) { return &contact->remote_phone_fixed; }
-    if (strcasecmp(key, "phone_fixed_second") == 0) { return &contact->remote_phone_fixed_second; }
-    if (strcasecmp(key, "phone_mobile") == 0) { return &contact->remote_phone_mobile; }
-    if (strcasecmp(key, "fax") == 0) { return &contact->remote_fax; }
-    if (strcasecmp(key, "url") == 0) { return &contact->remote_url; }
-    if (strcasecmp(key, "skype_name") == 0) { return &contact->remote_skype_name; }
-    if (strcasecmp(key, "remarks") == 0) { return &contact->remote_remarks; }
-    if (strcasecmp(key, "language_id") == 0) { return &contact->remote_language_id; }
-    if (strcasecmp(key, "contact_groupd_ids") == 0) { return &contact->remote_contact_groupd_ids; }
-    if (strcasecmp(key, "branch_ids") == 0) { return &contact->remote_branch_ids; }
-    if (strcasecmp(key, "updated_at") == 0) { return &contact->remote_updated_at; }
-    if (strcasecmp(key, "profile_image") == 0) { return &contact->remote_profile_image; }
-    return NULL;
-}
+    BXDatabaseQuery * query = bx_database_new_query(
+        mysql, 
+        "INSERT INTO contact (id, user_id, contact_type_id, country_id, "
+        "owner_id, title_id, salutation_form, postcode, nr, name_1, name_2, "
+        "address, birthday, updated_at, city, mail, mail_second, phone_fixed, "
+        "phone_fixed_second, phone_mobile, phone_fax, url, skype_name, remarks, "
+        "lanuage_id, contact_group_ids, branch_ids, profile_image, is_lead, "
+        "_checksum, _id"
+        "VALUES(:id, :user_id, :contact_type_id, :country_id, "
+        ":owner_id, :title_id, :salutation_form, :postcode, :nr, :name_1, :name_2, "
+        ":address, :birthday, :updated_at, :city, :mail, :mail_second, :phone_fixed, "
+        ":phone_fixed_second, :phone_mobile, :phone_fax, url, :skype_name, :remarks, "
+        ":lanuage_id, :contact_group_ids, :branch_ids, :profile_image, :is_lead, "
+        ":_checksum, :_id)"
+    );
 
+    bx_database_add_param_int32(query, ":id", &contact->remote_id);
+    bx_database_add_param_int32(query, ":user_id", &contact->remote_user_id);
+    bx_database_add_param_int32(query, ":contact_type_id", &contact->remote_contact_type_id);
+    bx_database_add_param_int32(query, ":salutation_id", &contact->remote_salutation_id);
+    bx_database_add_param_int32(query, ":owner_id", &contact->remote_owner_id);
+    bx_database_add_param_int32(query, ":title_id", &contact->remote_title_id);
+    bx_database_add_param_int32(query, ":salutation_form", &contact->remote_salutation_form);
+
+    int64_t * contact_group_ids = bx_int_string_array_to_int_array(contact->remote_contact_groupd_ids.value);
+    if (contact_group_ids != NULL) {
+  
+
+
+        for (int i = 1; i <= contact_group_ids[0]; i++) {
+            printf("WRITE CONTACT GROUP ID %ld\n", contact_group_ids[i]);
+            BXDatabaseQuery * select_cgi = bx_database_new_query(
+                mysql,
+                "SELECT group_id,contact_id FROM contact_group_to_contact_id "
+                "WHERE group_id = :gid AND contact_id = :cid;"
+            );
+            bx_database_add_param_uint32(select_cgi, ":gid", &contact_group_ids[i]);
+            bx_database_add_param_uint32(select_cgi, ":cid", &contact->remote_id.value);
+            bx_database_execute(select_cgi);
+            bx_database_results(select_cgi);
+
+            if (select_cgi->results == NULL || select_cgi->results->column_count <= 0) {
+                BXDatabaseQuery * insert_cgi = bx_database_new_query(
+                    mysql, 
+                    "INSERT INTO contact_group_to_contact_id (group_id, contact_id) "
+                    "VALUES(:gid, :cid);"
+                );
+                if (select_cgi == NULL) {
+                    /* TODO handle failure */
+                }
+                bx_database_add_param_uint32(insert_cgi, ":gid", &contact_group_ids[i]);
+                bx_database_add_param_uint32(insert_cgi, ":cid", &contact->remote_id.value);
+                bx_database_execute(insert_cgi);
+                bx_database_free_query(insert_cgi);
+            }
+            bx_database_free_query(select_cgi);
+        }
+        free(contact_group_ids);
+    }
+
+    bx_database_free_query(query);
+}
 
 void * bx_object_contact_decode(void * jroot)
 {
@@ -109,8 +148,8 @@ void * bx_object_contact_decode(void * jroot)
     contact->remote_skype_name =                bx_object_get_json_string(object, "skype_name", hashState);
     contact->remote_remarks =                   bx_object_get_json_string(object, "remarks", hashState);
     contact->remote_language_id =               bx_object_get_json_string(object, "language_id", hashState);
-    contact->remote_contact_groupd_ids =        bx_object_get_json_string(object, "contact_groupd_ids", hashState);
-    contact->remote_branch_ids =                bx_object_get_json_string(object, "branch_ids", hashState);
+    contact->remote_contact_groupd_ids =        bx_object_get_json_string(object, "contact_group_ids", hashState);
+    contact->remote_contact_branch_ids =                bx_object_get_json_string(object, "contact_branch_ids", hashState);
     contact->remote_profile_image =             bx_object_get_json_string(object, "profile_image", hashState);
 
     contact->remote_is_lead =                   bx_object_get_json_bool(object, "is_lead", hashState);
@@ -152,7 +191,12 @@ void bx_object_contact_dump(void * data)
     _bx_dump_any("skype_name", &contact->remote_skype_name, 1);
     _bx_dump_any("remarks", &contact->remote_remarks, 1);
     _bx_dump_any("language_id", &contact->remote_language_id, 1);
-    _bx_dump_any("contact_groupd_ids", &contact->remote_contact_groupd_ids, 1);
-    _bx_dump_any("branch_ids", &contact->remote_branch_ids, 1);
+    _bx_dump_any("contact_group_ids", &contact->remote_contact_groupd_ids, 1);
+    _bx_dump_any("contact_branch_ids", &contact->remote_contact_branch_ids, 1);
     _bx_dump_any("profile_image", &contact->remote_profile_image, 1);
+}
+
+void bx_contact_get_item(BXNetRequestList * net, MYSQL * mysql, BXGeneric * item)
+{
+
 }

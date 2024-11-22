@@ -1,4 +1,4 @@
-#include "bx_object.h"
+#include <bx_object.h>
 #include <bx_decode.h>
 
 const BXObjectFunctions * bx_decode_select_decoder(enum e_BXObjectType decoder)

@@ -1559,7 +1559,7 @@ static int bx_html_entities_replaces (BXString * str)
         }
     }
     memset(&str->value[j], 0, str->value_len - j);
-    str->value_len = j - 1;
+    str->value_len = j;
     return 0;
 }
 

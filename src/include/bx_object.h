@@ -1,6 +1,7 @@
 #ifndef BX_OBJECT_H__
 #define BX_OBJECT_H__
 
+#include <mysql/mysql.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>

@@ -118,6 +118,7 @@ inline static void bx_object_free_string(BXString string)
     }
     string.value_len = 0;
 }
+
 void bx_object_free_value(void * value)
 {
     if (value == NULL) { return; }

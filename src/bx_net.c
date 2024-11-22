@@ -87,6 +87,7 @@ void bx_net_destroy(BXNet ** net)
     assert(net != NULL);
     assert(*net != NULL);
     bx_mutex_lock(&(*net)->mutex);
+    if ((*net)->endpoint != NULL) { free((*net)->endpoint); }
     if ((*net)->auth_token != NULL) { free((*net)->auth_token); }
     if ((*net)->curl != NULL) { curl_easy_cleanup((*net)->curl); }
     free(*net);
@@ -160,7 +161,6 @@ inline static char * _bx_build_url(
             }
         }
     }
-    printf("URL %s\n", url);
     return url;
 }
 
@@ -170,14 +170,7 @@ BXNetRData * bx_fetch(BXNet * net, const char * version, const char * path, BXNe
     assert(version != NULL);
     assert(path != NULL);
 
-    size_t vlen = strlen(version);
-    size_t plen = strlen(path);
-    /* add 3 slashes and a space for \0 */
-    bx_mutex_lock(&net->mutex);
-    size_t total_len = vlen + plen + net->endpoint_len + 4;
-    
-
-
+    bx_mutex_lock(&net->mutex);    
     char * url = _bx_build_url(net->endpoint, net->endpoint_len, version, path, params);
     if (url == NULL) {
         bx_mutex_unlock(&net->mutex);
@@ -209,7 +202,6 @@ BXNetRData * bx_fetch(BXNet * net, const char * version, const char * path, BXNe
     }
 
     /* header setup */
-    CURLcode res;
     struct curl_slist * header_list = NULL;
     struct curl_slist * tmp = NULL;
     tmp = curl_slist_append(tmp, auth_token);
@@ -278,34 +270,66 @@ static inline bool _bx_net_request_list_add(BXNetRequestList * list, BXNetReques
     return true;
 }
 
-bool bx_net_request_list_add(BXNetRequestList * list, BXNetRequest * request)
+uint64_t bx_net_request_list_add(BXNetRequestList * list, BXNetRequest * request)
 {
     assert(list != NULL);
     assert(request != NULL);
-    bool retval = false;
+    uint64_t retval = 0;
     bx_mutex_lock(&list->mutex);
-    retval = _bx_net_request_list_add(list, request);
+    if (request->id == 0) { request->id = ++list->next_id; }
+    if (_bx_net_request_list_add(list, request)) {
+        retval = request->id;
+    }
     bx_mutex_unlock(&list->mutex);
     return retval;
 }
+
+BXNetRequest * bx_net_request_list_get_finished(
+    BXNetRequestList * list,
+    uint64_t request_id
+)
+{
+    assert(list != NULL);
+    BXNetRequest * retval = NULL;
+    BXNetRequest * current = NULL;
+    BXNetRequest * previous = NULL;
+    printf("WAIT FOR %ld\n", request_id);
+    bx_mutex_lock(&list->mutex);
+    for(current = list->head; current != NULL; current = current->next) {
+        if (current->id == request_id) {
+            if (atomic_load(&current->done) == false) {
+                break;
+            }
+            if (previous == NULL) {
+                list->head = current->next;
+            } else {
+                previous->next = current->next;
+            }
+            current->next = NULL;
+            retval = current;
+            break;
+        }
+        previous = current;
+    }
+    bx_mutex_unlock(&list->mutex);
+    return retval;
+}
+
 BXNetRequest * _bx_next_request_list_remove(BXNetRequestList * list, bool done)
 {
-    BXNetRequest * current = list->head;
+    BXNetRequest * current = NULL;
     BXNetRequest * previous = NULL;
 
-    while(current != NULL) {
-        if (current->done == done) {
-            if (list->head == current) {
+    for (current = list->head; current != NULL; current = current->next) {
+        if (atomic_load(&current->done) == done) {
+            if (previous == NULL) {
                 list->head = current->next;
-                current->next = NULL;
-                return current;
+            } else {
+                previous->next = current->next;
             }
-            previous->next = current->next;
             current->next = NULL;
             return current;
         }
-        previous = current;
-        current = current->next;
     }
     return NULL;
 }
@@ -381,13 +405,15 @@ BXNetRequest * bx_net_request_new(
     }
     new->decoder = decoder;
     new->decoded = NULL;
-    new->done = false;
+    atomic_store(&new->done, false);
     new->next = NULL;
     new->params = NULL;
     new->response = NULL;
     new->path = strdup(path);
     new->version = strdup(version);
     new->body = NULL;
+
+    return new;
 }
 
 void bx_net_request_params_free(BXNetURLParams * params)
@@ -411,7 +437,6 @@ static bool _bx_encode_char_percent_encoding (char * url, size_t size, char c)
         case '#': if (url != NULL && size >= 3) { memcpy(url, "%23", 3); } return true;
         case '$': if (url != NULL && size >= 3) { memcpy(url, "%24", 3); } return true;
         case '&': if (url != NULL && size >= 3) { memcpy(url, "%26", 3); } return true;
-        case '\'': if (url != NULL && size >= 3) { memcpy(url, "%27", 3); } return true;
         case '(': if (url != NULL && size >= 3) { memcpy(url, "%28", 3); } return true;
         case ')': if (url != NULL && size >= 3) { memcpy(url, "%29", 3); } return true;
         case '*': if (url != NULL && size >= 3) { memcpy(url, "%2A", 3); } return true;
@@ -431,13 +456,14 @@ static bool _bx_encode_char_percent_encoding (char * url, size_t size, char c)
         case '.': if (url != NULL && size >= 3) { memcpy(url, "%2E", 3); } return true;
         case '<': if (url != NULL && size >= 3) { memcpy(url, "%3C", 3); } return true;
         case '>': if (url != NULL && size >= 3) { memcpy(url, "%3E", 3); } return true;
-        case '\\': if (url != NULL && size >= 3) { memcpy(url, "%5C", 3); } return true;
         case '^': if (url != NULL && size >= 3) { memcpy(url, "%5E", 3); } return true; 
         case '`': if (url != NULL && size >= 3) { memcpy(url, "%60", 3); } return true;
         case '{': if (url != NULL && size >= 3) { memcpy(url, "%7B", 3); } return true;
         case '|': if (url != NULL && size >= 3) { memcpy(url, "%7C", 3); } return true;
         case '}': if (url != NULL && size >= 3) { memcpy(url, "%7D", 3); } return true;
         case '_': if (url != NULL && size >= 3) { memcpy(url, "%5F", 3); } return true;
+        case '\'': if (url != NULL && size >= 3) { memcpy(url, "%27", 3); } return true;
+        case '\\': if (url != NULL && size >= 3) { memcpy(url, "%5C", 3); } return true;
     }
     if (c & 0x80) {
         if (url != NULL && size >= 3) {
@@ -514,6 +540,7 @@ bool bx_net_request_add_param(BXNetRequest * request, const char * name, const c
         while(current->next != NULL) { current = current->next; }
         current->next = param;
     }
+    return true;
 }
 
 void bx_net_request_free(BXNetRequest * request)
@@ -528,6 +555,7 @@ void bx_net_request_free(BXNetRequest * request)
         if (request->response->data != NULL) { free(request->response->data); }
         free(request->response);
     }
+    free(request);
 }
 
 static void * _bx_net_loop_worker(void * l)
@@ -546,10 +574,10 @@ static void * _bx_net_loop_worker(void * l)
         if (request != NULL) {
             /* request is locked in search loop */
             // do request
-            request->response = bx_fetch(net, request->version, request->path, request->params);
-            request->done = true;
+            request->response = bx_fetch(net, request->version, request->path, request->params);           
             /* readd in list so it can be processed */
             bx_net_request_list_add(list, request);
+            atomic_store(&request->done, true);
         }
 
         /* don't load server too much */

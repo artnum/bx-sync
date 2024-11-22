@@ -39,7 +39,7 @@ struct s_BXObjectContact {
     BXString remote_remarks;
     BXString remote_language_id;
     BXString remote_contact_groupd_ids;
-    BXString remote_branch_ids;
+    BXString remote_contact_branch_ids;
     BXString remote_updated_at;
     BXString remote_profile_image;
 
@@ -49,5 +49,5 @@ struct s_BXObjectContact {
 void bx_object_contact_dump(void * data);
 void * bx_object_contact_decode(void * object);
 void bx_object_contact_free(void * data);
-
+void bx_object_contact_store(MYSQL * mysql, BXObjectContact * contact);
 #endif /* BX_OBJECT_CONTACT_H__ */

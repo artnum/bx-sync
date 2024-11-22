@@ -62,8 +62,6 @@ struct s_BXDatabaseQuery {
     int field_count;
     
     BXDatabaseRow * results;
-
-    bool is_prepared;
 };
 
 BXDatabaseQuery * bx_database_new_query(MYSQL * mysql, const char * query);
@@ -88,7 +86,7 @@ bool bx_database_replace_param(
     void * value,
     size_t value_len
 );
-bool bx_data_execute(BXDatabaseQuery * query);
+bool bx_database_execute(BXDatabaseQuery * query);
 bool bx_database_results(BXDatabaseQuery * query);
 void bx_database_dump_column(BXDatabaseColumn * column);
 void bx_database_dump_row(BXDatabaseQuery * query, BXDatabaseRow * row);
@@ -119,5 +117,28 @@ const char * bx_database_get_column_name(BXDatabaseQuery * query, BXDatabaseColu
 #define bx_database_add_param_text(query, name, value, value_len)\
     bx_database_add_param_str(query, name, value, value_len, MYSQL_TYPE_BLOB);
 
+#define bx_database_replace_param_int8(query, name, value)\
+    bx_database_replace_param(query, name, value, sizeof(int8_t))
+#define bx_database_replace_param_int16(query, name, value)\
+    bx_database_replace_param(query, name, value, sizeof(int16_t))
+#define bx_database_replace_param_int32(query, name, value)\
+    bx_database_replace_param(query, name, value, sizeof(int32_t))
+#define bx_database_replace_param_int64(query, name, value)\
+    bx_database_replace_param(query, name, value, sizeof(int64_t))
+#define bx_database_replace_param_uint8(query, name, value)\
+    bx_database_replace_param(query, name, value, sizeof(uint8_t))
+#define bx_database_replace_param_uint16(query, name, value)\
+    bx_database_replace_param(query, name, value, sizeof(uint16_t))
+#define bx_database_replace_param_uint32(query, name, value)\
+    bx_database_replace_param(query, name, value, sizeof(uint32_t))
+#define bx_database_replace_param_uint64(query, name, value)\
+    bx_database_replace_param(query, name, value, sizeof(uint64_t))
+
+#define bx_database_replace_param_char(query, name, value, value_len)\
+    bx_database_replace_param(query, name, value, value_len);
+#define bx_database_replace_param_varchar(query, name, value, value_len)\
+    bx_database_replace_param(query, name, value, value_len);
+#define bx_database_replace_param_text(query, name, value, value_len)\
+    bx_database_replace_param(query, name, value, value_len);
 
 #endif /* BX_DATABASE_H__ */

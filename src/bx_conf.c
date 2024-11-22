@@ -49,7 +49,6 @@ bool bx_conf_loadfile(BXConf * conf, const char * filepath)
     json_t * value;
 
     json_object_foreach(jroot, key, value) {
-        enum e_BXConfValueType type;
         int i_value = 0;
         double f_value = 0.0;
         const char * s_value = NULL;

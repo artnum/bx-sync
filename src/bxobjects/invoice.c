@@ -33,41 +33,6 @@ void bx_object_invoice_free(void * data)
     free(invoice);
 }
 
-static void * get(BXObjectInvoice * object, const char * key)
-{
-    if (object == NULL) { return NULL; }
-    if (key == NULL) { return NULL; }
-    if (strcasecmp(key, "document_nr") == 0) { return &object->remote_document_nr; }
-    if (strcasecmp(key, "user_id") == 0) { return &object->remote_user_id; }
-    if (strcasecmp(key, "contact_id") == 0) { return &object->remote_contact_id; }
-    if (strcasecmp(key, "contact_subid") == 0) { return &object->remote_contact_subid; }
-    if (strcasecmp(key, "project_id") == 0) { return &object->remote_project_id; }
-    if (strcasecmp(key, "bank_account_id") == 0) { return &object->remote_bank_account_id; }
-    if (strcasecmp(key, "currency_id") == 0) { return &object->remote_currency_id; }
-    if (strcasecmp(key, "payment_type_id") == 0) { return &object->remote_payment_type_id; }
-    if (strcasecmp(key, "tva_id") == 0) { return &object->remote_tva_type; }
-    if (strcasecmp(key, "kb_item_status") == 0) { return &object->remote_kb_item_status; }
-    if (strcasecmp(key, "esr_id") == 0) { return &object->remote_esr_id; }
-    if (strcasecmp(key, "qr_invoice_id") == 0) { return &object->remote_qr_invoice_id; }
-    if (strcasecmp(key, "total_gross") == 0) { return &object->remote_total_gross; }
-    if (strcasecmp(key, "total_net") == 0) { return &object->remote_total_net; }
-    if (strcasecmp(key, "total_taxes") == 0) { return &object->remote_total_taxes; }
-    if (strcasecmp(key, "total_reveived_payments") == 0) { return &object->remote_total_received_payments; }
-    if (strcasecmp(key, "total_credit_vouchers") == 0) { return &object->remote_total_credit_vouchers; }
-    if (strcasecmp(key, "total_remaining_payments") == 0) { return &object->remote_total_remaining_payments; }
-    if (strcasecmp(key, "total") == 0) { return &object->remote_total; }
-    if (strcasecmp(key, "total_rounding_difference") == 0) { return &object->remote_total_rounding_difference; }
-    if (strcasecmp(key, "is_valid_from") == 0) { return &object->remote_is_valid_from; }
-    if (strcasecmp(key, "is_valid_to") == 0) { return &object->remote_is_valid_to; }
-    if (strcasecmp(key, "contact_address") == 0) { return &object->remote_contact_address; }
-    if (strcasecmp(key, "template_slug") == 0) { return &object->remote_template_slug; }
-    if (strcasecmp(key, "updated_at") == 0) { return &object->remote_updated_at; }
-    if (strcasecmp(key, "reference") == 0) { return &object->remote_reference; }
-    if (strcasecmp(key, "api_reference") == 0) { return &object->remote_api_reference; }
-    if (strcasecmp(key, "viewed_by_client_at") == 0) { return &object->remote_viewed_by_client_at; }
-    return NULL;
-}
-
 void bx_object_invoice_dump(void * data)
 {
     assert(data != NULL);
@@ -134,43 +99,43 @@ void * bx_object_invoice_decode(void * object)
     bx_utils_gen_id(&invoice->id);
 
     /* integer */
-    invoice->remote_id =                        bx_object_get_json_int(object, "id", hashState);
-    invoice->remote_user_id =                   bx_object_get_json_int(object, "user_id", hashState);
-    invoice->remote_contact_id =                bx_object_get_json_int(object, "contact_id", hashState);
-    invoice->remote_contact_subid =             bx_object_get_json_int(object, "contact_sub_id", hashState);
-    invoice->remote_project_id =                bx_object_get_json_int(object, "user_id", hashState);
-    invoice->remote_bank_account_id =           bx_object_get_json_int(object, "bank_account_id", hashState);
-    invoice->remote_currency_id =               bx_object_get_json_int(object, "currency_id", hashState);
-    invoice->remote_payment_type_id =           bx_object_get_json_int(object, "payment_type_id", hashState);
-    invoice->remote_tva_type =                  bx_object_get_json_int(object, "mwst_type", hashState);
-    invoice->remote_kb_item_status =            bx_object_get_json_int(object, "kb_item_status", hashState);
-    invoice->remote_esr_id =                    bx_object_get_json_int(object, "esr_id", hashState);
-    invoice->remote_qr_invoice_id =             bx_object_get_json_int(object, "qr_invoice_id", hashState);
+    invoice->remote_id =                        bx_object_get_json_int(jroot, "id", hashState);
+    invoice->remote_user_id =                   bx_object_get_json_int(jroot, "user_id", hashState);
+    invoice->remote_contact_id =                bx_object_get_json_int(jroot, "contact_id", hashState);
+    invoice->remote_contact_subid =             bx_object_get_json_int(jroot, "contact_sub_id", hashState);
+    invoice->remote_project_id =                bx_object_get_json_int(jroot, "user_id", hashState);
+    invoice->remote_bank_account_id =           bx_object_get_json_int(jroot, "bank_account_id", hashState);
+    invoice->remote_currency_id =               bx_object_get_json_int(jroot, "currency_id", hashState);
+    invoice->remote_payment_type_id =           bx_object_get_json_int(jroot, "payment_type_id", hashState);
+    invoice->remote_tva_type =                  bx_object_get_json_int(jroot, "mwst_type", hashState);
+    invoice->remote_kb_item_status =            bx_object_get_json_int(jroot, "kb_item_status", hashState);
+    invoice->remote_esr_id =                    bx_object_get_json_int(jroot, "esr_id", hashState);
+    invoice->remote_qr_invoice_id =             bx_object_get_json_int(jroot, "qr_invoice_id", hashState);
 
     /* double */
-    invoice->remote_total_gross =               bx_object_get_json_double(object, "total_gross", hashState);
-    invoice->remote_total_net =                 bx_object_get_json_double(object, "total_net", hashState);
-    invoice->remote_total_taxes =               bx_object_get_json_double(object, "total_taxes", hashState);
-    invoice->remote_total_received_payments =   bx_object_get_json_double(object, "total_received_payments", hashState);
-    invoice->remote_total_credit_vouchers =     bx_object_get_json_double(object, "total_credit_vouchers", hashState);
-    invoice->remote_total_remaining_payments =  bx_object_get_json_double(object, "total_remaining_payments", hashState);
-    invoice->remote_total =                     bx_object_get_json_double(object, "total", hashState);
-    invoice->remote_total_rounding_difference = bx_object_get_json_double(object, "total_rounding_difference", hashState);
+    invoice->remote_total_gross =               bx_object_get_json_double(jroot, "total_gross", hashState);
+    invoice->remote_total_net =                 bx_object_get_json_double(jroot, "total_net", hashState);
+    invoice->remote_total_taxes =               bx_object_get_json_double(jroot, "total_taxes", hashState);
+    invoice->remote_total_received_payments =   bx_object_get_json_double(jroot, "total_received_payments", hashState);
+    invoice->remote_total_credit_vouchers =     bx_object_get_json_double(jroot, "total_credit_vouchers", hashState);
+    invoice->remote_total_remaining_payments =  bx_object_get_json_double(jroot, "total_remaining_payments", hashState);
+    invoice->remote_total =                     bx_object_get_json_double(jroot, "total", hashState);
+    invoice->remote_total_rounding_difference = bx_object_get_json_double(jroot, "total_rounding_difference", hashState);
 
     /* string */
-    invoice->remote_document_nr =               bx_object_get_json_string(object, "document_nr", hashState);
-    invoice->remote_is_valid_from =             bx_object_get_json_string(object, "is_valid_from", hashState);
-    invoice->remote_is_valid_to =               bx_object_get_json_string(object, "is_valid_to", hashState);
-    invoice->remote_contact_address =           bx_object_get_json_string(object,"contact_address", hashState);
-    invoice->remote_template_slug =             bx_object_get_json_string(object, "template_slug", hashState);
-    invoice->remote_updated_at =                bx_object_get_json_string(object, "updated_at", hashState);
-    invoice->remote_reference =                 bx_object_get_json_string(object, "reference", hashState);
-    invoice->remote_api_reference =             bx_object_get_json_string(object, "api_reference", hashState);
-    invoice->remote_viewed_by_client_at =       bx_object_get_json_string(object, "viewed_by_client_at", hashState);
+    invoice->remote_document_nr =               bx_object_get_json_string(jroot, "document_nr", hashState);
+    invoice->remote_is_valid_from =             bx_object_get_json_string(jroot, "is_valid_from", hashState);
+    invoice->remote_is_valid_to =               bx_object_get_json_string(jroot, "is_valid_to", hashState);
+    invoice->remote_contact_address =           bx_object_get_json_string(jroot,"contact_address", hashState);
+    invoice->remote_template_slug =             bx_object_get_json_string(jroot, "template_slug", hashState);
+    invoice->remote_updated_at =                bx_object_get_json_string(jroot, "updated_at", hashState);
+    invoice->remote_reference =                 bx_object_get_json_string(jroot, "reference", hashState);
+    invoice->remote_api_reference =             bx_object_get_json_string(jroot, "api_reference", hashState);
+    invoice->remote_viewed_by_client_at =       bx_object_get_json_string(jroot, "viewed_by_client_at", hashState);
 
-    invoice->remote_tva_is_net =                bx_object_get_json_bool(object, "tva_is_net", hashState);
+    invoice->remote_tva_is_net =                bx_object_get_json_bool(jroot, "tva_is_net", hashState);
 
-    json_t * value = json_object_get(object, "taxs");
+    json_t * value = json_object_get(jroot, "taxs");
     if (value != NULL && json_is_array(value)) {
         invoice->bx_object_taxes_count = json_array_size(value);
         invoice->remote_taxes = calloc(invoice->bx_object_taxes_count, sizeof(invoice->remote_taxes));
@@ -182,7 +147,7 @@ void * bx_object_invoice_decode(void * object)
     }
     value = NULL;
 
-    value = json_object_get(object, "positions");
+    value = json_object_get(jroot, "positions");
     if (value != NULL && json_is_array(value)) {
         invoice->bx_object_remote_positions_count = json_array_size(value);
         invoice->remote_positions = calloc(invoice->bx_object_remote_positions_count, sizeof(*invoice->remote_positions));
