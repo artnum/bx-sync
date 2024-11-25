@@ -30,4 +30,9 @@ BXNetRequest * bx_do_request(
     char * path_fmt,
     ...
 );
+void _bx_log_error(char * file, int line, const char *fmt, ...);
+#define bx_log_error(fmt, ...)  _bx_log_error(__FILE__, __LINE__, (fmt), __VA_ARGS__)
+
+bool bx_string_compare(const char * str1, const char * str2, size_t max);
+
 #endif /* BX_UTILS_H__ */

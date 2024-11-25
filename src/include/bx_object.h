@@ -15,13 +15,15 @@ enum e_BXObjectType {
     BXTypeInvoice = 1,
     BXTypeContact,
     BXTypeContactGroup,
+    BXTypeContactSector,
     BXTypeInvoiceTax,
     BXTypeInvoicePositionCE,
     BXTypeInvoicePositionAE,
     BXTypeInvoicePositionDE,
     BXTypeInvoicePositionSE,
     BXTypeInvoicePositionPE,
-    BXTypeInvoicePositionTE
+    BXTypeInvoicePositionTE,
+    BXTypeUser
 };
 
 BXBool bx_object_get_json_bool(json_t * object, const char * key, XXH3_state_t * state);

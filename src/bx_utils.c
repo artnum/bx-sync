@@ -159,6 +159,7 @@ static inline char * _bx_item_to_path (const char * fmt, va_list ap)
             return path;
         }
         path = tmp;
+        if (origin == 0) { *path = '\0'; }
         strncat(path, &fmt[origin], i - origin);
     }
 
@@ -190,8 +191,9 @@ BXNetRequest * bx_do_request(
     if (path == NULL) {
         return NULL;
     }
+    printf("path %s\n", path);
     va_end(ap);
-    request = bx_net_request_new("2.0", path, NULL);
+    request = bx_net_request_new(path, NULL);
     free(path);
     if (request == NULL) {
         return NULL;
@@ -210,4 +212,23 @@ BXNetRequest * bx_do_request(
     }
     request->decoded = json;
     return request;
+}
+
+void _bx_log_error(char * file, int line, const char *fmt, ...)
+{
+    va_list ap;
+    fprintf(stderr, "%s:%d ", file, line);
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+}
+
+bool bx_string_compare(const char * str1, const char * str2, size_t max)
+{
+    for (size_t i = 0; i < max && *str1 != '\0' && *str2 != '\0'; i++) {
+        if (*str1 != *str2) { return false; }
+        str1++;
+        str2++;
+    }
+    return true;
 }

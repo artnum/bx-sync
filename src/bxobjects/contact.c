@@ -3,6 +3,7 @@
 #include <bx_object_value.h>
 #include <bx_utils.h>
 #include <bxobjects/contact.h>
+#include <bxobjects/user.h>
 #include <bx_object.h>
 #include <jansson.h>
 #include <stddef.h>
@@ -198,19 +199,24 @@ void bx_object_contact_dump(void * data)
     _bx_dump_any("profile_image", &contact->remote_profile_image, 1);
 }
 
-#define CONTACT_PATH    "contact/$"
+#define GET_CONTACT_PATH    "2.0/contact/$"
 void bx_contact_sync_item(bXill * app, BXGeneric * item)
 {
     assert(app != NULL);
     assert(item != NULL);
-
-    BXNetRequest * request = bx_do_request(app->queue, NULL, CONTACT_PATH, item);
+    printf("Contact %ld\n", ((BXInteger *)item)->value);
+    BXNetRequest * request = bx_do_request(app->queue, NULL, GET_CONTACT_PATH, item);
     if(request == NULL) {
         return;
     }
     BXObjectContact * contact = bx_object_contact_decode(request->decoded);
     if (contact == NULL) {
         bx_net_request_free(request);
+    }
+
+    bx_user_sync_item(app, (BXGeneric *)&contact->remote_user_id);
+    if (contact->remote_user_id.value != contact->remote_owner_id.value) {
+        bx_user_sync_item(app, (BXGeneric *)&contact->remote_owner_id);
     }
 
     int64_t * group_ids = bx_int_string_array_to_int_array(contact->remote_contact_groupd_ids.value);
@@ -227,6 +233,24 @@ void bx_contact_sync_item(bXill * app, BXGeneric * item)
     int64_t * branch_ids = bx_int_string_array_to_int_array(contact->remote_contact_branch_ids.value);
     if (branch_ids != NULL) {
         
+    }
+}
+
+#define WALK_CONTACT_PATH    "2.0/contact"
+void bx_contact_walk_items(bXill * app)
+{
+    BXNetRequest * request = bx_do_request(app->queue, NULL, WALK_CONTACT_PATH);
+    if(request == NULL) {
+        return;
+    }
+    if (!json_is_array(request->decoded)) {
+        return;
+    }
+
+    size_t arr_len = json_array_size(request->decoded);
+    for (size_t i = 0; i < arr_len; i++) {
+        BXInteger id = bx_object_get_json_int(json_array_get(request->decoded, i), "id", NULL);
+        bx_contact_sync_item(app, (BXGeneric *)&id);
     }
 
 }

@@ -52,5 +52,6 @@ void * bx_object_contact_decode(void * object);
 void bx_object_contact_free(void * data);
 void bx_object_contact_store(MYSQL * mysql, BXObjectContact * contact);
 void bx_contact_sync_item(bXill * app, BXGeneric * item);
+void bx_contact_walk_items(bXill * app);
 
 #endif /* BX_OBJECT_CONTACT_H__ */

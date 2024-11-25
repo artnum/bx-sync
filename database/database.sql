@@ -5,3 +5,24 @@ CREATE TABLE IF NOT EXISTS contact_group (
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
     _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS contact_sector (
+    id BIGINT PRIMARY KEY,
+    name TEXT NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS user (
+    id BIGINT PRIMARY KEY,
+    salutation_type VARCHAR(20) NOT NULL,
+    firstname VARCHAR(80) NOT NULL DEFAULT "",
+    lastname VARCHAR(80) NOT NULL DEFAULT "",
+    email TEXT NOT NULL,
+    is_superadmin CHAR DEFAULT 0,
+    is_accountant CHAR DEFAULT 0,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);

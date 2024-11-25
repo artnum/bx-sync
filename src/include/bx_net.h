@@ -7,6 +7,12 @@
 #include <jansson.h>
 #include <bx_object.h>
 
+typedef struct s_BXNetRatelimit BXNetRatelimit;
+struct s_BXNetRatelimit {
+    int max_request;
+    int remaining_request;
+    int reset_time;
+};
 typedef struct s_BXNet BXNet;
 struct s_BXNet {
     CURL * curl;
@@ -15,6 +21,8 @@ struct s_BXNet {
     size_t auth_token_len;
     char * endpoint;
     size_t endpoint_len;
+    BXMutex mutex_limit;
+    BXNetRatelimit limits;
 };
 
 typedef struct s_BXNetRData BXNetRData;
@@ -34,7 +42,6 @@ typedef struct s_BXNetRequest BXNetRequest;
 struct s_BXNetRequest {
     atomic_bool done;
     uint64_t id;
-    char * version;
     char * path;
     json_t * decoded;
     json_t * body;
@@ -52,7 +59,7 @@ struct s_BXNetRequestList {
     BXMutex mutex;
 };
 
-BXNetRData * bx_fetch(BXNet * net, const char * version, const char * path, BXNetURLParams * params);
+BXNetRData * bx_fetch(BXNet * net, const char * path, BXNetURLParams * params);
 BXNet * bx_net_init(BXConf * conf);
 void bx_net_destroy(BXNet ** net);
 pthread_t  bx_net_loop(BXNetRequestList * list);
@@ -64,7 +71,6 @@ int bx_net_request_list_count(BXNetRequestList * list);
 void bx_net_request_list_destroy(BXNetRequestList * list);
 bool bx_net_request_add_param(BXNetRequest * request, const char * name, const char * value);
 BXNetRequest * bx_net_request_new(
-    const char * version,
     const char * path,
     json_t * body
 );

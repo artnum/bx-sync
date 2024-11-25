@@ -37,7 +37,7 @@ BXBool bx_object_get_json_bool(json_t * object, const char * key, XXH3_state_t *
         else { retval.value = false; }
     }
     unsigned char hv = retval.value ? 0xFF : 0x00;
-    XXH3_64bits_update(state, &hv, sizeof(hv));
+    if (state != NULL) { XXH3_64bits_update(state, &hv, sizeof(hv)); }
     return retval;
 }
 
@@ -55,7 +55,7 @@ BXInteger bx_object_get_json_int(json_t * object, const char * key, XXH3_state_t
     } else if (json_is_integer(value)) {
         i.value = json_integer_value(value);
     }
-    XXH3_64bits_update(state, &i.value, sizeof(i.value));
+    if (state != NULL) { XXH3_64bits_update(state, &i.value, sizeof(i.value)); }
     
     return i;
 }
@@ -74,7 +74,7 @@ BXFloat bx_object_get_json_double(json_t * object, const char * key, XXH3_state_
     } else if (json_is_real(value)) {
         d.value = json_real_value(value);
     }
-    XXH3_64bits_update(state, &d.value, sizeof(d.value));
+    if (state != NULL) { XXH3_64bits_update(state, &d.value, sizeof(d.value)); }
     return d;
 }
 
@@ -105,7 +105,7 @@ BXString bx_object_get_json_string(json_t * object, const char * key, XXH3_state
     if (str.value != NULL) {    
         str.isset = true;
         bx_html_entities_replaces(&str);
-        XXH3_64bits_update(state, str.value, str.value_len);
+        if (state != NULL) { XXH3_64bits_update(state, str.value, str.value_len); }
     }
 
     return str;

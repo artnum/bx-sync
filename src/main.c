@@ -6,6 +6,7 @@
 #include <bx_decode.h>
 #include <bx_object.h>
 #include <bxobjects/invoice.h>
+#include <bxobjects/contact_sector.h>
 #include <bx_utils.h>
 #include <bxill.h>
 
@@ -64,7 +65,11 @@ int main(int argc, char ** argv)
     pthread_t request_thread = bx_net_loop(queue);
     
     BXInteger item = {.isset = 1, .value = 2, .type = BX_OBJECT_TYPE_INTEGER };
-    bx_contact_sync_item(&app, (BXGeneric *)&item);
+    do {
+        /* walk sector first */
+        bx_contact_sector_walk_items(&app);
+        bx_contact_walk_items(&app);
+    } while(1);
 
 
     /*

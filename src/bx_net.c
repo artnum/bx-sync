@@ -1,8 +1,10 @@
+#include "bx_utils.h"
 #include <bx_net.h>
 #include <bx_mutex.h>
 #include <bx_conf.h>
 
 #include <curl/curl.h>
+#include <curl/easy.h>
 #include <jansson.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -62,7 +64,7 @@ BXNet * bx_net_init(BXConf * conf)
     }
     
     bx_mutex_init(&net->mutex);
-
+    bx_mutex_init(&net->mutex_limit);
     return net;
 }
 
@@ -98,12 +100,10 @@ void bx_net_destroy(BXNet ** net)
 inline static char * _bx_build_url(
     const char * endpoint,
     size_t endpoint_len,
-    const char * version,
     const char * path,
     BXNetURLParams * head
 )
 {
-    assert(version != NULL);
     assert(path != NULL);
 
     size_t url_len = 0;
@@ -120,7 +120,6 @@ inline static char * _bx_build_url(
         }
     }
     url_len += endpoint_len + 1; // add the '/'
-    url_len += strlen(version) + 1; // add the '/'
     url_len += strlen(path) + 1; // add the '?' or '/'
 
     char * url = NULL;
@@ -128,7 +127,7 @@ inline static char * _bx_build_url(
     if (url == NULL) {
         return NULL;
     }
-    if (snprintf(url, url_len, "%s/%s/%s", endpoint, version, path) < 0) {
+    if (snprintf(url, url_len, "%s/%s", endpoint, path) < 0) {
         free(url);
         return NULL;
     }
@@ -163,14 +162,75 @@ inline static char * _bx_build_url(
     return url;
 }
 
-BXNetRData * bx_fetch(BXNet * net, const char * version, const char * path, BXNetURLParams * params)
+#define RLIMIT_LIMIT "ratelimit-limit"
+#define RLIMIT_REMAIN "ratelimit-remaining"
+#define RLIMIT_RESET "ratelimit-reset"
+
+static inline size_t bx_header_callback(char * buffer, size_t size, size_t item_count, void * data)
+{
+    char _b[10];
+    char * b = &_b[0];
+    BXNet * net = (BXNet *)data;
+    
+    assert(net != NULL);
+    if (buffer == NULL || item_count == 0) { return size * item_count; }
+    
+    memset(b, 0, 10);
+    if (item_count * size > sizeof(RLIMIT_LIMIT)
+        && bx_string_compare(buffer, RLIMIT_LIMIT, sizeof(RLIMIT_LIMIT))
+        && (size * item_count) - sizeof(RLIMIT_LIMIT) < 10
+    ) {
+        memcpy(b, &buffer[sizeof(RLIMIT_LIMIT) + 1], (size * item_count) - sizeof(RLIMIT_LIMIT));
+        while ((*b == ' ' || *b == ':') && *b != '\0') { b++; }
+        if (*b == 0) { return size * item_count; }
+        int v = strtol(b, NULL, 10);
+        if (v == 0) { return size * item_count; }
+        bx_mutex_lock(&net->mutex_limit);
+        net->limits.max_request = v;
+        bx_mutex_unlock(&net->mutex_limit);
+        return size * item_count;
+    }
+
+    if (item_count * size > sizeof(RLIMIT_REMAIN)
+        && bx_string_compare(buffer, RLIMIT_REMAIN, sizeof(RLIMIT_REMAIN))
+        && (size * item_count) - sizeof(RLIMIT_REMAIN) < 10
+    ) {
+        memcpy(b, &buffer[sizeof(RLIMIT_REMAIN) + 1], (size * item_count) - sizeof(RLIMIT_REMAIN));
+        while ((*b == ' ' || *b == ':') && *b != '\0') { b++; }
+        if (*b == 0) { return size * item_count; }
+        int v = strtol(b, NULL, 10);
+        if (v == 0) { return size * item_count; }
+        bx_mutex_lock(&net->mutex_limit);
+        net->limits.remaining_request = v;
+        bx_mutex_unlock(&net->mutex_limit);
+        return size * item_count;
+    }
+
+    if (item_count * size > sizeof(RLIMIT_RESET)
+        && bx_string_compare(buffer, RLIMIT_RESET, sizeof(RLIMIT_RESET))
+        && (size * item_count) - sizeof(RLIMIT_RESET) < 10
+    ) {
+        memcpy(b, &buffer[sizeof(RLIMIT_RESET) + 1], (size * item_count) - sizeof(RLIMIT_RESET));
+        while ((*b == ' ' || *b == ':') && *b != '\0') { b++; }
+        if (*b == 0) { return size * item_count; }
+        int v = strtol(b, NULL, 10);
+        if (v == 0) { return size * item_count; }
+        bx_mutex_lock(&net->mutex_limit);
+        net->limits.reset_time = v;
+        bx_mutex_unlock(&net->mutex_limit);
+        return size * item_count;
+    }
+
+    return size * item_count;
+}
+
+BXNetRData * bx_fetch(BXNet * net, const char * path, BXNetURLParams * params)
 {
     assert(net != NULL);
-    assert(version != NULL);
     assert(path != NULL);
 
     bx_mutex_lock(&net->mutex);    
-    char * url = _bx_build_url(net->endpoint, net->endpoint_len, version, path, params);
+    char * url = _bx_build_url(net->endpoint, net->endpoint_len, path, params);
     if (url == NULL) {
         bx_mutex_unlock(&net->mutex);
         return NULL;
@@ -218,6 +278,12 @@ BXNetRData * bx_fetch(BXNet * net, const char * version, const char * path, BXNe
 
     /* critical section */
     bx_mutex_lock(&net->mutex);
+    if (curl_easy_setopt(net->curl, CURLOPT_HEADERFUNCTION, bx_header_callback) != CURLE_OK) {
+        goto failUnlockFreeAndReturn;
+    }
+    if (curl_easy_setopt(net->curl, CURLOPT_HEADERDATA, (void *)net) != CURLE_OK) {
+        goto failUnlockFreeAndReturn;
+    }
     if (curl_easy_setopt(net->curl, CURLOPT_WRITEFUNCTION, _bx_write_cb) != CURLE_OK) {
         goto failUnlockFreeAndReturn;
     }
@@ -364,7 +430,6 @@ void bx_net_request_list_destroy(BXNetRequestList * list)
     while (current != NULL) {
         next = current->next;
         if (current->path != NULL) { free(current->path); }
-        if (current->version != NULL) { free(current->version); }
         if (current->decoded != NULL) { json_decref(current->decoded); }
         if (current->response != NULL) { free(current->response); }
         free(current);
@@ -387,12 +452,10 @@ int bx_net_request_list_count(BXNetRequestList * list)
 }
 
 BXNetRequest * bx_net_request_new(
-    const char * version,
     const char * path,
     json_t * body
 )
 {
-    assert(version != NULL);
     assert(path != NULL);
     
     BXNetRequest * new = NULL;
@@ -406,7 +469,6 @@ BXNetRequest * bx_net_request_new(
     new->params = NULL;
     new->response = NULL;
     new->path = strdup(path);
-    new->version = strdup(version);
     new->body = NULL;
 
     return new;
@@ -545,7 +607,6 @@ void bx_net_request_free(BXNetRequest * request)
     if (request->decoded != NULL) { json_decref(request->decoded); }
     if (request->body != NULL) { json_decref(request->body); }
     if (request->path != NULL) { free(request->path); }
-    if (request->version != NULL) { free(request->version); }
     if (request->params != NULL) { bx_net_request_params_free(request->params); }
     if (request->response != NULL) {
         if (request->response->data != NULL) { free(request->response->data); }
@@ -553,6 +614,8 @@ void bx_net_request_free(BXNetRequest * request)
     }
     free(request);
 }
+
+#define DEFAULT_RATELIMIT_US   10 /*  */
 
 static void * _bx_net_loop_worker(void * l)
 {
@@ -563,6 +626,8 @@ static void * _bx_net_loop_worker(void * l)
     net = list->net;
     bx_mutex_unlock(&list->mutex);
 
+    int us_sleep = DEFAULT_RATELIMIT_US;
+    int last_rtime = 0;
     while(atomic_load(&list->run)) {
         BXNetRequest * request = NULL;
 
@@ -570,14 +635,17 @@ static void * _bx_net_loop_worker(void * l)
         if (request != NULL) {
             /* request is locked in search loop */
             // do request
-            request->response = bx_fetch(net, request->version, request->path, request->params);           
+            request->response = bx_fetch(net, request->path, request->params);           
             /* readd in list so it can be processed */
             bx_net_request_list_add(list, request);
             atomic_store(&request->done, true);
+            bx_mutex_lock(&net->mutex_limit);
+            bx_log_error("LIMIT %d, REMAINING %d, RESET %d\n", net->limits.max_request, net->limits.remaining_request, net->limits.reset_time);
+            bx_mutex_unlock(&net->mutex_limit);
         }
 
         /* don't load server too much */
-        usleep(1000000);
+        usleep(us_sleep);
     }
     return 0;
 }

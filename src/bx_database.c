@@ -1,3 +1,4 @@
+#include "bx_utils.h"
 #include <mysql/mysql.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -83,6 +84,7 @@ BXDatabaseQuery * bx_database_new_query(MYSQL * mysql, const char * query)
     }
     new->stmt = mysql_stmt_init(mysql);
     if (new->stmt == NULL) {
+        bx_log_error("[MYSQL ERROR] %s\n", mysql_stmt_error(new->stmt));
         free(new);
         return NULL;
     }
@@ -291,11 +293,23 @@ bool bx_database_execute(BXDatabaseQuery * query)
         }
     }
     memset(&query->query[k], 0, query->query_length - k);    
-    mysql_stmt_prepare(query->stmt, query->query, k - 1);
+    if(mysql_stmt_prepare(query->stmt, query->query, k - 1) != 0) {
+        bx_log_error("[MYSQL ERROR] %s %s\n", query->query, mysql_stmt_error(query->stmt));
+        free(binds);
+        return false;
+    }
+
+    if (mysql_stmt_bind_param(query->stmt, binds) != 0) {
+        bx_log_error("[MYSQL ERROR] %s\n", mysql_stmt_error(query->stmt));
+        free(binds);
+        return false;
+    }
     
-    mysql_stmt_bind_param(query->stmt, binds);
-    
-    mysql_stmt_execute(query->stmt);
+    if (mysql_stmt_execute(query->stmt) != 0) {
+        bx_log_error("[MYSQL ERROR] %s\n", mysql_stmt_error(query->stmt));
+        free(binds);
+        return false;
+    }
 
     free(binds);
     return true;
@@ -364,6 +378,7 @@ bool bx_database_results(BXDatabaseQuery * query)
 
     result = mysql_stmt_result_metadata(query->stmt);
     if (result == NULL) {
+        bx_log_error("[MYSQL ERROR] %s\n", mysql_stmt_error(query->stmt));
         return false;
     }
 
