@@ -5,6 +5,20 @@
 #include <bx_object_value.h>
 #include <bx_utils.h>
 
+static inline void free_object(BXObjectUser * user)
+{
+    if (user == NULL) { return; }
+    bx_object_free_value(&user->remote_email);
+    bx_object_free_value(&user->remote_firstname);
+    bx_object_free_value(&user->remote_id);
+    bx_object_free_value(&user->remote_lastname);
+    bx_object_free_value(&user->remote_is_accountant);
+    bx_object_free_value(&user->remote_is_superadmin);
+    bx_object_free_value(&user->remote_salutation_type);
+    free(user);
+
+}
+
 static inline BXObjectUser * decode_object(json_t * root) 
 {
     json_t * object = (json_t *)root;
@@ -88,10 +102,12 @@ bool bx_user_sync_item(bXill * app, BXGeneric * item)
 
         bx_database_execute(query);
         bx_database_free_query(query);
+        free_object(user);
         return true;
     }
     if (query->results[0].columns[0].i_value == user->checksum) {
         bx_database_free_query(query);
+        free_object(user);
         return true;
     }
 
@@ -119,5 +135,6 @@ bool bx_user_sync_item(bXill * app, BXGeneric * item)
 
     bx_database_execute(query);
     bx_database_free_query(query);
+    free_object(user);
     return true;
 }

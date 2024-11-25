@@ -64,7 +64,6 @@ int main(int argc, char ** argv)
     app.queue = queue;
     pthread_t request_thread = bx_net_loop(queue);
     
-    BXInteger item = {.isset = 1, .value = 2, .type = BX_OBJECT_TYPE_INTEGER };
     int round = 5;
     do {
         /* walk sector first */

@@ -213,8 +213,9 @@ bool bx_contact_sync_item(bXill * app, BXGeneric * item)
         return false;
     }
     BXObjectContact * contact = bx_object_contact_decode(request->decoded);
+    bx_net_request_free(request);
     if (contact == NULL) {
-        bx_net_request_free(request);
+        return false;
     }
 
     bx_user_sync_item(app, (BXGeneric *)&contact->remote_user_id);
@@ -233,12 +234,15 @@ bool bx_contact_sync_item(bXill * app, BXGeneric * item)
                 continue;
             }
         }
+        free(group_ids);
     }
 
     int64_t * branch_ids = bx_int_string_array_to_int_array(contact->remote_contact_branch_ids.value);
     if (branch_ids != NULL) {
-        
+        free(branch_ids);
     }
+    bx_object_contact_free(contact);
+    
     return true;
 }
 
@@ -250,6 +254,7 @@ void bx_contact_walk_items(bXill * app)
         return;
     }
     if (!json_is_array(request->decoded)) {
+        bx_net_request_free(request);
         return;
     }
 
@@ -258,5 +263,5 @@ void bx_contact_walk_items(bXill * app)
         BXInteger id = bx_object_get_json_int(json_array_get(request->decoded, i), "id", NULL);
         bx_contact_sync_item(app, (BXGeneric *)&id);
     }
-
+    bx_net_request_free(request);
 }

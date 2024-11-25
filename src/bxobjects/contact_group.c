@@ -6,6 +6,14 @@
 #include <bx_utils.h>
 
 
+static inline void free_object(BXObjectContactGroup * contact_group) 
+{
+    if (contact_group == NULL) { return ; }
+    bx_object_free_value(&contact_group->remote_id);
+    bx_object_free_value(&contact_group->remote_name);
+    free(contact_group);
+}
+
 static inline BXObjectContactGroup * decode_object(json_t * root) 
 {
     json_t * object = (json_t *)root;
@@ -72,6 +80,7 @@ bool bx_contact_group_sync_item(bXill * app, BXGeneric * item)
     }
     if (query->results[0].columns[0].i_value == contact_group->checksum) {
         bx_database_free_query(query);
+        free_object(contact_group);
         return true;
     }
 
@@ -88,5 +97,7 @@ bool bx_contact_group_sync_item(bXill * app, BXGeneric * item)
     bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
     bx_database_execute(query);
     bx_database_free_query(query);
+    free_object(contact_group);
+
     return true;
 }

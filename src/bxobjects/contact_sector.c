@@ -7,6 +7,14 @@
 #include <jansson.h>
 
 
+static inline void free_object(BXObjectContactSector * contact_sector)
+{
+    if (contact_sector == NULL) { return; }
+    bx_object_free_value(&contact_sector->remote_id);
+    bx_object_free_value(&contact_sector->remote_name);
+    free(contact_sector);
+}
+
 static inline BXObjectContactSector * decode_object(json_t * root) 
 {
     json_t * object = (json_t *)root;
@@ -120,10 +128,12 @@ bool bx_contact_sector_walk_items(bXill * app)
             bx_database_add_param_uint64(query, ":_last_updated", &now);
             bx_database_execute(query);
             bx_database_free_query(query);
+            free_object(contact_sector);
             continue;
         }
         if (query->results[0].columns[0].i_value == contact_sector->checksum) {
             bx_database_free_query(query);
+            free_object(contact_sector);
             continue;
         }
 
@@ -140,6 +150,7 @@ bool bx_contact_sector_walk_items(bXill * app)
         bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
         bx_database_execute(query);
         bx_database_free_query(query);
+        free_object(contact_sector);
     }
     json_decref(contact_sector_array);
 
