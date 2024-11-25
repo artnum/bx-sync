@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <time.h>
 #include <unistd.h>
 
 #define BX_API_AUTH_HEADER  "Authorization: Bearer "
@@ -174,7 +175,6 @@ static inline size_t bx_header_callback(char * buffer, size_t size, size_t item_
     
     assert(net != NULL);
     if (buffer == NULL || item_count == 0) { return size * item_count; }
-    
     memset(b, 0, 10);
     if (item_count * size > sizeof(RLIMIT_LIMIT)
         && bx_string_compare(buffer, RLIMIT_LIMIT, sizeof(RLIMIT_LIMIT))
@@ -299,12 +299,20 @@ BXNetRData * bx_fetch(BXNet * net, const char * path, BXNetURLParams * params)
     if (curl_easy_setopt(net->curl, CURLOPT_SSL_VERIFYPEER, 0) != CURLE_OK) {
         goto failUnlockFreeAndReturn;
     }
+    clock_t start = clock();
     if (curl_easy_perform(net->curl) != CURLE_OK) {
         goto failUnlockFreeAndReturn;
     }
+    clock_t stop = clock();
+    net->average_request_time = ((stop - start) + net->average_request_time * net->request_count) / ++net->request_count;
+    bx_log_error("[NET TIME] Immediate : %ld us With Average %ld us\n", stop - start, net->average_request_time);
+    curl_easy_getinfo(net->curl, CURLINFO_RESPONSE_CODE, &net_rdata->http_code);
+
     curl_slist_free_all(header_list);
     curl_easy_reset(net->curl);
     bx_mutex_unlock(&net->mutex);
+
+
     free(auth_token);
     free(url);
 
@@ -635,7 +643,7 @@ static void * _bx_net_loop_worker(void * l)
         if (request != NULL) {
             /* request is locked in search loop */
             // do request
-            request->response = bx_fetch(net, request->path, request->params);           
+            request->response = bx_fetch(net, request->path, request->params);
             /* readd in list so it can be processed */
             bx_net_request_list_add(list, request);
             atomic_store(&request->done, true);

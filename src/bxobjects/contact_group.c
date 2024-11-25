@@ -20,8 +20,8 @@ static inline BXObjectContactGroup * decode_object(json_t * root)
         return NULL;
     }
     contact_group->type = BXTypeContactGroup;
-    contact_group->remote_id =                        bx_object_get_json_int(object, "id", hashState);
-    contact_group->remote_name =                    bx_object_get_json_string(object, "name", hashState);
+    contact_group->remote_id = bx_object_get_json_int(object, "id", hashState);
+    contact_group->remote_name = bx_object_get_json_string(object, "name", hashState);
     
     contact_group->checksum = XXH3_64bits_digest(hashState);
     XXH3_freeState(hashState);
@@ -34,9 +34,13 @@ static inline BXObjectContactGroup * decode_object(json_t * root)
 bool bx_contact_group_sync_item(bXill * app, BXGeneric * item)
 {
     BXNetRequest * request = bx_do_request(app->queue, NULL, GET_CONTACT_GROUP_PATH, item);
-    if(request == NULL) {
+    if (request == NULL
+        || request->response == NULL
+        || request->response->http_code != 200
+    ) {
         return false;
     }
+
     BXObjectContactGroup * contact_group = decode_object(request->decoded);
     bx_net_request_free(request);
     if (contact_group == NULL) {

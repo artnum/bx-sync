@@ -1,6 +1,7 @@
 #ifndef BX_NET_H__
 #define BX_NET_H__
 
+#include <time.h>
 #include <bx_mutex.h>
 #include <bx_conf.h>
 #include <curl/curl.h>
@@ -23,12 +24,15 @@ struct s_BXNet {
     size_t endpoint_len;
     BXMutex mutex_limit;
     BXNetRatelimit limits;
+    clock_t average_request_time;
+    uint64_t request_count;
 };
 
 typedef struct s_BXNetRData BXNetRData;
 struct s_BXNetRData {
     char * data;
     size_t data_len;
+    long int http_code;
 };
 
 typedef struct s_BXNetURLParams BXNetURLParams;

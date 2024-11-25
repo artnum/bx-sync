@@ -200,14 +200,17 @@ void bx_object_contact_dump(void * data)
 }
 
 #define GET_CONTACT_PATH    "2.0/contact/$"
-void bx_contact_sync_item(bXill * app, BXGeneric * item)
+bool bx_contact_sync_item(bXill * app, BXGeneric * item)
 {
     assert(app != NULL);
     assert(item != NULL);
     printf("Contact %ld\n", ((BXInteger *)item)->value);
     BXNetRequest * request = bx_do_request(app->queue, NULL, GET_CONTACT_PATH, item);
     if(request == NULL) {
-        return;
+        return false;
+    }
+    if (request->response == NULL || request->response->http_code != 200) {
+        return false;
     }
     BXObjectContact * contact = bx_object_contact_decode(request->decoded);
     if (contact == NULL) {
@@ -226,7 +229,9 @@ void bx_contact_sync_item(bXill * app, BXGeneric * item)
         item.type = BX_OBJECT_TYPE_INTEGER;
         for (int i = 0; i <= *group_ids; i++) {
             item.value = *(group_ids + i);
-            bx_contact_group_sync_item(app, (BXGeneric *)&item);
+            if (!bx_contact_group_sync_item(app, (BXGeneric *)&item)) {
+                continue;
+            }
         }
     }
 
@@ -234,6 +239,7 @@ void bx_contact_sync_item(bXill * app, BXGeneric * item)
     if (branch_ids != NULL) {
         
     }
+    return true;
 }
 
 #define WALK_CONTACT_PATH    "2.0/contact"

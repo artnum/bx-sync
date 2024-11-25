@@ -40,8 +40,12 @@ bool bx_user_sync_item(bXill * app, BXGeneric * item)
     if(request == NULL) {
         return false;
     }
-    printf("REQUEST %s\n", request->path);
-    printf("DATA %s\n", request->response->data);
+    if (request == NULL 
+        || request->response == NULL
+        || request->response->http_code != 200
+    ) {
+        return false;
+    }
     BXObjectUser * user = decode_object(request->decoded);
     bx_net_request_free(request);
     if (user == NULL) {

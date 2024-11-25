@@ -62,6 +62,9 @@ struct s_BXDatabaseQuery {
     int field_count;
     
     BXDatabaseRow * results;
+    int row_count;
+
+    bool exectued;
 };
 
 BXDatabaseQuery * bx_database_new_query(MYSQL * mysql, const char * query);

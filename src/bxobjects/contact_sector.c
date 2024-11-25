@@ -30,21 +30,71 @@ static inline BXObjectContactSector * decode_object(json_t * root)
     return contact_sector;    
 }
 
+
+struct s_ItemMustBeDeleted {
+    int64_t item;
+    bool deleted;
+};
+
 #define WALK_CONTACT_SECTOR_PATH    "2.0/contact_branch"
 bool bx_contact_sector_walk_items(bXill * app)
 {
     BXNetRequest * request = bx_do_request(app->queue, NULL, WALK_CONTACT_SECTOR_PATH);
-    if(request == NULL) {
+    if (request == NULL
+        || request->response == NULL
+        || request->response->http_code != 200
+    ) {
         return false;
     }
+    
+    struct s_ItemMustBeDeleted * items = NULL;
+    int items_count = 0;
     json_t * contact_sector_array = request->decoded;
     /* bx_net_request_free decref json_t, so we incref here to keep it for the run */
     json_incref(contact_sector_array);
     bx_net_request_free(request);
+
     size_t contact_sector_array_count = json_array_size(contact_sector_array);
+
+    /* load all actual id from database, set them to deleted. If they are found
+     * on the remote side, we set deleted to false and deletes only those still
+     * set to true.
+     * we don't really care if we fail to get those values as we prefer to have
+     * too much data than not enough
+     */
+    BXDatabaseQuery * query_ids = bx_database_new_query(app->mysql, "SELECT id FROM contact_sector WHERE _deleted = 0;");
+    if (query_ids != NULL) {
+        if (bx_database_execute(query_ids)) {
+            bx_database_results(query_ids);
+            if (query_ids->results != NULL && query_ids->row_count > 0) {
+                items = calloc(query_ids->row_count, sizeof(*items));
+                if (items != NULL) {
+                    int i = 0;
+                    for (BXDatabaseRow * current = query_ids->results; current != NULL; current = current->next) {
+                        items[i].deleted = true;
+                        items[i].item = current->columns[0].i_value;
+                        i++;
+                    }
+                    items_count = query_ids->row_count;
+                }
+            }
+        }
+    }
+    bx_database_free_query(query_ids);
+
     for (size_t i = 0; i < contact_sector_array_count; i++) {
         BXObjectContactSector * contact_sector = decode_object(json_array_get(contact_sector_array, i));
         
+        /* set to "not delete" items already in database */
+        if (items != NULL && items_count > 0) {
+            for (int j = 0; j < items_count; j++) {
+                if (items[j].item == contact_sector->remote_id.value) {
+                    items[j].deleted = false;
+                    break;
+                }
+            }
+        }
+
         if (contact_sector == NULL) {
             continue;
         }
@@ -92,5 +142,27 @@ bool bx_contact_sector_walk_items(bXill * app)
         bx_database_free_query(query);
     }
     json_decref(contact_sector_array);
+
+    if (items != NULL && items_count > 0) {
+        int64_t _to_delete = 0;
+        int64_t * to_delete = &_to_delete;
+        time_t now = time(NULL);
+        BXDatabaseQuery * query = bx_database_new_query(
+            app->mysql,
+            "UPDATE contact_sector SET _deleted = :_deleted  WHERE id = :id;"
+        );
+        bx_database_add_param_int64(query, ":_deleted ", &now);
+        bx_database_add_param_int64(query, ":id", to_delete);
+        for (int i = 0; i < items_count; i++) {
+            if (items[i].deleted) {
+                *to_delete = items[i].item;
+                bx_database_execute(query);
+            }
+        }
+        bx_database_free_query(query);
+    }
+    if (items != NULL) { free(items); }
+
+
     return true;
 }
