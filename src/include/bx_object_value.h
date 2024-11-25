@@ -52,6 +52,8 @@ struct s_BXBytes {
     size_t value_len;
 };
 
+char * bx_object_value_to_string(BXGeneric * value);
+
 #define BX_KEY_MAX_LEN  32
 inline static void _bx_dump_key(const char * key, int level) {
     int sp = BX_KEY_MAX_LEN - strlen(key) - ((level - 1) * 2);

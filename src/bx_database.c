@@ -362,12 +362,12 @@ bool bx_database_results(BXDatabaseQuery * query)
     MYSQL_RES * result;
     MYSQL_FIELD * fields;
 
-    result = mysql_stmt_result_metadata(query->stmt);    
+    result = mysql_stmt_result_metadata(query->stmt);
     if (result == NULL) {
         return false;
     }
-    int field_count = mysql_num_fields(result);
 
+    int field_count = mysql_num_fields(result);
     if (field_count <= 0) {
         mysql_free_result(result);
         return false;

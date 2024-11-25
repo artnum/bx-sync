@@ -148,7 +148,6 @@ inline static char * _bx_build_url(
         url[j++] = '?';
         while (head != NULL) {
             size_t name_len = strlen(head->name);
-            printf("%s %ld\n", head->name, name_len);
             memcpy(&url[j], head->name, name_len);
             j += name_len;
             url[j++] = '=';
@@ -177,7 +176,6 @@ BXNetRData * bx_fetch(BXNet * net, const char * version, const char * path, BXNe
         return NULL;
     }
     bx_mutex_unlock(&net->mutex);
-
     /* read data structure setup */
     BXNetRData * net_rdata = NULL;
     net_rdata = calloc(1, sizeof(*net_rdata));
@@ -293,7 +291,7 @@ BXNetRequest * bx_net_request_list_get_finished(
     BXNetRequest * retval = NULL;
     BXNetRequest * current = NULL;
     BXNetRequest * previous = NULL;
-    printf("WAIT FOR %ld\n", request_id);
+
     bx_mutex_lock(&list->mutex);
     for(current = list->head; current != NULL; current = current->next) {
         if (current->id == request_id) {
@@ -389,7 +387,6 @@ int bx_net_request_list_count(BXNetRequestList * list)
 }
 
 BXNetRequest * bx_net_request_new(
-    enum e_BXObjectType decoder,
     const char * version,
     const char * path,
     json_t * body
@@ -403,7 +400,6 @@ BXNetRequest * bx_net_request_new(
     if (new == NULL) {
         return NULL;
     }
-    new->decoder = decoder;
     new->decoded = NULL;
     atomic_store(&new->done, false);
     new->next = NULL;

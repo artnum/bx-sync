@@ -1,3 +1,4 @@
+#include "bx_decode.h"
 #include "bx_net.h"
 #include <bx_object_value.h>
 #include <bx_utils.h>
@@ -7,6 +8,8 @@
 #include <stddef.h>
 #include <mysql/mysql.h>
 #include <bx_database.h>
+#include <bxill.h>
+#include <unistd.h>
 
 void bx_object_contact_free(void * data)
 {
@@ -70,7 +73,6 @@ void bx_object_contact_store(MYSQL * mysql, BXObjectContact * contact)
 
 
         for (int i = 1; i <= contact_group_ids[0]; i++) {
-            printf("WRITE CONTACT GROUP ID %ld\n", contact_group_ids[i]);
             BXDatabaseQuery * select_cgi = bx_database_new_query(
                 mysql,
                 "SELECT group_id,contact_id FROM contact_group_to_contact_id "
@@ -196,7 +198,35 @@ void bx_object_contact_dump(void * data)
     _bx_dump_any("profile_image", &contact->remote_profile_image, 1);
 }
 
-void bx_contact_get_item(BXNetRequestList * net, MYSQL * mysql, BXGeneric * item)
+#define CONTACT_PATH    "contact/$"
+void bx_contact_sync_item(bXill * app, BXGeneric * item)
 {
+    assert(app != NULL);
+    assert(item != NULL);
+
+    BXNetRequest * request = bx_do_request(app->queue, NULL, CONTACT_PATH, item);
+    if(request == NULL) {
+        return;
+    }
+    BXObjectContact * contact = bx_object_contact_decode(request->decoded);
+    if (contact == NULL) {
+        bx_net_request_free(request);
+    }
+
+    int64_t * group_ids = bx_int_string_array_to_int_array(contact->remote_contact_groupd_ids.value);
+    if (group_ids != NULL) {
+        BXInteger item;
+        item.isset = true;
+        item.type = BX_OBJECT_TYPE_INTEGER;
+        for (int i = 0; i <= *group_ids; i++) {
+            item.value = *(group_ids + i);
+            bx_contact_group_sync_item(app, (BXGeneric *)&item);
+        }
+    }
+
+    int64_t * branch_ids = bx_int_string_array_to_int_array(contact->remote_contact_branch_ids.value);
+    if (branch_ids != NULL) {
+        
+    }
 
 }

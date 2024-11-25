@@ -14,6 +14,7 @@ enum e_BXObjectType {
     BXTypeNone = 0,
     BXTypeInvoice = 1,
     BXTypeContact,
+    BXTypeContactGroup,
     BXTypeInvoiceTax,
     BXTypeInvoicePositionCE,
     BXTypeInvoicePositionAE,

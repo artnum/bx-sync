@@ -1,3 +1,8 @@
+#include <bx_net.h>
+#include <bx_object_value.h>
+#include <bx_decode.h>
+#include <jansson.h>
+#include <stdarg.h>
 #include <sys/time.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -80,6 +85,7 @@ int64_t * bx_int_string_array_to_int_array(const char * str)
     char buffer[21]; /* up to 64 bits */
     int64_t * int_array = NULL;
 
+    if (str == NULL) { return NULL; }
     memset(buffer, 0, 21);
     int j = 0;
     for (int i = 0; str[i] != '\0'; i++) {
@@ -103,4 +109,105 @@ int64_t * bx_int_string_array_to_int_array(const char * str)
         _bx_utils_buffer_into_array(&int_array, buffer);
     }
     return int_array;
+}
+
+static inline char * _bx_item_to_path (const char * fmt, va_list ap)
+{
+    assert(fmt != NULL);
+    size_t fmt_len = strlen(fmt);
+    assert(fmt_len > 0);
+
+    size_t total_len = 0;
+    size_t origin = 0;
+    size_t i = 0;
+    char * path = NULL;
+    for (i = 0; i < fmt_len; i++) {
+        if (fmt[i] == '$') {
+            BXGeneric * item = va_arg(ap, BXGeneric *);
+            if (item == NULL) {
+                break;
+            }
+            char * str = bx_object_value_to_string(item);
+            if (str == NULL) {
+                break;
+            }
+            size_t str_len = strlen(str);
+            if (str_len == 0) {
+                free(str);
+                break;
+            }
+            total_len = i - origin + str_len + 1;
+            void * tmp = realloc(path, total_len);
+            if (tmp == NULL) {
+                free(str);
+                break;
+            }
+            path = tmp;
+            if (origin == 0) { *path = '\0'; }
+            strncat(path, &fmt[origin], i - origin);
+            strncat(path, str, str_len);
+            free(str);
+            origin = i + 1;
+        }
+    }
+    va_end(ap);
+
+    if (i != origin) {
+        total_len = i - origin + 1;
+        void * tmp = realloc(path, total_len);
+        if (tmp == NULL) {
+            return path;
+        }
+        path = tmp;
+        strncat(path, &fmt[origin], i - origin);
+    }
+
+    return path;
+}
+
+char * bx_item_to_path (const char * fmt, ...) 
+{
+    va_list ap;
+    va_start(ap, fmt);
+    return _bx_item_to_path(fmt, ap);
+}
+
+BXNetRequest * bx_do_request(
+    BXNetRequestList * queue,
+    json_t * body,
+    char * path_fmt,
+    ...
+) 
+{
+    BXNetRequest * request = NULL;
+    assert(path_fmt != NULL);
+    assert(queue != NULL);
+
+    va_list ap;
+    va_start(ap, path_fmt);
+
+    char * path = _bx_item_to_path(path_fmt, ap);
+    if (path == NULL) {
+        return NULL;
+    }
+    va_end(ap);
+    request = bx_net_request_new("2.0", path, NULL);
+    free(path);
+    if (request == NULL) {
+        return NULL;
+    }
+
+    uint64_t request_id = bx_net_request_list_add(queue, request);
+    while(atomic_load(&request->done) == false) { usleep(100); }
+    request = bx_net_request_list_get_finished(queue, request_id);
+    if (request == NULL) {
+        return NULL;
+    }
+    json_t * json = bx_decode_net(request);
+    if (json == NULL) {
+        bx_net_request_free(request);
+        return NULL;
+    }
+    request->decoded = json;
+    return request;
 }

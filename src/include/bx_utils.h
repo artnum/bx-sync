@@ -2,6 +2,7 @@
 #define BX_UTILS_H__
 
 #include <bx_mutex.h>
+#include <bx_net.h>
 
 typedef struct {
     uint32_t seed;
@@ -22,4 +23,11 @@ bool bx_utils_gen_id(uint64_t * id);
  * \return The int array, index 0 is the number of items. NULL if no item.
  */
 int64_t * bx_int_string_array_to_int_array(const char * str);
+char * bx_item_to_path (const char * fmt, ...);
+BXNetRequest * bx_do_request(
+    BXNetRequestList * queue,
+    json_t * body,
+    char * path_fmt,
+    ...
+);
 #endif /* BX_UTILS_H__ */

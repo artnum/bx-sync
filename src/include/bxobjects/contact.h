@@ -4,6 +4,7 @@
 #include <bx_object.h>
 #include <bx_object_value.h>
 #include <jansson.h>
+#include <bxobjects/contact_group.h>
 
 typedef struct s_BXObjectContact BXObjectContact;
 struct s_BXObjectContact {
@@ -50,4 +51,6 @@ void bx_object_contact_dump(void * data);
 void * bx_object_contact_decode(void * object);
 void bx_object_contact_free(void * data);
 void bx_object_contact_store(MYSQL * mysql, BXObjectContact * contact);
+void bx_contact_sync_item(bXill * app, BXGeneric * item);
+
 #endif /* BX_OBJECT_CONTACT_H__ */

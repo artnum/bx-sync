@@ -34,7 +34,6 @@ typedef struct s_BXNetRequest BXNetRequest;
 struct s_BXNetRequest {
     atomic_bool done;
     uint64_t id;
-    enum e_BXObjectType decoder;
     char * version;
     char * path;
     json_t * decoded;
@@ -65,7 +64,6 @@ int bx_net_request_list_count(BXNetRequestList * list);
 void bx_net_request_list_destroy(BXNetRequestList * list);
 bool bx_net_request_add_param(BXNetRequest * request, const char * name, const char * value);
 BXNetRequest * bx_net_request_new(
-    enum e_BXObjectType decoder,
     const char * version,
     const char * path,
     json_t * body

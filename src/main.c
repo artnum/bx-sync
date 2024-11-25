@@ -1,10 +1,13 @@
-#include "bxobjects/contact.h"
+#include "bx_object_value.h"
+#include "bxobjects/contact_group.h"
+#include <bxobjects/contact.h>
 #include <bx_conf.h>
 #include <bx_net.h>
 #include <bx_decode.h>
 #include <bx_object.h>
 #include <bxobjects/invoice.h>
 #include <bx_utils.h>
+#include <bxill.h>
 
 #include <jansson.h>
 #include <mariadb/ma_list.h>
@@ -20,9 +23,12 @@ int main(int argc, char ** argv)
 {
     BXConf * conf = NULL;
     MYSQL * mysql = NULL;
+    bXill app;
 
     mysql_library_init(argc, argv, NULL);
     mysql = mysql_init(mysql);
+    app.mysql = mysql;
+
     bx_utils_init();
 
     conf = bx_conf_init();
@@ -52,9 +58,16 @@ int main(int argc, char ** argv)
         fprintf(stderr, "Net configuration failed");
         exit(0);
     }
+    app.net = net;
     BXNetRequestList * queue = bx_net_request_list_init(net);
+    app.queue = queue;
     pthread_t request_thread = bx_net_loop(queue);
     
+    BXInteger item = {.isset = 1, .value = 2, .type = BX_OBJECT_TYPE_INTEGER };
+    bx_contact_sync_item(&app, (BXGeneric *)&item);
+
+
+    /*
     BXNetRequest * request = NULL;
     request = bx_net_request_new(BXTypeContact, "2.0", "contact/2", NULL);
     uint64_t c2 = bx_net_request_list_add(queue, request);
@@ -98,7 +111,7 @@ int main(int argc, char ** argv)
         bx_net_request_free(request);
         request = NULL;
     }
-
+    */
     
     atomic_store(&queue->run, 0);
     pthread_join(request_thread, NULL);
