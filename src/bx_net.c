@@ -5,6 +5,7 @@
 
 #include <curl/curl.h>
 #include <curl/easy.h>
+#include <curl/urlapi.h>
 #include <jansson.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -163,9 +164,9 @@ inline static char * _bx_build_url(
     return url;
 }
 
-#define RLIMIT_LIMIT "ratelimit-limit"
-#define RLIMIT_REMAIN "ratelimit-remaining"
-#define RLIMIT_RESET "ratelimit-reset"
+#define RLIMIT_LIMIT    "ratelimit-limit"
+#define RLIMIT_REMAIN   "ratelimit-remaining"
+#define RLIMIT_RESET    "ratelimit-reset"
 
 static inline size_t bx_header_callback(char * buffer, size_t size, size_t item_count, void * data)
 {
@@ -304,7 +305,8 @@ BXNetRData * bx_fetch(BXNet * net, const char * path, BXNetURLParams * params)
         goto failUnlockFreeAndReturn;
     }
     clock_t stop = clock();
-    net->average_request_time = ((stop - start) + net->average_request_time * net->request_count) / ++net->request_count;
+    net->request_count++;
+    net->average_request_time = ((stop - start) + net->average_request_time * net->request_count) / (net->request_count);
     bx_log_error("[NET TIME] Immediate : %ld us With Average %ld us\n", stop - start, net->average_request_time);
     curl_easy_getinfo(net->curl, CURLINFO_RESPONSE_CODE, &net_rdata->http_code);
 
@@ -623,7 +625,7 @@ void bx_net_request_free(BXNetRequest * request)
     free(request);
 }
 
-#define DEFAULT_RATELIMIT_US   10 /*  */
+#define DEFAULT_RATELIMIT_US   60000 /* 1000 requests per minute */
 
 static void * _bx_net_loop_worker(void * l)
 {
@@ -635,7 +637,8 @@ static void * _bx_net_loop_worker(void * l)
     bx_mutex_unlock(&list->mutex);
 
     int us_sleep = DEFAULT_RATELIMIT_US;
-    int last_rtime = 0;
+    uint64_t request_count = 0;
+    const float max_request_share = 1;
     while(atomic_load(&list->run)) {
         BXNetRequest * request = NULL;
 
@@ -648,7 +651,30 @@ static void * _bx_net_loop_worker(void * l)
             bx_net_request_list_add(list, request);
             atomic_store(&request->done, true);
             bx_mutex_lock(&net->mutex_limit);
-            bx_log_error("LIMIT %d, REMAINING %d, RESET %d\n", net->limits.max_request, net->limits.remaining_request, net->limits.reset_time);
+
+            /*
+             * Cumulative average of time slice. Trying to use as much bandwith
+             * as allowed without using too much. As, with each request, we get
+             * remaining requests for a given time, we can speed up or reduce
+             * our request timing. So if it's already in heavy use, the request
+             * rate will drop and go back up when bandwith is available.
+             * It might not please people at bexio, as this is designed to run
+             * 24/7, but we pay for this bandwith we use it.
+             */
+            float us_sleep_1 = (
+                ((float)net->limits.reset_time * 1000000)
+                / (max_request_share * (float)net->limits.remaining_request)
+            );
+
+            float average_us_sleep = (us_sleep_1
+                + (us_sleep * (net->request_count - 1))
+            ) / net->request_count;
+            us_sleep = (int)average_us_sleep;
+            request_count++;
+            if (us_sleep <= 0 || us_sleep > DEFAULT_RATELIMIT_US * 100) { 
+                us_sleep = DEFAULT_RATELIMIT_US;
+            }
+            bx_log_error("US_SLEEP %d, LIMIT %d, REMAINING %d, RESET %d\n", us_sleep, net->limits.max_request, net->limits.remaining_request, net->limits.reset_time);
             bx_mutex_unlock(&net->mutex_limit);
         }
 
