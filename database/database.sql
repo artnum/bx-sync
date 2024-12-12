@@ -1,25 +1,37 @@
 CREATE TABLE IF NOT EXISTS contact_group (
-    id BIGINT PRIMARY KEY,
+    id BIGINT UNSIGNED PRIMARY KEY,
     name TEXT NOT NULL,
     _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
-    INDEX USING HASH _checksum,
-    INDEX USING HASH _deleted,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    INDEX USING HASH (_checksum),
+    INDEX USING HASH (_deleted)
 );
 
 CREATE TABLE IF NOT EXISTS contact_sector (
-    id BIGINT PRIMARY KEY,
+    id BIGINT UNSIGNED PRIMARY KEY,
     name TEXT NOT NULL,
     _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
-    INDEX USING HASH _checksum,
-    INDEX USING HASH _deleted,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    INDEX USING HASH (_checksum),
+    INDEX USING HASH (_deleted)
+);
+
+CREATE TABLE IF NOT EXISTS cs2c (
+    contact_sector BIGINT UNSIGNED,
+    contact BIGINT UNSIGNED,
+    PRIMARY KEY(contact_sector, contact)
+);
+
+CREATE TABLE IF NOT EXISTS cg2c (
+    contact_group BIGINT UNSIGNED,
+    contact BIGINT UNSIGNED,
+    PRIMARY KEY(contact_group, contact)
 );
 
 CREATE TABLE IF NOT EXISTS user (
-    id BIGINT PRIMARY KEY,
+    id BIGINT UNSIGNED PRIMARY KEY,
     salutation_type VARCHAR(20) NOT NULL,
     firstname VARCHAR(80) NOT NULL DEFAULT "",
     lastname VARCHAR(80) NOT NULL DEFAULT "",
@@ -29,18 +41,18 @@ CREATE TABLE IF NOT EXISTS user (
     _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
     _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    INDEX USING HASH _checksum,
-    INDEX USING HASH _deleted
+    INDEX USING HASH (_checksum),
+    INDEX USING HASH (_deleted)
 );
 
 CREATE TABLE IF NOT EXISTS contact (
-    id BIGINT PRIMARY KEY,
-    contact_type_id BIGINT,
-    salutation_id BIGINT NULL,
+    id BIGINT UNSIGNED PRIMARY KEY,
+    contact_type_id BIGINT UNSIGNED,
+    salutation_id BIGINT UNSIGNED NULL,
     country CHAR(2) NULL,
-    user_id BIGINT,
-    owner_id BIGINT,
-    title_id BIGINT NULL,
+    user_id BIGINT UNSIGNED,
+    owner_id BIGINT UNSIGNED,
+    title_id BIGINT UNSIGNED NULL,
     salutation_form BIGINT NULL,
     postcode TEXT NULL,
     nr TEXT,
@@ -63,6 +75,8 @@ CREATE TABLE IF NOT EXISTS contact (
     _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
     _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (owner_id) REFERENCES user(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     INDEX USING HASH (_checksum),
     INDEX USING HASH (_deleted)
 );

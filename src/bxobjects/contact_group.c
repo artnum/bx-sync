@@ -102,11 +102,11 @@ bool bx_contact_group_sync_item(bXill * app, BXGeneric * item)
         query = bx_database_new_query(
             app->mysql,
             "INSERT INTO contact_group (_checksum, id, name, _last_updated)"
-            "VALUES (:_checksum, :id, :name, :_last_updated);"
+            " VALUES (:_checksum, :id, :name, :_last_updated);"
         );
         bx_database_add_param_char(query, ":name", contact_group->remote_name.value, contact_group->remote_name.value_len);
         bx_database_add_param_uint64(query, ":_checksum", &contact_group->checksum);
-        bx_database_add_param_int64(query, ":id", &contact_group->remote_id.value);
+        bx_database_add_param_uint64(query, ":id", &contact_group->remote_id.value);
         bx_database_add_param_uint64(query, ":_last_updated", &now);
         bx_database_execute(query);
         bx_database_free_query(query);

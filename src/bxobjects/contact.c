@@ -199,6 +199,51 @@ void bx_object_contact_dump(void * data)
     _bx_dump_any("profile_image", &contact->remote_profile_image, 1);
 }
 
+
+static void contact_group_sync(bXill * app, BXObjectContact * contact)
+{
+    BXDatabaseQuery * query = NULL;
+    uint64_t * group_ids = (uint64_t *)bx_int_string_array_to_int_array(contact->remote_contact_groupd_ids.value);
+    if (group_ids == NULL) { return; }
+    BXInteger item;
+    item.isset = true;
+    item.type = BX_OBJECT_TYPE_INTEGER;
+    for (int i = 0; i <= *group_ids; i++) {
+        item.value = *(group_ids + i);
+        if (!bx_contact_group_sync_item(app, (BXGeneric *)&item)) {
+            continue;
+        }
+        query = bx_database_new_query(
+            app->mysql,
+            "SELECT contact_group FROM cg2c WHERE contact = :cid AND contact_group = :cgid"
+        );
+        if (query == NULL) { continue; }
+        bx_database_add_param_uint64(query, ":cid", &contact->remote_id.value);
+        bx_database_add_param_uint64(query, ":cgid", &item.value);
+        bx_database_execute(query);
+        bx_database_results(query);
+        if (query->results == NULL || query->row_count <= 0) {
+            bx_database_free_query(query);
+            query = NULL;
+            query = bx_database_new_query(
+                app->mysql, 
+                "INSERT INTO cg2c (contact, contact_group)"
+                " VALUES (:cid, :cgid)"
+            );
+            if (query == NULL) {
+                continue;
+            }
+            bx_database_add_param_uint64(query, ":cid", &contact->remote_id.value);
+            bx_database_add_param_uint64(query, ":cgid", &item.value);
+            bx_database_execute(query);
+        }
+        /* query is allocated*/
+        bx_database_free_query(query);
+    }
+
+    free(group_ids);
+}
+
 #define GET_CONTACT_PATH    "2.0/contact/$"
 bool bx_contact_sync_item(bXill * app, BXGeneric * item)
 {
@@ -221,25 +266,6 @@ bool bx_contact_sync_item(bXill * app, BXGeneric * item)
     bx_user_sync_item(app, (BXGeneric *)&contact->remote_user_id);
     if (contact->remote_user_id.value != contact->remote_owner_id.value) {
         bx_user_sync_item(app, (BXGeneric *)&contact->remote_owner_id);
-    }
-
-    int64_t * group_ids = bx_int_string_array_to_int_array(contact->remote_contact_groupd_ids.value);
-    if (group_ids != NULL) {
-        BXInteger item;
-        item.isset = true;
-        item.type = BX_OBJECT_TYPE_INTEGER;
-        for (int i = 0; i <= *group_ids; i++) {
-            item.value = *(group_ids + i);
-            if (!bx_contact_group_sync_item(app, (BXGeneric *)&item)) {
-                continue;
-            }
-        }
-        free(group_ids);
-    }
-
-    int64_t * branch_ids = bx_int_string_array_to_int_array(contact->remote_contact_branch_ids.value);
-    if (branch_ids != NULL) {
-        free(branch_ids);
     }
 
     BXDatabaseQuery * query = bx_database_new_query(
@@ -274,6 +300,7 @@ bool bx_contact_sync_item(bXill * app, BXGeneric * item)
     } else {
         if (query->results[0].columns[0].i_value == contact->checksum) {
             bx_database_free_query(query);
+            contact_group_sync(app, contact);
             bx_object_contact_free(contact);
             return true;
         }
@@ -299,13 +326,13 @@ bool bx_contact_sync_item(bXill * app, BXGeneric * item)
         return false;
     }
     int now = time(NULL);
-    bx_database_add_param_int64(query, ":id", &contact->remote_id.value);
-    bx_database_add_param_int64(query, ":contact_type_id", &contact->remote_contact_type_id.value);
-    bx_database_add_param_int64(query, ":salutation_id", &contact->remote_salutation_id.value);
-    bx_database_add_param_int64(query, ":user_id", &contact->remote_user_id.value);
-    bx_database_add_param_int64(query, ":owner_id", &contact->remote_owner_id.value);
-    bx_database_add_param_int64(query, ":title_id", &contact->remote_title_id.value);
-    bx_database_add_param_int64(query, ":salutation_form", &contact->remote_salutation_form.value);
+    bx_database_add_param_uint64(query, ":id", &contact->remote_id.value);
+    bx_database_add_param_uint64(query, ":contact_type_id", &contact->remote_contact_type_id.value);
+    bx_database_add_param_uint64(query, ":salutation_id", &contact->remote_salutation_id.value);
+    bx_database_add_param_uint64(query, ":user_id", &contact->remote_user_id.value);
+    bx_database_add_param_uint64(query, ":owner_id", &contact->remote_owner_id.value);
+    bx_database_add_param_uint64(query, ":title_id", &contact->remote_title_id.value);
+    bx_database_add_param_uint64(query, ":salutation_form", &contact->remote_salutation_form.value);
     bx_database_add_param_uint64(query, ":_checksum", &contact->checksum);
     bx_database_add_param_uint64(query, ":_last_updated", &now);
 
@@ -330,6 +357,14 @@ bool bx_contact_sync_item(bXill * app, BXGeneric * item)
     bx_database_add_param_char(query, ":country", (void *)bx_country_list_get_code(contact->remote_country_id.value), 2);
     bx_database_execute(query);
     bx_database_free_query(query);
+    query = NULL;
+
+    contact_group_sync(app, contact);
+
+    uint64_t * branch_ids = (uint64_t *)bx_int_string_array_to_int_array(contact->remote_contact_branch_ids.value);
+    if (branch_ids != NULL) {
+        free(branch_ids);
+    }
 
     bx_object_contact_free(contact);
     

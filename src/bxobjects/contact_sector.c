@@ -125,7 +125,7 @@ bool bx_contact_sector_walk_items(bXill * app)
             );
             bx_database_add_param_char(query, ":name", contact_sector->remote_name.value, contact_sector->remote_name.value_len);
             bx_database_add_param_uint64(query, ":_checksum", &contact_sector->checksum);
-            bx_database_add_param_int64(query, ":id", &contact_sector->remote_id.value);
+            bx_database_add_param_uint64(query, ":id", &contact_sector->remote_id.value);
             bx_database_add_param_uint64(query, ":_last_updated", &now);
             bx_database_execute(query);
             bx_database_free_query(query);
