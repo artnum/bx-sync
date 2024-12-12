@@ -45,6 +45,7 @@ struct s_BXNetURLParams {
 typedef struct s_BXNetRequest BXNetRequest;
 struct s_BXNetRequest {
     atomic_bool done;
+    atomic_bool cancel;
     uint64_t id;
     char * path;
     json_t * decoded;

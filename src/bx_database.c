@@ -84,7 +84,7 @@ BXDatabaseQuery * bx_database_new_query(MYSQL * mysql, const char * query)
     }
     new->stmt = mysql_stmt_init(mysql);
     if (new->stmt == NULL) {
-        bx_log_error("[MYSQL ERROR] %s\n", mysql_stmt_error(new->stmt));
+        bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(new->stmt));
         free(new);
         return NULL;
     }
@@ -129,7 +129,6 @@ BXDatabaseQuery * bx_database_new_query(MYSQL * mysql, const char * query)
         }
     }
     new->param_count = param_count;
-    new->param_pos = 0;
     new->parameters = calloc(new->param_count, sizeof(*new->parameters));
     if (new->parameters == NULL) {
         mysql_stmt_close(new->stmt);
@@ -137,26 +136,30 @@ BXDatabaseQuery * bx_database_new_query(MYSQL * mysql, const char * query)
         free(new);
         return NULL;
     }
+
+    int j = 0;
+    param_count = 0;
+    for (int i = 0; i < new->query_length; i++) {
+        new->query[j] = new->query[i];
+        if (new->query[i] == ':' 
+            && i + 1 < new->query_length
+            && _is_variable_char(new->query[i+1])
+        ) {
+            int k = i + 1;
+            for (; k < new->query_length && _is_variable_char(new->query[k]); k++);
+            memcpy(new->parameters[param_count].name, &new->query[i], k - i);
+            new->parameters[param_count].name[k - i + 1] = '\0';
+            new->parameters[param_count].name_length = k - i;
+            param_count++;
+            new->query[j] = '?';
+            i = k - 1;
+        }
+        j++;
+    }
+    new->query[j] = '\0';
+    bx_log_debug("%s", new->query);
     new->exectued = false;
     return new;
-}
-
-static inline BXDatabaseParameter * _get_next_param(
-    BXDatabaseQuery * query,
-    const char * name
-)
-{
-    if (query->param_pos >= query->param_count) {
-        return NULL;
-    }
-    BXDatabaseParameter * param = &query->parameters[query->param_pos++];
-    size_t name_len = strlen(name);
-    if (name_len <= 0 || name_len > BX_DATABASE_PARAMETER_MAX_NAME_LENGTH - 1) {
-        return NULL;
-    }
-    memcpy(param->name, name, name_len);
-    param->name_length = name_len;
-    return param;
 }
 
 static inline BXDatabaseParameter * _find_param (
@@ -200,7 +203,7 @@ bool bx_database_add_param_str(
     assert(query != NULL);
     assert(name != NULL);
 
-    BXDatabaseParameter * param = _get_next_param(query, name);
+    BXDatabaseParameter * param = _find_param(query, name);
     if (param == NULL) {
         return false;
     }
@@ -226,7 +229,7 @@ bool bx_database_add_param_int(
     assert(query != NULL);
     assert(name != NULL);
 
-    BXDatabaseParameter * param = _get_next_param(query, name);
+    BXDatabaseParameter * param = _find_param(query, name);
     if (param == NULL) {
         return false;
     }    
@@ -256,6 +259,11 @@ static inline void _bx_database_param_to_bind(MYSQL_BIND * bind, BXDatabaseParam
         case MYSQL_TYPE_VAR_STRING:
         case MYSQL_TYPE_STRING:
         case MYSQL_TYPE_BLOB:
+            if (parameter->value == NULL) {
+                parameter->is_null = true;
+                parameter->value_length = 0;
+                bind->buffer_type =  MYSQL_TYPE_NULL;
+            }
             bind->buffer_length = parameter->value_length;
             bind->length = &parameter->value_length;
             break;
@@ -266,10 +274,6 @@ bool bx_database_execute(BXDatabaseQuery * query)
 {
     assert(query != NULL);
     MYSQL_BIND * binds = NULL;
-    if (query->param_pos != query->param_count) { 
-        return false; 
-    }
-
     if (query->exectued) {
         mysql_stmt_reset(query->stmt);
     } else {
@@ -277,41 +281,25 @@ bool bx_database_execute(BXDatabaseQuery * query)
         if (binds == NULL) {
             return false;
         }
-
-        int param_pos = 0;
-        int k = 0;
-        for (int i = 0; i < query->query_length; i++,k++) {
-            if (query->query[i] == ':') {
-                for (int j = 0; j < query->param_count; j++) {
-                    if (strncmp(&query->query[i], query->parameters[j].name, query->parameters[j].name_length) == 0) {
-                        query->parameters[j].param = param_pos;
-                        _bx_database_param_to_bind(&binds[param_pos], &query->parameters[j]);
-                        query->query[k] = '?';
-                        i += query->parameters[j].name_length - 1;
-                        param_pos++;
-                        break;
-                    }
-                }
-            } else {
-                query->query[k] = query->query[i];
-            }
+        for (int i = 0; i < query->param_count; i++) {
+             _bx_database_param_to_bind(&binds[i], &query->parameters[i]);
         }
-        memset(&query->query[k], 0, query->query_length - k);    
-        if(mysql_stmt_prepare(query->stmt, query->query, k - 1) != 0) {
-            bx_log_error("[MYSQL ERROR] %s %s\n", query->query, mysql_stmt_error(query->stmt));
+
+        if(mysql_stmt_prepare(query->stmt, query->query, strlen(query->query)) != 0) {
+            bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(query->stmt));
             free(binds);
             return false;
         }
 
         if (mysql_stmt_bind_param(query->stmt, binds) != 0) {
-            bx_log_error("[MYSQL ERROR] %s\n", mysql_stmt_error(query->stmt));
+            bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(query->stmt));
             free(binds);
             return false;
         }
     }
     
     if (mysql_stmt_execute(query->stmt) != 0) {
-        bx_log_error("[MYSQL ERROR] %s\n", mysql_stmt_error(query->stmt));
+        bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(query->stmt));
         free(binds);
         return false;
     }
@@ -384,7 +372,7 @@ bool bx_database_results(BXDatabaseQuery * query)
 
     result = mysql_stmt_result_metadata(query->stmt);
     if (result == NULL) {
-        bx_log_error("[MYSQL ERROR] %s\n", mysql_stmt_error(query->stmt));
+        bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(query->stmt));
         return false;
     }
 
@@ -414,7 +402,7 @@ bool bx_database_results(BXDatabaseQuery * query)
     }
     int fetch_success = 0;
     int row_count = 0;
-    do {
+    while(1) {
         BXDatabaseRow * row = NULL;
         row = calloc(1, sizeof(*row));
         if (row == NULL) {
@@ -474,8 +462,9 @@ bool bx_database_results(BXDatabaseQuery * query)
         }
 
         fetch_success = mysql_stmt_fetch(query->stmt);
-
-        if (fetch_success != 0 && fetch_success != MYSQL_DATA_TRUNCATED) {
+        if (fetch_success == 1 
+            || fetch_success == MYSQL_NO_DATA
+        ) {
             free(row);
             free(columns);
             break;
@@ -509,7 +498,7 @@ bool bx_database_results(BXDatabaseQuery * query)
             current->next = row;
         }
         memset(binds, 0, sizeof(*binds) * field_count);
-    } while(fetch_success == 0 || fetch_success == MYSQL_DATA_TRUNCATED);
+    }
     /* row_count is always one step ahead of real count */
     query->row_count = row_count - 1;
     mysql_free_result(result);

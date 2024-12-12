@@ -90,7 +90,8 @@ void bx_net_destroy(BXNet ** net)
 {
     assert(net != NULL);
     assert(*net != NULL);
-    bx_mutex_lock(&(*net)->mutex);
+    assert(bx_mutex_lock(&(*net)->mutex) != false);
+
     if ((*net)->endpoint != NULL) { free((*net)->endpoint); }
     if ((*net)->auth_token != NULL) { free((*net)->auth_token); }
     if ((*net)->curl != NULL) { curl_easy_cleanup((*net)->curl); }
@@ -186,7 +187,7 @@ static inline size_t bx_header_callback(char * buffer, size_t size, size_t item_
         if (*b == 0) { return size * item_count; }
         int v = strtol(b, NULL, 10);
         if (v == 0) { return size * item_count; }
-        bx_mutex_lock(&net->mutex_limit);
+        assert(bx_mutex_lock(&net->mutex_limit) != false);
         net->limits.max_request = v;
         bx_mutex_unlock(&net->mutex_limit);
         return size * item_count;
@@ -201,7 +202,7 @@ static inline size_t bx_header_callback(char * buffer, size_t size, size_t item_
         if (*b == 0) { return size * item_count; }
         int v = strtol(b, NULL, 10);
         if (v == 0) { return size * item_count; }
-        bx_mutex_lock(&net->mutex_limit);
+        assert(bx_mutex_lock(&net->mutex_limit) != false);
         net->limits.remaining_request = v;
         bx_mutex_unlock(&net->mutex_limit);
         return size * item_count;
@@ -216,7 +217,7 @@ static inline size_t bx_header_callback(char * buffer, size_t size, size_t item_
         if (*b == 0) { return size * item_count; }
         int v = strtol(b, NULL, 10);
         if (v == 0) { return size * item_count; }
-        bx_mutex_lock(&net->mutex_limit);
+        assert(bx_mutex_lock(&net->mutex_limit) != false);
         net->limits.reset_time = v;
         bx_mutex_unlock(&net->mutex_limit);
         return size * item_count;
@@ -230,7 +231,7 @@ BXNetRData * bx_fetch(BXNet * net, const char * path, BXNetURLParams * params)
     assert(net != NULL);
     assert(path != NULL);
 
-    bx_mutex_lock(&net->mutex);    
+    assert(bx_mutex_lock(&net->mutex) != false);
     char * url = _bx_build_url(net->endpoint, net->endpoint_len, path, params);
     if (url == NULL) {
         bx_mutex_unlock(&net->mutex);
@@ -278,7 +279,7 @@ BXNetRData * bx_fetch(BXNet * net, const char * path, BXNetURLParams * params)
     header_list = tmp;
 
     /* critical section */
-    bx_mutex_lock(&net->mutex);
+    assert(bx_mutex_lock(&net->mutex) != false);
     if (curl_easy_setopt(net->curl, CURLOPT_HEADERFUNCTION, bx_header_callback) != CURLE_OK) {
         goto failUnlockFreeAndReturn;
     }
@@ -307,7 +308,7 @@ BXNetRData * bx_fetch(BXNet * net, const char * path, BXNetURLParams * params)
     clock_t stop = clock();
     net->request_count++;
     net->average_request_time = ((stop - start) + net->average_request_time * net->request_count) / (net->request_count);
-    bx_log_error("[NET TIME] Immediate : %ld us With Average %ld us\n", stop - start, net->average_request_time);
+    bx_log_debug("[NET TIME] Immediate : %ld us With Average %ld us", stop - start, net->average_request_time);
     curl_easy_getinfo(net->curl, CURLINFO_RESPONSE_CODE, &net_rdata->http_code);
 
     curl_slist_free_all(header_list);
@@ -349,7 +350,9 @@ uint64_t bx_net_request_list_add(BXNetRequestList * list, BXNetRequest * request
     assert(list != NULL);
     assert(request != NULL);
     uint64_t retval = 0;
-    bx_mutex_lock(&list->mutex);
+    if (!bx_mutex_lock(&list->mutex)) {
+        return retval;
+    }
     if (request->id == 0) { request->id = ++list->next_id; }
     if (_bx_net_request_list_add(list, request)) {
         retval = request->id;
@@ -368,7 +371,9 @@ BXNetRequest * bx_net_request_list_get_finished(
     BXNetRequest * current = NULL;
     BXNetRequest * previous = NULL;
 
-    bx_mutex_lock(&list->mutex);
+    if (!bx_mutex_lock(&list->mutex)) {
+        return NULL;
+    }
     for(current = list->head; current != NULL; current = current->next) {
         if (current->id == request_id) {
             if (atomic_load(&current->done) == false) {
@@ -408,11 +413,19 @@ BXNetRequest * _bx_next_request_list_remove(BXNetRequestList * list, bool done)
     return NULL;
 }
 
+void bx_net_request_list_cancel(BXNetRequestList * list)
+{
+    assert(list != NULL);
+    for (BXNetRequest * current = list->head; current != NULL; current = current->next) {
+        atomic_store(&current->cancel, true);
+    }
+}
+
 BXNetRequest * bx_net_request_list_remove(BXNetRequestList * list, bool done)
 {
     assert(list != NULL);
     BXNetRequest * retval = NULL;
-    bx_mutex_lock(&list->mutex);
+    assert(bx_mutex_lock(&list->mutex) != false);
     retval = _bx_next_request_list_remove(list, done);
     bx_mutex_unlock(&list->mutex);
     return retval;
@@ -435,7 +448,7 @@ void bx_net_request_list_destroy(BXNetRequestList * list)
 {
     BXNetRequest * current = NULL;
     BXNetRequest * next = NULL;
-    bx_mutex_lock(&list->mutex);
+    assert(bx_mutex_lock(&list->mutex) != false);
     current = list->head;
     while (current != NULL) {
         next = current->next;
@@ -453,7 +466,7 @@ int bx_net_request_list_count(BXNetRequestList * list)
     assert(list != NULL);
     BXNetRequest * current;
     int i = 0;
-    bx_mutex_lock(&list->mutex);
+    assert(bx_mutex_lock(&list->mutex) != false);
     for(current = list->head; current; current = current->next) {
         i++;
     }
@@ -475,6 +488,7 @@ BXNetRequest * bx_net_request_new(
     }
     new->decoded = NULL;
     atomic_store(&new->done, false);
+    atomic_store(&new->cancel, false);
     new->next = NULL;
     new->params = NULL;
     new->response = NULL;
@@ -632,16 +646,16 @@ static void * _bx_net_loop_worker(void * l)
     BXNetRequestList * list = (BXNetRequestList *)l;
     BXNet * net;
 
-    bx_mutex_lock(&list->mutex);
+    assert(bx_mutex_lock(&list->mutex) != false);
     net = list->net;
     bx_mutex_unlock(&list->mutex);
 
     int us_sleep = DEFAULT_RATELIMIT_US;
     uint64_t request_count = 0;
     const float max_request_share = 1;
-    while(atomic_load(&list->run)) {
-        BXNetRequest * request = NULL;
+    BXNetRequest * request = NULL;
 
+    while(atomic_load(&list->run)) {
         request = bx_net_request_list_remove(list, false);
         if (request != NULL) {
             /* request is locked in search loop */
@@ -650,8 +664,9 @@ static void * _bx_net_loop_worker(void * l)
             /* readd in list so it can be processed */
             bx_net_request_list_add(list, request);
             atomic_store(&request->done, true);
-            bx_mutex_lock(&net->mutex_limit);
+            request = NULL;
 
+            assert(bx_mutex_lock(&net->mutex_limit) != false);
             /*
              * Cumulative average of time slice. Trying to use as much bandwith
              * as allowed without using too much. As, with each request, we get
@@ -674,13 +689,30 @@ static void * _bx_net_loop_worker(void * l)
             if (us_sleep <= 0 || us_sleep > DEFAULT_RATELIMIT_US * 100) { 
                 us_sleep = DEFAULT_RATELIMIT_US;
             }
-            bx_log_error("US_SLEEP %d, LIMIT %d, REMAINING %d, RESET %d\n", us_sleep, net->limits.max_request, net->limits.remaining_request, net->limits.reset_time);
+            bx_log_debug(
+                "US_SLEEP %d, LIMIT %d, REMAINING %d, RESET %d",
+                us_sleep,
+                net->limits.max_request,
+                net->limits.remaining_request,
+                net->limits.reset_time
+            );
             bx_mutex_unlock(&net->mutex_limit);
         }
 
         /* don't load server too much */
         usleep(us_sleep);
     }
+
+    bx_log_debug("Emptying undone request list as we go away");
+    assert(bx_mutex_lock(&list->mutex) != false);
+    bx_net_request_list_cancel(list);
+    sleep(3);
+    bx_mutex_unlock(&list->mutex);
+    while((request = bx_net_request_list_remove(list, false)) != NULL) {
+        bx_net_request_free(request);
+        request = NULL;
+    }
+    
     return 0;
 }
 

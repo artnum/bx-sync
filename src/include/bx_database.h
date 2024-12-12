@@ -56,7 +56,6 @@ struct s_BXDatabaseQuery {
     
     BXDatabaseParameter * parameters;
     int param_count;
-    int param_pos;
     
     BXDatabaseField * fields;
     int field_count;

@@ -9,6 +9,7 @@ typedef struct {
     BXMutex mutex;
 } BXUtilsPRNGState;
 
+void bx_log_init();
 void bx_utils_init(void);
 bool bx_utils_gen_id(uint64_t * id);
 /**
@@ -30,9 +31,15 @@ BXNetRequest * bx_do_request(
     char * path_fmt,
     ...
 );
-void _bx_log_error(char * file, int line, const char *fmt, ...);
-#define bx_log_error(fmt, ...)  _bx_log_error(__FILE__, __LINE__, (fmt), __VA_ARGS__)
 
+/* Logging functions */
+void _bx_log_error(char * file, int line, const char *fmt, ...);
+void _bx_log_info(char * file, int line, const char *fmt, ...);
+void _bx_log_debug(char * file, int line, const char *fmt, ...);
+#define bx_log_error(fmt, ...)      _bx_log_error(__FILE__, __LINE__, (fmt) __VA_OPT__ (,) __VA_ARGS__)
+#define bx_log_info(fmt, ...)       _bx_log_info(__FILE__, __LINE__, (fmt) __VA_OPT__ (,) __VA_ARGS__)
+#define bx_log_debug(fmt, ...)       _bx_log_debug(__FILE__, __LINE__, (fmt) __VA_OPT__ (,) __VA_ARGS__)
+void bx_log_end();
 bool bx_string_compare(const char * str1, const char * str2, size_t max);
 
 #endif /* BX_UTILS_H__ */

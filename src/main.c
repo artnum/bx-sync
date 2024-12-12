@@ -1,5 +1,7 @@
+#include "bx_mutex.h"
 #include "bx_object_value.h"
 #include "bxobjects/contact_group.h"
+#include "bxobjects/country_code.h"
 #include <bxobjects/contact.h>
 #include <bx_conf.h>
 #include <bx_net.h>
@@ -19,17 +21,58 @@
 #include <string.h>
 #include <threads.h>
 #include <unistd.h>
+#include <ncurses.h>
+#include <sys/ioctl.h>
+
+#define MAX_COMMAND_LEN 100
+WINDOW * LOG_WINDOW = NULL;
+extern BXMutex io_mutex;
+extern BXMutex MTX_COUNTRY_LIST;
+
+void * contact_thread(void * arg)
+{
+    bXill * app = (bXill *)arg;
+    bx_log_debug("Contact data thread %lx", pthread_self());
+    while(atomic_load(&(app->queue->run))) {
+        bx_contact_sector_walk_items(app);
+        bx_contact_walk_items(app);
+    }
+    return 0;
+}
 
 int main(int argc, char ** argv) 
 {
     BXConf * conf = NULL;
     MYSQL * mysql = NULL;
+    WINDOW * CMD_WINDOW = NULL;
+    struct winsize w;
+    ioctl(0, TIOCGWINSZ, &w);
     bXill app;
+
+    bx_mutex_init(&MTX_COUNTRY_LIST);
+
+    initscr();
+    cbreak();
+    noecho();
+
+    LOG_WINDOW = newwin(w.ws_row - 1, w.ws_col, 0, 0);
+    scrollok(LOG_WINDOW, true);
+    wrefresh(LOG_WINDOW);
+
+    CMD_WINDOW = newwin(1, w.ws_col, w.ws_row - 1, 0);
+    wrefresh(CMD_WINDOW);
+
+    enum e_ThreadList {
+        CONTACT_THREAD,
+        MAX__THREAD_LIST
+    };
+    pthread_t threads[MAX__THREAD_LIST];
 
     mysql_library_init(argc, argv, NULL);
     mysql = mysql_init(mysql);
     app.mysql = mysql;
 
+    bx_log_init();
     bx_utils_init();
 
     conf = bx_conf_init();
@@ -37,7 +80,6 @@ int main(int argc, char ** argv)
         bx_conf_destroy(&conf);
         return -1;
     }
-    bx_conf_dump(conf);
 
     mysql_real_connect(
         mysql,
@@ -56,74 +98,95 @@ int main(int argc, char ** argv)
     mysql_set_character_set(mysql, "utf8mb4");
     BXNet * net = bx_net_init(conf);
     if (net == NULL) {
-        fprintf(stderr, "Net configuration failed");
+        bx_log_error("Net configuration failed");
         exit(0);
     }
     app.net = net;
+    /* START NET THREAD, REQUEST CAN BE DONE AFTER THAT */
     BXNetRequestList * queue = bx_net_request_list_init(net);
     app.queue = queue;
     pthread_t request_thread = bx_net_loop(queue);
+
+    /* REQUEST AVAILABLE, LOAD SOME STUFF HERE*/
+
+    assert(bx_country_code_load(&app) != false);
+
+    /* RUN CODE TO UPDATE DATABASE */
+    pthread_create(
+        &threads[CONTACT_THREAD],
+        NULL,
+        contact_thread,
+        (void *)&app
+    );
+
+    char command[MAX_COMMAND_LEN];
+    int pos = 0;
+    bool exit = false;
     
-    int round = 5;
+    assert(bx_mutex_lock(&io_mutex) != false);
+    wclear(CMD_WINDOW);
+    wprintw(CMD_WINDOW, "bxnet> ");
+    wrefresh(CMD_WINDOW);
+    bx_mutex_unlock(&io_mutex);
     do {
-        /* walk sector first */
-        bx_contact_sector_walk_items(&app);
-        bx_contact_walk_items(&app);
-    } while(round-- > 0);
-
-
-    /*
-    BXNetRequest * request = NULL;
-    request = bx_net_request_new(BXTypeContact, "2.0", "contact/2", NULL);
-    uint64_t c2 = bx_net_request_list_add(queue, request);
-    printf("REQUEST ID %ld", c2);
-    while(atomic_load(&request->done) == false) { thrd_yield(); }
-    request = bx_net_request_list_get_finished(queue, c2);
-    if (request != NULL) {
-        if (request->response != NULL) {
-            if (request->response->data != NULL) {
-                json_t * jroot = bx_decode_net(request);
-                free(request->response->data);
-                free(request->response);
-                request->response = NULL;
-                if (jroot != NULL) {
-                    request->decoded = jroot;
-                    const BXObjectFunctions * decoder = bx_decode_select_decoder(request->decoder);
-                    void * object = NULL;
-                    if (decoder->decode_function == NULL) {
-                        fprintf(stderr, "No decoder found for '%d'\n", request->decoder);
-
-                    } else {
-                        if (json_is_array(request->decoded)) {
-                            for (size_t i = 0; i < json_array_size(jroot); i++) {
-                                object = decoder->decode_function(json_array_get(jroot, i));
-                                decoder = bx_decode_select_decoder(*(enum e_BXObjectType *)object);
-                                if (decoder->free_function != NULL) { decoder->free_function(object); }
-                            }
-                        } else {
-                            object = decoder->decode_function(jroot);
-                            decoder = bx_decode_select_decoder(*(enum e_BXObjectType *)object);
-                            bx_object_contact_store(mysql, object);
-                            if (decoder->free_function != NULL) { decoder->free_function(object); }
-                        }
-                    }
-                } else {
-                    fprintf(stderr, "Failed json decode\n");
+        int c = getch();
+        switch(c) {
+            case '\n': 
+                pos = 0;
+                if (strcmp(command, "exit") == 0) {
+                    exit = true;
                 }
-                
-            }
+                break;
+            case KEY_BACKSPACE:
+            case 127:
+            case '\b':
+                pos--;
+                if (pos < 0) { pos = 0; }
+                command[pos] = '\0';
+                assert(bx_mutex_lock(&io_mutex) != false);
+                wclear(CMD_WINDOW);
+                wprintw(CMD_WINDOW, "bxnex> %s", command);
+                wrefresh(CMD_WINDOW);
+                bx_mutex_unlock(&io_mutex);
+                break;
+            default:
+                assert(bx_mutex_lock(&io_mutex) != false);
+                waddch(CMD_WINDOW, c);
+                wrefresh(CMD_WINDOW);
+                command[pos++] = c;
+                bx_mutex_unlock(&io_mutex);
+
+                break;
         }
-        bx_net_request_free(request);
-        request = NULL;
-    }
-    */
-    
+        if (pos == 0) {
+            memset(command, 0, MAX_COMMAND_LEN);
+            assert(bx_mutex_lock(&io_mutex) != false);
+            wclear(CMD_WINDOW);            
+            wprintw(CMD_WINDOW, "bxnet> "); 
+            wrefresh(CMD_WINDOW);
+            bx_mutex_unlock(&io_mutex);
+        }
+    } while(!exit);
+
     atomic_store(&queue->run, 0);
+    for (int i = 0; i < MAX__THREAD_LIST; i++) {
+        bx_log_debug("Waiting for data thread %d", i);
+        pthread_join(threads[i], NULL);
+    }
+    bx_log_debug("Waiting for request thread");
     pthread_join(request_thread, NULL);
     bx_net_request_list_destroy(queue);
     bx_net_destroy(&net);
     bx_conf_destroy(&conf);
     mysql_close(mysql);
     mysql_library_end();
+
+    assert(bx_mutex_lock(&io_mutex) != false);
+    delwin(CMD_WINDOW);
+    delwin(LOG_WINDOW);
+    endwin();
+    echo();
+    nocbreak();
+    bx_log_end();
     return 0;
 }

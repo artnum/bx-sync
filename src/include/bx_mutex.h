@@ -6,20 +6,27 @@
 #include <threads.h>
 #include <assert.h>
 #include <errno.h>
+#include <stdio.h>
 
 #define MUTEX_USE_ATOMIC 1
+#define MUTEX_RETRY_BEFORE_FAIL     1000
 
 #if MUTEX_USE_ATOMIC
 typedef atomic_bool BXMutex;
 
-static inline void bx_mutex_lock(BXMutex * mutex) 
+static inline bool bx_mutex_lock(BXMutex * mutex) 
 {
     assert(mutex != NULL);
     bool expected = false;
+    int retry = MUTEX_RETRY_BEFORE_FAIL;
     while(!atomic_compare_exchange_strong(mutex, &expected, true)) {
         expected = false;
         thrd_yield();
+        if (retry-- <= 0) { 
+            return false;
+        }
     }
+    return true;
 }
 
 static inline void bx_mutex_unlock(BXMutex * mutex)
@@ -38,11 +45,14 @@ static inline void bx_mutex_init(BXMutex * mutex)
 
 typedef pthread_mutex_t BXMutex;
 
-static inline void bx_mutex_lock(BXMutex * mutex)
+static inline bool bx_mutex_lock(BXMutex * mutex)
 {
+    int retry = 100;
     while(pthread_mutex_trylock(mutex) == EBUSY) {
         thrd_yield();
+        if (retry-- <= 0) { return false; }
     }
+    return true;
 }
 
 static inline void bx_mutex_unlock(BXMutex * mutex)

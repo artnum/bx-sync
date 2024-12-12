@@ -43,8 +43,6 @@ struct s_BXObjectContact {
     BXString remote_contact_branch_ids;
     BXString remote_updated_at;
     BXString remote_profile_image;
-
-    BXBool remote_is_lead;
 };
 
 void bx_object_contact_dump(void * data);

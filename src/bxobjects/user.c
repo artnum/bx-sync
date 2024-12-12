@@ -50,6 +50,7 @@ static inline BXObjectUser * decode_object(json_t * root)
 
 bool bx_user_sync_item(bXill * app, BXGeneric * item)
 {
+    bx_log_debug("BX Use Sync Item");
     BXNetRequest * request = bx_do_request(app->queue, NULL, GET_USER_PATH, item);
     if(request == NULL) {
         return false;

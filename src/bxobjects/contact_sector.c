@@ -91,7 +91,8 @@ bool bx_contact_sector_walk_items(bXill * app)
     bx_database_free_query(query_ids);
 
     for (size_t i = 0; i < contact_sector_array_count; i++) {
-        BXObjectContactSector * contact_sector = decode_object(json_array_get(contact_sector_array, i));
+        json_t * o = json_array_get(contact_sector_array, i);
+        BXObjectContactSector * contact_sector = decode_object(o);
         
         /* set to "not delete" items already in database */
         if (items != NULL && items_count > 0) {

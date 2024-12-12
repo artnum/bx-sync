@@ -37,15 +37,49 @@ static inline BXObjectContactGroup * decode_object(json_t * root)
     return contact_group;    
 }
 
-#define GET_CONTACT_GROUP_PATH    "2.0/contact_group/$"
+bool db_delete_object(bXill * app, int64_t id)
+{
+    assert(app != NULL);
+    assert(id > 0);
 
+    BXDatabaseQuery * query = bx_database_new_query(
+        app->mysql,
+        "SELECT _deleted FROM contact_group WHERE id = :id;"
+    );
+    bx_database_add_param_int64(query, ":id", &id);
+    bx_database_execute(query);
+    if (query->results == NULL || query->results->column_count == 0) {
+        return true;
+    }
+    int deleted_value = query->results->columns[0].i_value;
+    bx_database_free_query(query);
+    if (deleted_value == 0) {
+        time_t now = time(NULL);
+        query = bx_database_new_query(
+            app->mysql,
+            "UPDATE contact_group SET _deleted = :deleted WHERE id = :id;"
+        );
+        bx_database_add_param_int64(query, ":deleted", &now);
+        bx_database_add_param_int64(query, ":id", &id);
+        bx_database_execute(query);
+        bx_database_free_query(query);
+    }
+    return true;
+}
+
+#define GET_CONTACT_GROUP_PATH    "2.0/contact_group/$"
 bool bx_contact_group_sync_item(bXill * app, BXGeneric * item)
 {
+    bx_log_debug("BX Contact Group Sync");
     BXNetRequest * request = bx_do_request(app->queue, NULL, GET_CONTACT_GROUP_PATH, item);
     if (request == NULL
         || request->response == NULL
         || request->response->http_code != 200
     ) {
+        if (request == NULL || request->response == NULL) { return false; }
+        if (request->response->http_code == 404) {
+            return db_delete_object(app, ((BXInteger *)item)->value);
+        }
         return false;
     }
 

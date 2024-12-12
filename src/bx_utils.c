@@ -3,6 +3,7 @@
 #include <bx_decode.h>
 #include <jansson.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <sys/time.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -14,6 +15,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+#include <ncurses.h>
 
 #define a 0x5DEECE66D
 #define c 0xC
@@ -191,7 +193,8 @@ BXNetRequest * bx_do_request(
     if (path == NULL) {
         return NULL;
     }
-    printf("path %s\n", path);
+    
+    bx_log_debug("path %s", path);
     va_end(ap);
     request = bx_net_request_new(path, NULL);
     free(path);
@@ -200,7 +203,17 @@ BXNetRequest * bx_do_request(
     }
 
     uint64_t request_id = bx_net_request_list_add(queue, request);
-    while(atomic_load(&request->done) == false) { usleep(100); }
+    if (request_id == 0) {
+        bx_net_request_free(request);
+        return NULL;
+    }
+    while(atomic_load(&request->done) == false) {
+        if (atomic_load(&request->cancel) == true) {
+            return NULL;
+        }
+        usleep(100);
+    }
+
     request = bx_net_request_list_get_finished(queue, request_id);
     if (request == NULL) {
         return NULL;
@@ -214,13 +227,60 @@ BXNetRequest * bx_do_request(
     return request;
 }
 
+BXMutex io_mutex;
+extern WINDOW *LOG_WINDOW;
+FILE * fp;
+
+void bx_log_init()
+{
+    bx_mutex_init(&io_mutex);
+    fp = fopen("/tmp/bxnet.log", "a");
+}
+
+void _bx_log_debug(char * file, int line, const char *fmt, ...)
+{
+    char x[255];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(x, 255, fmt, ap);
+    va_end(ap);
+    assert(bx_mutex_lock(&io_mutex) != false);
+    fprintf(fp, "[%s:%d] %s\n", file, line, x);
+    wprintw(LOG_WINDOW, "[%s:%d] %s\n", file, line, x);
+    wrefresh(LOG_WINDOW);
+    bx_mutex_unlock(&io_mutex);
+}
+
+void _bx_log_info(char * file, int line, const char *fmt, ...)
+{
+    char x[255];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(x, 255, fmt, ap);
+    va_end(ap);
+    assert(bx_mutex_lock(&io_mutex) != false);
+    fprintf(fp, "[%s:%d] %s\n", file, line, x);
+    wprintw(LOG_WINDOW, "[%s:%d] %s\n", file, line, x);
+    wrefresh(LOG_WINDOW);
+    bx_mutex_unlock(&io_mutex);
+}
+
 void _bx_log_error(char * file, int line, const char *fmt, ...)
 {
+    char x[255];
     va_list ap;
-    fprintf(stderr, "%s:%d ", file, line);
     va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
+    vsnprintf(x, 255, fmt, ap);
     va_end(ap);
+    assert(bx_mutex_lock(&io_mutex) != false);
+    fprintf(fp, "[%s:%d] %s\n", file, line, x);
+    wprintw(LOG_WINDOW, "[%s:%d] %s\n", file, line, x);
+    wrefresh(LOG_WINDOW);
+    bx_mutex_unlock(&io_mutex);
+}
+
+void bx_log_end() {
+    fclose(fp);
 }
 
 bool bx_string_compare(const char * str1, const char * str2, size_t max)

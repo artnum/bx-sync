@@ -1,5 +1,6 @@
 #include "bx_decode.h"
 #include "bx_net.h"
+#include "bxobjects/country_code.h"
 #include <bx_object_value.h>
 #include <bx_utils.h>
 #include <bxobjects/contact.h>
@@ -50,14 +51,14 @@ void bx_object_contact_store(MYSQL * mysql, BXObjectContact * contact)
         "owner_id, title_id, salutation_form, postcode, nr, name_1, name_2, "
         "address, birthday, updated_at, city, mail, mail_second, phone_fixed, "
         "phone_fixed_second, phone_mobile, phone_fax, url, skype_name, remarks, "
-        "lanuage_id, contact_group_ids, branch_ids, profile_image, is_lead, "
-        "_checksum, _id"
+        "lanuage_id, contact_group_ids, branch_ids, profile_image, "
+        "_checksum, _last_updated"
         "VALUES(:id, :user_id, :contact_type_id, :country_id, "
         ":owner_id, :title_id, :salutation_form, :postcode, :nr, :name_1, :name_2, "
         ":address, :birthday, :updated_at, :city, :mail, :mail_second, :phone_fixed, "
         ":phone_fixed_second, :phone_mobile, :phone_fax, url, :skype_name, :remarks, "
-        ":lanuage_id, :contact_group_ids, :branch_ids, :profile_image, :is_lead, "
-        ":_checksum, :_id)"
+        ":lanuage_id, :contact_group_ids, :branch_ids, :profile_image, "
+        ":_checksum, :_last_updated)"
     );
 
     bx_database_add_param_int32(query, ":id", &contact->remote_id);
@@ -155,7 +156,6 @@ void * bx_object_contact_decode(void * jroot)
     contact->remote_contact_branch_ids =                bx_object_get_json_string(object, "contact_branch_ids", hashState);
     contact->remote_profile_image =             bx_object_get_json_string(object, "profile_image", hashState);
 
-    contact->remote_is_lead =                   bx_object_get_json_bool(object, "is_lead", hashState);
 
     contact->checksum = XXH3_64bits_digest(hashState);
     XXH3_freeState(hashState);
@@ -204,7 +204,7 @@ bool bx_contact_sync_item(bXill * app, BXGeneric * item)
 {
     assert(app != NULL);
     assert(item != NULL);
-    printf("Contact %ld\n", ((BXInteger *)item)->value);
+    bx_log_debug("Contact %ld", ((BXInteger *)item)->value);
     BXNetRequest * request = bx_do_request(app->queue, NULL, GET_CONTACT_PATH, item);
     if(request == NULL) {
         return false;
@@ -241,6 +241,96 @@ bool bx_contact_sync_item(bXill * app, BXGeneric * item)
     if (branch_ids != NULL) {
         free(branch_ids);
     }
+
+    BXDatabaseQuery * query = bx_database_new_query(
+        app->mysql,
+        "SELECT _checksum FROM contact WHERE id = :id;"
+    );
+    if (query == NULL) {
+        bx_object_contact_free(contact);
+        return false;
+    }
+    bx_database_add_param_int64(query, ":id", &contact->remote_id.value);
+    bx_database_execute(query);
+    bx_database_results(query);
+
+    if (query->results == NULL || query->results->column_count == 0) {
+        bx_database_free_query(query);
+        query = NULL;
+        query = bx_database_new_query(
+            app->mysql,
+            "INSERT INTO contact (id, contact_type_id, salutation_id, country,"
+            "user_id, owner_id, title_id, salutation_form, postcode, nr, name_1, name_2,"
+            "birthday, address, city, mail, mail_second, phone_fixed, phone_fixed_second,"
+            "phone_mobile, fax, url, skype_name, remarks, updated_at, profile_image,"
+            "_checksum, _last_updated"
+            ") VALUES (:id, :contact_type_id, :salutation_id, :country, :user_id, :owner_id,"
+            ":title_id, :salutation_form, :postcode, :nr, :name_1, name_2, :birthday, :address,"
+            ":city, :mail, :mail_second, :phone_fixed, :phone_fixed_second, :phone_mobile,"
+            ":fax, :url, :skype_name, :remarks, :updated_at, :profile_image,"
+            ":_checksum, :_last_updated"
+            ");"
+        );
+    } else {
+        if (query->results[0].columns[0].i_value == contact->checksum) {
+            bx_database_free_query(query);
+            bx_object_contact_free(contact);
+            return true;
+        }
+        bx_database_free_query(query);
+        query = NULL;
+        query = bx_database_new_query(
+            app->mysql,
+            "UPDATE contact SET contact_type_id = :contact_type_id,"
+            "salutation_id = :salutation_id, country = :country,"
+            "user_id = :user_id, owner_id = :owner_id, title_id = :title_id,"
+            "salutation_form = :salutation_form, postcode = :postcode, nr = :nr,"
+            "name_1 = :name_1, name_2 = :name_2, birthday = :birthday, address = :address"
+            "city = :city, mail = :mail, mail_second = :mail_second,"
+            "phone_fixed = :phone_fixed, phone_fixed_second = :phone_fixed_second,"
+            "phone_mobile = :phone_mobile, fax = :fax, url = :url, skype_name = :skype_name,"
+            "remarks = :remarks, updated_at = :updated_at, profile_image = :profile_image,"
+            "_checksum = :_checksum, _last_updated = :_last_updated"
+            " WHERE id = :id;"
+        );
+    }
+    if (query == NULL) {
+        bx_object_contact_free(contact);
+        return false;
+    }
+    int now = time(NULL);
+    bx_database_add_param_int64(query, ":id", &contact->remote_id.value);
+    bx_database_add_param_int64(query, ":contact_type_id", &contact->remote_contact_type_id.value);
+    bx_database_add_param_int64(query, ":salutation_id", &contact->remote_salutation_id.value);
+    bx_database_add_param_int64(query, ":user_id", &contact->remote_user_id.value);
+    bx_database_add_param_int64(query, ":owner_id", &contact->remote_owner_id.value);
+    bx_database_add_param_int64(query, ":title_id", &contact->remote_title_id.value);
+    bx_database_add_param_int64(query, ":salutation_form", &contact->remote_salutation_form.value);
+    bx_database_add_param_uint64(query, ":_checksum", &contact->checksum);
+    bx_database_add_param_uint64(query, ":_last_updated", &now);
+
+    bx_database_add_param_char(query, ":postcode", contact->remote_postcode.value, contact->remote_postcode.value_len);
+    bx_database_add_param_char(query, ":nr", contact->remote_nr.value, contact->remote_nr.value_len);
+    bx_database_add_param_char(query, ":name_1", contact->remote_name_1.value, contact->remote_name_1.value_len);
+    bx_database_add_param_char(query, ":name_2", contact->remote_name_2.value, contact->remote_name_2.value_len);
+    bx_database_add_param_char(query, ":birthday", contact->remote_birthday.value, contact->remote_birthday.value_len);
+    bx_database_add_param_char(query, ":address", contact->remote_address.value, contact->remote_address.value_len);
+    bx_database_add_param_char(query, ":city", contact->remote_city.value, contact->remote_city.value_len);
+    bx_database_add_param_char(query, ":mail_second", contact->remote_mail_second.value, contact->remote_mail_second.value_len);
+    bx_database_add_param_char(query, ":mail", contact->remote_mail.value, contact->remote_mail.value_len);
+    bx_database_add_param_char(query, ":phone_fixed_second", contact->remote_phone_fixed_second.value, contact->remote_phone_fixed_second.value_len);
+    bx_database_add_param_char(query, ":phone_fixed", contact->remote_phone_fixed.value, contact->remote_phone_fixed.value_len);
+    bx_database_add_param_char(query, ":phone_mobile", contact->remote_phone_mobile.value, contact->remote_phone_mobile.value_len);
+    bx_database_add_param_char(query, ":fax", contact->remote_fax.value, contact->remote_fax.value_len);
+    bx_database_add_param_char(query, ":url", contact->remote_url.value, contact->remote_url.value_len);
+    bx_database_add_param_char(query, ":skype_name", contact->remote_skype_name.value, contact->remote_skype_name.value_len);
+    bx_database_add_param_char(query, ":remarks", contact->remote_remarks.value, contact->remote_remarks.value_len);
+    bx_database_add_param_char(query, ":updated_at", contact->remote_updated_at.value, contact->remote_updated_at.value_len);
+    bx_database_add_param_char(query, ":profile_image", contact->remote_profile_image.value, contact->remote_profile_image.value_len);
+    bx_database_add_param_char(query, ":country", (void *)bx_country_list_get_code(contact->remote_country_id.value), 2);
+    bx_database_execute(query);
+    bx_database_free_query(query);
+
     bx_object_contact_free(contact);
     
     return true;
@@ -250,6 +340,7 @@ bool bx_contact_sync_item(bXill * app, BXGeneric * item)
 void bx_contact_walk_items(bXill * app)
 {
     BXNetRequest * request = bx_do_request(app->queue, NULL, WALK_CONTACT_PATH);
+    bx_log_debug("BX Walk Contact Items");
     if(request == NULL) {
         return;
     }
