@@ -29,7 +29,7 @@ static inline BXObjectContactSector * decode_object(json_t * root)
         return NULL;
     }
     contact_sector->type = BXTypeContactSector;
-    contact_sector->remote_id =   bx_object_get_json_int(object, "id", hashState);
+    contact_sector->remote_id =   bx_object_get_json_uint(object, "id", hashState);
     contact_sector->remote_name = bx_object_get_json_string(object, "name", hashState);
     
     contact_sector->checksum = XXH3_64bits_digest(hashState);

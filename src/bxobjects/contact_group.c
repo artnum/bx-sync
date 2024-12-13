@@ -28,7 +28,7 @@ static inline BXObjectContactGroup * decode_object(json_t * root)
         return NULL;
     }
     contact_group->type = BXTypeContactGroup;
-    contact_group->remote_id = bx_object_get_json_int(object, "id", hashState);
+    contact_group->remote_id = bx_object_get_json_uint(object, "id", hashState);
     contact_group->remote_name = bx_object_get_json_string(object, "name", hashState);
     
     contact_group->checksum = XXH3_64bits_digest(hashState);

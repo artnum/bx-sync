@@ -246,8 +246,6 @@ void _bx_log_debug(char * file, int line, const char *fmt, ...)
     va_end(ap);
     assert(bx_mutex_lock(&io_mutex) != false);
     fprintf(fp, "[%s:%d] %s\n", file, line, x);
-    wprintw(LOG_WINDOW, "[%s:%d] %s\n", file, line, x);
-    wrefresh(LOG_WINDOW);
     bx_mutex_unlock(&io_mutex);
 }
 
@@ -260,8 +258,6 @@ void _bx_log_info(char * file, int line, const char *fmt, ...)
     va_end(ap);
     assert(bx_mutex_lock(&io_mutex) != false);
     fprintf(fp, "[%s:%d] %s\n", file, line, x);
-    wprintw(LOG_WINDOW, "[%s:%d] %s\n", file, line, x);
-    wrefresh(LOG_WINDOW);
     bx_mutex_unlock(&io_mutex);
 }
 
@@ -274,8 +270,6 @@ void _bx_log_error(char * file, int line, const char *fmt, ...)
     va_end(ap);
     assert(bx_mutex_lock(&io_mutex) != false);
     fprintf(fp, "[%s:%d] %s\n", file, line, x);
-    wprintw(LOG_WINDOW, "[%s:%d] %s\n", file, line, x);
-    wrefresh(LOG_WINDOW);
     bx_mutex_unlock(&io_mutex);
 }
 

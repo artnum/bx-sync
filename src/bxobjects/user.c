@@ -33,14 +33,14 @@ static inline BXObjectUser * decode_object(json_t * root)
         return NULL;
     }
     user->type = BXTypeContactGroup;
-    user->remote_id =               bx_object_get_json_int(object, "id", hashState);
+    user->remote_id =               bx_object_get_json_uint(object, "id", hashState);
     user->remote_firstname =        bx_object_get_json_string(object, "firstname", hashState);
     user->remote_lastname =         bx_object_get_json_string(object, "lastname", hashState);
     user->remote_email =            bx_object_get_json_string(object, "email", hashState);
     user->remote_salutation_type =  bx_object_get_json_string(object, "salutation_type", hashState);
     user->remote_is_accountant =    bx_object_get_json_bool(object, "is_accountant", hashState);
     user->remote_is_superadmin =    bx_object_get_json_bool(object, "is_superadmin", hashState);
-
+    printf("FIRSTNAME %s \n", user->remote_firstname.value);
     user->checksum = XXH3_64bits_digest(hashState);
     XXH3_freeState(hashState);
 
@@ -61,6 +61,7 @@ bool bx_user_sync_item(bXill * app, BXGeneric * item)
     ) {
         return false;
     }
+    printf("%s\n", request->response->data);
     BXObjectUser * user = decode_object(request->decoded);
     bx_net_request_free(request);
     if (user == NULL) {
@@ -88,12 +89,11 @@ bool bx_user_sync_item(bXill * app, BXGeneric * item)
             ":email, :salutation_type, :is_superadmin, :is_accountant);"
         );
 
-        bx_database_add_param_int64(query, ":id", &user->remote_id.value);
-
-        bx_database_add_param_char(query, ":firstname", user->remote_firstname.value, user->remote_firstname.value_len);
-        bx_database_add_param_char(query, ":lastname", user->remote_lastname.value, user->remote_lastname.value_len);
-        bx_database_add_param_char(query, ":email", user->remote_email.value, user->remote_email.value_len);
-        bx_database_add_param_char(query, ":salutation_type", user->remote_salutation_type.value, user->remote_salutation_type.value_len);
+        bx_database_add_bxtype(query, ":id", (BXGeneric *)&user->remote_id);
+        bx_database_add_bxtype(query, ":firstname", (BXGeneric *)&user->remote_firstname);
+        bx_database_add_bxtype(query, ":lastname", (BXGeneric *)&user->remote_lastname);
+        bx_database_add_bxtype(query, ":email", (BXGeneric *)&user->remote_email);
+        bx_database_add_bxtype(query, ":salutation_type", (BXGeneric *)&user->remote_salutation_type);
 
         bx_database_add_param_uint8(query, ":is_superadmin", &is_superadmin);
         bx_database_add_param_uint8(query, ":is_accountant", &is_accountant);

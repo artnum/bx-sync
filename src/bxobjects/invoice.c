@@ -99,18 +99,18 @@ void * bx_object_invoice_decode(void * object)
     bx_utils_gen_id(&invoice->id);
 
     /* integer */
-    invoice->remote_id =                        bx_object_get_json_int(jroot, "id", hashState);
-    invoice->remote_user_id =                   bx_object_get_json_int(jroot, "user_id", hashState);
-    invoice->remote_contact_id =                bx_object_get_json_int(jroot, "contact_id", hashState);
-    invoice->remote_contact_subid =             bx_object_get_json_int(jroot, "contact_sub_id", hashState);
-    invoice->remote_project_id =                bx_object_get_json_int(jroot, "user_id", hashState);
-    invoice->remote_bank_account_id =           bx_object_get_json_int(jroot, "bank_account_id", hashState);
-    invoice->remote_currency_id =               bx_object_get_json_int(jroot, "currency_id", hashState);
-    invoice->remote_payment_type_id =           bx_object_get_json_int(jroot, "payment_type_id", hashState);
-    invoice->remote_tva_type =                  bx_object_get_json_int(jroot, "mwst_type", hashState);
-    invoice->remote_kb_item_status =            bx_object_get_json_int(jroot, "kb_item_status", hashState);
-    invoice->remote_esr_id =                    bx_object_get_json_int(jroot, "esr_id", hashState);
-    invoice->remote_qr_invoice_id =             bx_object_get_json_int(jroot, "qr_invoice_id", hashState);
+    invoice->remote_id =                        bx_object_get_json_uint(jroot, "id", hashState);
+    invoice->remote_user_id =                   bx_object_get_json_uint(jroot, "user_id", hashState);
+    invoice->remote_contact_id =                bx_object_get_json_uint(jroot, "contact_id", hashState);
+    invoice->remote_contact_subid =             bx_object_get_json_uint(jroot, "contact_sub_id", hashState);
+    invoice->remote_project_id =                bx_object_get_json_uint(jroot, "user_id", hashState);
+    invoice->remote_bank_account_id =           bx_object_get_json_uint(jroot, "bank_account_id", hashState);
+    invoice->remote_currency_id =               bx_object_get_json_uint(jroot, "currency_id", hashState);
+    invoice->remote_payment_type_id =           bx_object_get_json_uint(jroot, "payment_type_id", hashState);
+    invoice->remote_tva_type =                  bx_object_get_json_uint(jroot, "mwst_type", hashState);
+    invoice->remote_kb_item_status =            bx_object_get_json_uint(jroot, "kb_item_status", hashState);
+    invoice->remote_esr_id =                    bx_object_get_json_uint(jroot, "esr_id", hashState);
+    invoice->remote_qr_invoice_id =             bx_object_get_json_uint(jroot, "qr_invoice_id", hashState);
 
     /* double */
     invoice->remote_total_gross =               bx_object_get_json_double(jroot, "total_gross", hashState);

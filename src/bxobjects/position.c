@@ -23,12 +23,12 @@ static inline void * _bx_kb_position_custom(json_t * jroot, XXH3_state_t * hashS
 
     position->type = BXTypeInvoicePositionCE;
 
-    position->remote_id = bx_object_get_json_int(jroot, "id", hashState);
-    position->remote_unit_id = bx_object_get_json_int(jroot, "unit_id", hashState);
-    position->remote_account_id = bx_object_get_json_int(jroot, "account_id", hashState);
-    position->remote_tax_id = bx_object_get_json_int(jroot, "tax_id", hashState);
-    position->remote_internal_pos = bx_object_get_json_int(jroot, "internal_pos", hashState);
-    position->remote_parent_id = bx_object_get_json_int(jroot, "parent_id", hashState);
+    position->remote_id = bx_object_get_json_uint(jroot, "id", hashState);
+    position->remote_unit_id = bx_object_get_json_uint(jroot, "unit_id", hashState);
+    position->remote_account_id = bx_object_get_json_uint(jroot, "account_id", hashState);
+    position->remote_tax_id = bx_object_get_json_uint(jroot, "tax_id", hashState);
+    position->remote_internal_pos = bx_object_get_json_uint(jroot, "internal_pos", hashState);
+    position->remote_parent_id = bx_object_get_json_uint(jroot, "parent_id", hashState);
 
     position->remote_unit_name = bx_object_get_json_string(jroot, "unit_name", hashState);
     position->remote_text = bx_object_get_json_string(jroot, "text", hashState);
@@ -57,13 +57,13 @@ static inline void * _bx_kb_position_article(json_t * jroot, XXH3_state_t * hash
 
     position->type = BXTypeInvoicePositionAE;
 
-    position->remote_id = bx_object_get_json_int(jroot, "id", hashState);
-    position->remote_unit_id = bx_object_get_json_int(jroot, "unit_id", hashState);
-    position->remote_account_id = bx_object_get_json_int(jroot, "account_id", hashState);
-    position->remote_tax_id = bx_object_get_json_int(jroot, "tax_id", hashState);
-    position->remote_internal_pos = bx_object_get_json_int(jroot, "internal_pos", hashState);
-    position->remote_parent_id = bx_object_get_json_int(jroot, "parent_id", hashState);
-    position->remote_article_id = bx_object_get_json_int(jroot, "article_id", hashState);
+    position->remote_id = bx_object_get_json_uint(jroot, "id", hashState);
+    position->remote_unit_id = bx_object_get_json_uint(jroot, "unit_id", hashState);
+    position->remote_account_id = bx_object_get_json_uint(jroot, "account_id", hashState);
+    position->remote_tax_id = bx_object_get_json_uint(jroot, "tax_id", hashState);
+    position->remote_internal_pos = bx_object_get_json_uint(jroot, "internal_pos", hashState);
+    position->remote_parent_id = bx_object_get_json_uint(jroot, "parent_id", hashState);
+    position->remote_article_id = bx_object_get_json_uint(jroot, "article_id", hashState);
 
     position->remote_unit_name = bx_object_get_json_string(jroot, "unit_name", hashState);
     position->remote_text = bx_object_get_json_string(jroot, "text", hashState);
@@ -92,9 +92,9 @@ static inline void * _bx_kb_position_text(json_t * jroot, XXH3_state_t * hashSta
 
     position->type = BXTypeInvoicePositionTE;
 
-    position->remote_id = bx_object_get_json_int(jroot, "id", hashState);
-    position->remote_internal_pos = bx_object_get_json_int(jroot, "internal_pos", hashState);
-    position->remote_parent_id = bx_object_get_json_int(jroot, "parent_id", hashState);
+    position->remote_id = bx_object_get_json_uint(jroot, "id", hashState);
+    position->remote_internal_pos = bx_object_get_json_uint(jroot, "internal_pos", hashState);
+    position->remote_parent_id = bx_object_get_json_uint(jroot, "parent_id", hashState);
 
     position->remote_text = bx_object_get_json_string(jroot, "text", hashState);
     position->remote_pos = bx_object_get_json_string(jroot, "pos", hashState);
@@ -117,9 +117,9 @@ static inline void * _bx_kb_position_subtotal(json_t * jroot, XXH3_state_t * has
 
     position->type = BXTypeInvoicePositionSE;
 
-    position->remote_id = bx_object_get_json_int(jroot, "id", hashState);
-    position->remote_internal_pos = bx_object_get_json_int(jroot, "internal_pos", hashState);
-    position->remote_parent_id = bx_object_get_json_int(jroot, "parent_id", hashState);
+    position->remote_id = bx_object_get_json_uint(jroot, "id", hashState);
+    position->remote_internal_pos = bx_object_get_json_uint(jroot, "internal_pos", hashState);
+    position->remote_parent_id = bx_object_get_json_uint(jroot, "parent_id", hashState);
 
     position->remote_text = bx_object_get_json_string(jroot, "text", hashState);
 
@@ -142,9 +142,9 @@ static inline void * _bx_kb_position_page_break(json_t * jroot, XXH3_state_t * h
 
     position->type = BXTypeInvoicePositionPE;
 
-    position->remote_id = bx_object_get_json_int(jroot, "id", hashState);
-    position->remote_internal_pos = bx_object_get_json_int(jroot, "internal_pos", hashState);
-    position->remote_parent_id = bx_object_get_json_int(jroot, "parent_id", hashState);
+    position->remote_id = bx_object_get_json_uint(jroot, "id", hashState);
+    position->remote_internal_pos = bx_object_get_json_uint(jroot, "internal_pos", hashState);
+    position->remote_parent_id = bx_object_get_json_uint(jroot, "parent_id", hashState);
 
     position->remote_is_optional = bx_object_get_json_bool(jroot, "is_optional", hashState);
 
@@ -163,7 +163,7 @@ static inline void * _bx_kb_position_discount(json_t * jroot, XXH3_state_t * has
 
     position->type = BXTypeInvoicePositionDE;
 
-    position->remote_id = bx_object_get_json_int(jroot, "id", hashState);
+    position->remote_id = bx_object_get_json_uint(jroot, "id", hashState);
 
     position->remote_text = bx_object_get_json_string(jroot, "text", hashState);
 

@@ -2,6 +2,26 @@
 #include <bx_object_value.h>
 #include <assert.h>
 
+static inline char * _bx_uint2str(BXUInteger * value) 
+{
+    char * str = NULL;
+    if (value->isset != false) {
+        size_t len = snprintf(NULL, 0, "%lu", value->value);
+        str = calloc(len + 1, sizeof(str));
+        if (str) {
+            snprintf(str, len + 1, "%lu", value->value);
+        }
+    } else {
+        str = calloc(2, sizeof(*str));
+        if (str != NULL) {
+            str[0] = '0';
+            return str;
+        }
+    }
+
+    return str;
+}
+
 static inline char * _bx_int2str(BXInteger * value) 
 {
     char * str = NULL;
@@ -75,6 +95,8 @@ char * bx_object_value_to_string(BXGeneric * value)
 {
     assert(value != NULL);
     switch(*(uint8_t *)value) {
+           case BX_OBJECT_TYPE_UINTEGER:
+            return _bx_uint2str((BXUInteger *) value);
         case BX_OBJECT_TYPE_INTEGER:
             return _bx_int2str((BXInteger *) value);
         case BX_OBJECT_TYPE_FLOAT:

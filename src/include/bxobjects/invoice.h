@@ -13,13 +13,13 @@ struct s_BXObjectPositions
 
     uint64_t id;
     uint64_t checksum;
-    BXInteger remote_id;
-    BXInteger remote_unit_id;
-    BXInteger remote_account_id;
-    BXInteger remote_tax_id;
-    BXInteger remote_pos;
-    BXInteger remote_internal_pos;
-    BXInteger remote_parent_id;
+    BXUInteger remote_id;
+    BXUInteger remote_unit_id;
+    BXUInteger remote_account_id;
+    BXUInteger remote_tax_id;
+    BXUInteger remote_pos;
+    BXUInteger remote_internal_pos;
+    BXUInteger remote_parent_id;
 
     BXBool remote_is_optional;
 
@@ -41,18 +41,18 @@ struct s_BXObjectInvoice {
     uint64_t id;
     uint64_t checksum;
 
-    BXInteger remote_id;
-    BXInteger remote_contact_id;
-    BXInteger remote_contact_subid;
-    BXInteger remote_user_id;
-    BXInteger remote_project_id;
-    BXInteger remote_bank_account_id;
-    BXInteger remote_currency_id;
-    BXInteger remote_payment_type_id;
-    BXInteger remote_esr_id;
-    BXInteger remote_qr_invoice_id;
-    BXInteger remote_tva_type;
-    BXInteger remote_kb_item_status;
+    BXUInteger remote_id;
+    BXUInteger remote_contact_id;
+    BXUInteger remote_contact_subid;
+    BXUInteger remote_user_id;
+    BXUInteger remote_project_id;
+    BXUInteger remote_bank_account_id;
+    BXUInteger remote_currency_id;
+    BXUInteger remote_payment_type_id;
+    BXUInteger remote_esr_id;
+    BXUInteger remote_qr_invoice_id;
+    BXUInteger remote_tva_type;
+    BXUInteger remote_kb_item_status;
 
     BXFloat remote_total_gross;
     BXFloat remote_total_net;

@@ -2,6 +2,7 @@
 #include "bx_object_value.h"
 #include "bxobjects/contact_group.h"
 #include "bxobjects/country_code.h"
+#include "bxobjects/language.h"
 #include <bxobjects/contact.h>
 #include <bx_conf.h>
 #include <bx_net.h>
@@ -25,7 +26,6 @@
 #include <sys/ioctl.h>
 
 #define MAX_COMMAND_LEN 100
-WINDOW * LOG_WINDOW = NULL;
 extern BXMutex io_mutex;
 extern BXMutex MTX_COUNTRY_LIST;
 
@@ -34,6 +34,7 @@ void * contact_thread(void * arg)
     bXill * app = (bXill *)arg;
     bx_log_debug("Contact data thread %lx", pthread_self());
     while(atomic_load(&(app->queue->run))) {
+        bx_language_load(app);
         bx_contact_sector_walk_items(app);
         bx_contact_walk_items(app);
     }
@@ -44,23 +45,9 @@ int main(int argc, char ** argv)
 {
     BXConf * conf = NULL;
     MYSQL * mysql = NULL;
-    WINDOW * CMD_WINDOW = NULL;
-    struct winsize w;
-    ioctl(0, TIOCGWINSZ, &w);
     bXill app;
 
     bx_mutex_init(&MTX_COUNTRY_LIST);
-
-    initscr();
-    cbreak();
-    noecho();
-
-    LOG_WINDOW = newwin(w.ws_row - 1, w.ws_col, 0, 0);
-    scrollok(LOG_WINDOW, true);
-    wrefresh(LOG_WINDOW);
-
-    CMD_WINDOW = newwin(1, w.ws_col, w.ws_row - 1, 0);
-    wrefresh(CMD_WINDOW);
 
     enum e_ThreadList {
         CONTACT_THREAD,
@@ -119,53 +106,11 @@ int main(int argc, char ** argv)
         (void *)&app
     );
 
-    char command[MAX_COMMAND_LEN];
-    int pos = 0;
     bool exit = false;
-    
-    assert(bx_mutex_lock(&io_mutex) != false);
-    wclear(CMD_WINDOW);
-    wprintw(CMD_WINDOW, "bxnet> ");
-    wrefresh(CMD_WINDOW);
-    bx_mutex_unlock(&io_mutex);
-    do {
-        int c = getch();
-        switch(c) {
-            case '\n': 
-                pos = 0;
-                if (strcmp(command, "exit") == 0) {
-                    exit = true;
-                }
-                break;
-            case KEY_BACKSPACE:
-            case 127:
-            case '\b':
-                pos--;
-                if (pos < 0) { pos = 0; }
-                command[pos] = '\0';
-                assert(bx_mutex_lock(&io_mutex) != false);
-                wclear(CMD_WINDOW);
-                wprintw(CMD_WINDOW, "bxnex> %s", command);
-                wrefresh(CMD_WINDOW);
-                bx_mutex_unlock(&io_mutex);
-                break;
-            default:
-                assert(bx_mutex_lock(&io_mutex) != false);
-                waddch(CMD_WINDOW, c);
-                wrefresh(CMD_WINDOW);
-                command[pos++] = c;
-                bx_mutex_unlock(&io_mutex);
 
-                break;
-        }
-        if (pos == 0) {
-            memset(command, 0, MAX_COMMAND_LEN);
-            assert(bx_mutex_lock(&io_mutex) != false);
-            wclear(CMD_WINDOW);            
-            wprintw(CMD_WINDOW, "bxnet> "); 
-            wrefresh(CMD_WINDOW);
-            bx_mutex_unlock(&io_mutex);
-        }
+    do {
+        getc(stdin);
+        exit = true;
     } while(!exit);
 
     atomic_store(&queue->run, 0);
@@ -182,11 +127,6 @@ int main(int argc, char ** argv)
     mysql_library_end();
 
     assert(bx_mutex_lock(&io_mutex) != false);
-    delwin(CMD_WINDOW);
-    delwin(LOG_WINDOW);
-    endwin();
-    echo();
-    nocbreak();
     bx_log_end();
     return 0;
 }

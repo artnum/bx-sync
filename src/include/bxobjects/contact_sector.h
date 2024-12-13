@@ -10,7 +10,7 @@ struct s_BXObjectContactSector {
 
     uint64_t checksum;
 
-    BXInteger remote_id;
+    BXUInteger remote_id;
     BXString remote_name;
 };
 bool bx_contact_sector_walk_items(bXill * app);

@@ -1,4 +1,6 @@
+#include "bx_object_value.h"
 #include "bx_utils.h"
+#include <mariadb/mariadb_com.h>
 #include <mysql/mysql.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -53,10 +55,20 @@ static inline void _bx_database_free_result(BXDatabaseQuery * query)
 }
 
 
+static void free_query_metadata(BXDatabaseQuery * query) 
+{
+    if (query->result_metadata != NULL) {
+        mysql_free_result(query->result_metadata);
+        query->result_metadata = NULL;
+        query->has_dataset = false;
+    }
+}
+
 void bx_database_free_query(BXDatabaseQuery * query)
 {
     if (query == NULL) { return; }
     _bx_database_free_result(query);
+    free_query_metadata(query);
     if (query->fields != NULL) {
         for (int i = 0; i < query->field_count; i++) {
             if(query->fields[i].name != NULL) { free(query->fields[i].name); }
@@ -242,11 +254,188 @@ bool bx_database_add_param_int(
     return true;
 }
 
+static bool set_null(BXDatabaseParameter * param)
+{
+    param->is_null = 1;
+    param->value = NULL;
+    param->type = MYSQL_TYPE_NULL;
+    param->value_length = 0;
+    return true;
+}
+
+static bool add_bxint(
+    BXDatabaseQuery * query,
+    const char * name,
+    BXInteger * value
+) {
+    BXDatabaseParameter * param = _find_param(query, name);
+    if (param == NULL) {
+        return false;
+    }    
+    if (!value->isset) {
+        return set_null(param);
+    }
+
+    param->value = &value->value;
+    param->value_length = sizeof(value->value);
+    param->type = MYSQL_TYPE_LONGLONG;
+    param->is_null = 0;
+    param->is_unsigned = 0;
+    
+    return true;
+}
+
+static bool add_bxuint(
+    BXDatabaseQuery * query,
+    const char * name,
+    BXUInteger * value
+) {
+    BXDatabaseParameter * param = _find_param(query, name);
+    if (param == NULL) {
+        return false;
+    }    
+    if (!value->isset) {
+        return set_null(param);
+    }
+
+    param->value = &value->value;
+    param->value_length = sizeof(value->value);
+    param->type = MYSQL_TYPE_LONGLONG;
+    param->is_null = 0;
+    param->is_unsigned = 0;
+    
+    return true;
+}
+
+static bool add_bxstr(
+    BXDatabaseQuery * query,
+    const char * name,
+    BXString * value
+) {
+    BXDatabaseParameter * param = _find_param(query, name);
+    if (param == NULL) {
+        return false;
+    }
+    printf("NAME %s ", name);
+    printf("ISSET %d VALUE %s\n", value->isset, value->value);
+    if (!value->isset || value->value == NULL) {
+        return set_null(param);
+    }
+    param->value = value->value;
+    param->value_length = value->value_len;
+    param->type = MYSQL_TYPE_STRING;
+    param->is_null = 0;
+    param->is_unsigned = 0;
+    return true;
+}
+
+static bool add_bxfloat(
+    BXDatabaseQuery * query,
+    const char * name,
+    BXFloat * value
+) {
+    BXDatabaseParameter * param = _find_param(query, name);
+    if (param == NULL) {
+        return false;
+    }    
+    if (!value->isset) {
+        return set_null(param);
+    }
+    param->value = &value->value;
+    param->value_length = sizeof(value->value);
+    param->type = MYSQL_TYPE_DOUBLE;
+    param->is_null = 0;
+    param->is_unsigned = 0;
+    return true;
+}
+
+static bool add_bxbool(
+    BXDatabaseQuery * query,
+    const char * name,
+    BXBool * value
+) {
+    BXDatabaseParameter * param = _find_param(query, name);
+    if (param == NULL) {
+        return false;
+    }
+    if (!value->isset) {
+        return set_null(param);
+    }
+
+    param->type = MYSQL_TYPE_TINY;
+    param->value = &value->value;
+    param->value_length = sizeof(value->value);
+    param->is_null = 0;
+    param->is_unsigned = 0;
+    return true;
+
+    return true;
+}
+
+static bool add_bxbytes(
+    BXDatabaseQuery * query,
+    const char * name,
+    BXBytes * value
+) {
+    BXDatabaseParameter * param = _find_param(query, name);
+    if (param == NULL) {
+        return false;
+    }
+    if (!value->isset || value->value == NULL) {
+        return set_null(param);
+    }
+    param->value = value->value;
+    param->value_length = value->value_len;
+    param->type = MYSQL_TYPE_BLOB;
+    param->is_null = 0;
+    param->is_unsigned = 0;
+    return true;
+}
+
+bool bx_database_add_bxtype (
+    BXDatabaseQuery * query,
+    const char * name,
+    BXGeneric * value
+)
+{
+    assert(query != NULL);
+    assert(name != NULL);
+
+    switch(*(uint8_t *)value) {
+        case BX_OBJECT_TYPE_INTEGER: 
+            return add_bxint(query, name, (BXInteger *)value);
+        case BX_OBJECT_TYPE_UINTEGER:
+            return add_bxuint(query, name, (BXUInteger *)value);
+        case BX_OBJECT_TYPE_STRING:
+            return add_bxstr(query, name, (BXString * )value);
+        case BX_OBJECT_TYPE_FLOAT:
+            return add_bxfloat(query, name, (BXFloat *)value);
+        case BX_OBJECT_TYPE_BOOL:
+            return add_bxbool(query, name, (BXBool *)value);
+        case BX_OBJECT_TYPE_BYTES:
+            return add_bxbytes(query, name, (BXBytes *)value);
+    }
+
+    BXDatabaseParameter * param = _find_param(query, name);
+    if (param == NULL) {
+        return false;
+    }
+    return set_null(param);
+}
+
 static inline void _bx_database_param_to_bind(MYSQL_BIND * bind, BXDatabaseParameter * parameter)
 {
+    bind->is_null = (char *)parameter->is_null;
+    if (bind->is_null) {
+        bind->buffer_type =  MYSQL_TYPE_NULL;
+        parameter->value_length = 0;
+        bind->buffer_length = parameter->value_length;
+        bind->length = &parameter->value_length;
+        bind->buffer = NULL;
+        return;
+    }
     bind->buffer_type = parameter->type;
     bind->buffer = parameter->value;
-    bind->is_null = (char *)parameter->is_null;
     switch(parameter->type) {
         default: break;
         case MYSQL_TYPE_TINY:
@@ -298,10 +487,29 @@ bool bx_database_execute(BXDatabaseQuery * query)
         }
     }
     
+    query->has_failed = false;
     if (mysql_stmt_execute(query->stmt) != 0) {
+        query->has_failed = true;
         bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(query->stmt));
         free(binds);
         return false;
+    }
+    query->affected_rows = mysql_stmt_affected_rows(query->stmt);
+    
+    /* mysql_stmt_result_metadata returns NULL if the query doesn't produce
+     * a dataset (INSERT, UPDATE, ...) with no error set.
+     * So we can differentiate between SELECT, ... here so in result we can
+     * accodingly to use to check for failure.
+     */
+    query->has_dataset = true;
+    query->result_metadata = mysql_stmt_result_metadata(query->stmt);
+    if (query->result_metadata == NULL) {
+        if (mysql_stmt_errno(query->stmt) != 0) {
+            query->has_failed = true;
+            free(binds);
+            return false;
+        }
+        query->has_dataset = false;
     }
     query->exectued = true;
 
@@ -367,29 +575,31 @@ bool bx_database_results(BXDatabaseQuery * query)
 {
     BXDatabaseColumn * columns;
     MYSQL_BIND * binds = NULL;
-    MYSQL_RES * result;
+    //MYSQL_RES * result;
     MYSQL_FIELD * fields;
 
-    result = mysql_stmt_result_metadata(query->stmt);
-    if (result == NULL) {
-        bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(query->stmt));
+    if (!query->has_dataset) {
+        return query->has_failed;
+    }
+
+    if (query->result_metadata == NULL || query->has_failed) {
+        bx_log_error("[MYSQL ERROR] Passing a failed dataset result");
         return false;
     }
 
-    int field_count = mysql_num_fields(result);
+    int field_count = mysql_num_fields(query->result_metadata);
     if (field_count <= 0) {
-        mysql_free_result(result);
+        free_query_metadata(query);
         return false;
     }
 
     binds = calloc(field_count, sizeof(*binds));
     if (binds == NULL) {
-        mysql_free_result(result);
+        free_query_metadata(query);
         return false;
     }
 
-    fields = mysql_fetch_fields(result);
-
+    fields = mysql_fetch_fields(query->result_metadata);
     if (query->fields == NULL) {
         query->field_count = field_count;
         query->fields = calloc(query->field_count, sizeof(*query->fields));
@@ -501,8 +711,7 @@ bool bx_database_results(BXDatabaseQuery * query)
     }
     /* row_count is always one step ahead of real count */
     query->row_count = row_count - 1;
-    mysql_free_result(result);
-
+    free_query_metadata(query);
     free(binds);
     return true;
 }

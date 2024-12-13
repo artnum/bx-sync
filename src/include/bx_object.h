@@ -23,11 +23,13 @@ enum e_BXObjectType {
     BXTypeInvoicePositionSE,
     BXTypeInvoicePositionPE,
     BXTypeInvoicePositionTE,
-    BXTypeUser
+    BXTypeUser,
+    BXTypeLanguage
 };
 
 BXBool bx_object_get_json_bool(json_t * object, const char * key, XXH3_state_t * state);
 BXInteger bx_object_get_json_int(json_t * object, const char * key, XXH3_state_t * state);
+BXUInteger bx_object_get_json_uint(json_t * object, const char * key, XXH3_state_t * state);
 BXFloat bx_object_get_json_double(json_t * object, const char * key, XXH3_state_t * state);
 BXString bx_object_get_json_string(json_t * object, const char * key, XXH3_state_t * state);
 void bx_object_free_value(void * value);

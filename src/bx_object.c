@@ -14,7 +14,7 @@ BXBool bx_object_get_json_bool(json_t * object, const char * key, XXH3_state_t *
     BXBool retval = { .type = BX_OBJECT_TYPE_BOOL, .isset = false, .value = false };
 
     value = json_object_get(object, key);
-    if (value == NULL) {
+    if (value == NULL || json_is_null(value)) {
         return retval;
     }
 
@@ -47,13 +47,32 @@ BXInteger bx_object_get_json_int(json_t * object, const char * key, XXH3_state_t
     BXInteger i = { .type = BX_OBJECT_TYPE_INTEGER, .isset = false, .value = 0 };
     value = json_object_get(object, key);
 
-    if (value == NULL) { return i; }
+    if (value == NULL || json_is_null(value)) { return i; }
     
     i.isset = true;
     if (json_is_string(value)) {
-        i.value = strtol(json_string_value(value), NULL, 10);
+        i.value = strtoll(json_string_value(value), NULL, 10);
     } else if (json_is_integer(value)) {
         i.value = json_integer_value(value);
+    }
+    if (state != NULL) { XXH3_64bits_update(state, &i.value, sizeof(i.value)); }
+    
+    return i;
+}
+
+BXUInteger bx_object_get_json_uint(json_t * object, const char * key, XXH3_state_t * state)
+{
+    json_t * value = NULL;
+    BXUInteger i = { .type = BX_OBJECT_TYPE_UINTEGER, .isset = false, .value = 0 };
+    value = json_object_get(object, key);
+
+    if (value == NULL || json_is_null(value)) { return i; }
+
+    i.isset = true;
+    if (json_is_string(value)) {
+        i.value = (uint64_t)strtoll(json_string_value(value), NULL, 10);
+    } else if (json_is_integer(value)) {
+        i.value = (uint64_t)json_integer_value(value);
     }
     if (state != NULL) { XXH3_64bits_update(state, &i.value, sizeof(i.value)); }
     
@@ -66,7 +85,7 @@ BXFloat bx_object_get_json_double(json_t * object, const char * key, XXH3_state_
     BXFloat d = { .type = BX_OBJECT_TYPE_FLOAT, .isset = false, .value = 0};
 
     value = json_object_get(object, key);
-    if (value == NULL) { return d; }
+    if (value == NULL || json_is_null(value)) { return d; }
     
     d.isset = true;
     if (json_is_string(value)) {
@@ -83,8 +102,7 @@ BXString bx_object_get_json_string(json_t * object, const char * key, XXH3_state
     json_t * value = NULL;
     BXString str = { .type = BX_OBJECT_TYPE_STRING, .isset = false, .value = NULL, .value_len = 0 };
     value = json_object_get(object, key);
-    if (value == NULL) { return str; }
-    
+    if (value == NULL || json_is_null(value)) { return str; }
     if (json_is_string(value)) {
         str.value_len = json_string_length(value);
         str.value = calloc(str.value_len + 1, sizeof(*str.value));

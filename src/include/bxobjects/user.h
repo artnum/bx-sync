@@ -10,7 +10,7 @@ struct s_BXObjectUser {
 
     uint64_t checksum;
 
-    BXInteger remote_id;
+    BXUInteger remote_id;
     BXString remote_salutation_type;
     BXString remote_firstname;
     BXString remote_lastname;

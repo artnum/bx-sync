@@ -8,10 +8,11 @@
 #include <stdio.h>
 
 #define BX_OBJECT_TYPE_INTEGER   1
-#define BX_OBJECT_TYPE_FLOAT     2
-#define BX_OBJECT_TYPE_STRING    3
-#define BX_OBJECT_TYPE_BOOL      4
-#define BX_OBJECT_TYPE_BYTES     5
+#define BX_OBJECT_TYPE_UINTEGER  2
+#define BX_OBJECT_TYPE_FLOAT     3
+#define BX_OBJECT_TYPE_STRING    4
+#define BX_OBJECT_TYPE_BOOL      5
+#define BX_OBJECT_TYPE_BYTES     6
 
 typedef uint8_t BXGeneric;
 
@@ -20,6 +21,13 @@ struct s_BXInteger {
     uint8_t type;
     bool isset;
     int64_t value;
+};
+
+typedef struct s_BXUInteger BXUInteger;
+struct s_BXUInteger {
+    uint8_t type;
+    bool isset;
+    uint64_t value;
 };
 
 typedef struct s_BXFloat BXFloat;

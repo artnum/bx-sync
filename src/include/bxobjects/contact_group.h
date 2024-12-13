@@ -10,7 +10,7 @@ struct s_BXObjectContactGroup {
 
     uint64_t checksum;
 
-    BXInteger remote_id;
+    BXUInteger remote_id;
     BXString remote_name;
 };
 

@@ -23,10 +23,6 @@ bool bx_country_code_load(bXill * app)
         || request->response == NULL
         || request->response->http_code != 200
     ) {
-        if (request == NULL || request->response == NULL) { return false; }
-        if (request->response->http_code == 404) {
-            return false;
-        }
         return false;
     }
     
@@ -41,7 +37,7 @@ bool bx_country_code_load(bXill * app)
     }
     COUNTRY_LIST[array_length].bx_id = -1; /* last one at -1 so we have a stop point*/
 
-    for (int i = 0; i < array_length; i++) {
+    for (size_t i = 0; i < array_length; i++) {
         json_t * country = json_array_get(jroot, i);
         BXInteger id = bx_object_get_json_int(country, "id", NULL);
         /* Official documentation says iso3166_alpha2 but in reality it's

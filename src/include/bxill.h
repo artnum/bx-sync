@@ -4,6 +4,14 @@
 #include <bx_net.h>
 #include <mysql/mysql.h>
 
+enum e_ObjectState {
+    Error = 0,
+    NeedUpdate,
+    NeedCreate,
+    NeedNothing
+};
+typedef enum e_ObjectState ObjectState;
+
 typedef struct s_bXill bXill;
 struct s_bXill {
     BXNet * net;

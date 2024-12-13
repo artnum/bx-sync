@@ -17,12 +17,12 @@ struct s_BXObjectPositionCE {
     uint64_t id;
     uint64_t checksum;
 
-    BXInteger remote_id;
-    BXInteger remote_unit_id;
-    BXInteger remote_account_id;
-    BXInteger remote_tax_id;
-    BXInteger remote_internal_pos;
-    BXInteger remote_parent_id;
+    BXUInteger remote_id;
+    BXUInteger remote_unit_id;
+    BXUInteger remote_account_id;
+    BXUInteger remote_tax_id;
+    BXUInteger remote_internal_pos;
+    BXUInteger remote_parent_id;
 
     BXString remote_unit_name;
     BXString remote_text;
@@ -44,13 +44,13 @@ struct s_BXObjectPositionAE {
     uint64_t id;
     uint64_t checksum;
 
-    BXInteger remote_id;
-    BXInteger remote_unit_id;
-    BXInteger remote_account_id;
-    BXInteger remote_tax_id;
-    BXInteger remote_internal_pos;
-    BXInteger remote_parent_id;
-    BXInteger remote_article_id;
+    BXUInteger remote_id;
+    BXUInteger remote_unit_id;
+    BXUInteger remote_account_id;
+    BXUInteger remote_tax_id;
+    BXUInteger remote_internal_pos;
+    BXUInteger remote_parent_id;
+    BXUInteger remote_article_id;
 
     BXString remote_unit_name;
     BXString remote_text;
@@ -72,9 +72,9 @@ struct s_BXObjectPositionTE {
     uint64_t id;
     uint64_t checksum;
 
-    BXInteger remote_id;
-    BXInteger remote_internal_pos;
-    BXInteger remote_parent_id;
+    BXUInteger remote_id;
+    BXUInteger remote_internal_pos;
+    BXUInteger remote_parent_id;
 
     BXString remote_text;
     BXString remote_pos;
@@ -90,9 +90,9 @@ struct s_BXObjectPositionSE {
     uint64_t id;
     uint64_t checksum;
 
-    BXInteger remote_id;
-    BXInteger remote_internal_pos;
-    BXInteger remote_parent_id;
+    BXUInteger remote_id;
+    BXUInteger remote_internal_pos;
+    BXUInteger remote_parent_id;
 
     BXString remote_text;
 
@@ -108,9 +108,9 @@ struct s_BXObjectPositionPE {
     uint64_t id;
     uint64_t checksum;
 
-    BXInteger remote_id;
-    BXInteger remote_internal_pos;
-    BXInteger remote_parent_id;
+    BXUInteger remote_id;
+    BXUInteger remote_internal_pos;
+    BXUInteger remote_parent_id;
     
     BXBool remote_is_optional;
 };
@@ -122,7 +122,7 @@ struct s_BXObjectPositionDE {
     uint64_t id;
     uint64_t checksum;
 
-    BXInteger remote_id;
+    BXUInteger remote_id;
 
     BXString remote_text;
 
