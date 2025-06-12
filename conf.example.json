@@ -1,4 +1,8 @@
 {
-    "bexio-endpoint": "https://api.bexio.com/",
-    "bexio-token": " ... your « Personnal Access Token »..."
+  "bexio-endpoint": "https://api.bexio.com/",
+  "bexio-token": " ... your « Personnal Access Token »...",
+  "mysql-host": "localhost",
+  "mysql-user": "the mysql user",
+  "mysql-password": "the mysql password",
+  "mysql-database": "bxill"
 }
