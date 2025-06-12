@@ -37,7 +37,7 @@ void *contact_thread(void *arg) {
     bx_language_load(app);
     bx_contact_sector_walk_items(app);
     bx_contact_walk_items(app);
-    sleep(1);
+    thrd_yield();
   }
   return 0;
 }
@@ -47,7 +47,7 @@ void *project_thread(void *arg) {
   bx_log_debug("Project data thread %ld", pthread_self());
   while (atomic_load(&app->queue->run)) {
     bx_project_walk_item(app);
-    sleep(1);
+    thrd_yield();
   }
   return 0;
 }
@@ -57,7 +57,7 @@ void *invoice_thread(void *arg) {
   bx_log_debug("Invoice data thread %ld", pthread_self());
   while (atomic_load(&app->queue->run)) {
     bx_invoice_walk_items(app);
-    sleep(1);
+    thrd_yield();
   }
   return 0;
 }

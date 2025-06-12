@@ -8,6 +8,7 @@
 #include "../include/bxobjects/contact.h"
 #include <jansson.h>
 #include <stdint.h>
+#include <threads.h>
 
 #define GET_PROJECT_PATH "2.0/pr_project/$"
 #define WALK_PROJECT_PATH "2.0/pr_project"
@@ -203,7 +204,7 @@ void bx_project_walk_item(bXill *app) {
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
   const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 20};
+      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BX_LIST_LIMIT};
   size_t arr_len = 0;
   do {
     arr_len = 0;
@@ -223,6 +224,7 @@ void bx_project_walk_item(bXill *app) {
       bx_project_sync_item(app, (BXGeneric *)&id);
     }
     bx_net_request_free(request);
+    thrd_yield();
     offset.value += limit.value;
   } while (arr_len > 0);
 }

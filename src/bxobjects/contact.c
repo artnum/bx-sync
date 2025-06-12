@@ -11,6 +11,7 @@
 #include <jansson.h>
 #include <mysql/mysql.h>
 #include <stddef.h>
+#include <threads.h>
 #include <unistd.h>
 
 #define QUERY_UPDATE                                                           \
@@ -392,7 +393,6 @@ bool bx_contact_sync_item(bXill *app, BXGeneric *item) {
   bx_database_add_bxtype(query, ":city", (BXGeneric *)&contact->city);
   bx_database_add_bxtype(query, ":mail_second",
                          (BXGeneric *)&contact->mail_second);
-  bx_database_add_bxtype(query, ":mail", (BXGeneric *)&contact->mail);
   bx_database_add_bxtype(query, ":phone_fixed_second",
                          (BXGeneric *)&contact->phone_fixed_second);
   bx_database_add_bxtype(query, ":phone_fixed",
@@ -441,7 +441,7 @@ void bx_contact_walk_items(bXill *app) {
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
   const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 20};
+      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BX_LIST_LIMIT};
 
   size_t arr_len = 0;
   do {
@@ -463,6 +463,7 @@ void bx_contact_walk_items(bXill *app) {
       bx_contact_sync_item(app, (BXGeneric *)&id);
     }
     bx_net_request_free(request);
+    thrd_yield();
     offset.value += limit.value;
   } while (arr_len > 0);
 }

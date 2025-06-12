@@ -7,6 +7,7 @@
 #include "../include/bxobjects/position.h"
 #include <assert.h>
 #include <sys/types.h>
+#include <threads.h>
 
 #define QUERY_INSERT                                                           \
   "INSERT INTO invoice (id, document_nr, title, contact_id, contact_sub_id, "  \
@@ -384,7 +385,7 @@ void bx_invoice_walk_items(bXill *app) {
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
   const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 20};
+      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BX_LIST_LIMIT};
   size_t arr_len = 0;
   do {
     arr_len = 0;
@@ -404,6 +405,7 @@ void bx_invoice_walk_items(bXill *app) {
       bx_invoice_sync_item(app, (BXGeneric *)&id);
     }
     bx_net_request_free(request);
+    thrd_yield();
     offset.value += limit.value;
   } while (arr_len > 0);
 }
