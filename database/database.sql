@@ -191,17 +191,17 @@ CREATE TABLE IF NOT EXISTS tax (
 );
 
 CREATE TABLE IF NOT EXISTS invoice (
-    id BIGINT PRIMARY KEY,
+    id BIGINT UNSIGNED PRIMARY KEY,
     document_nr VARCHAR(255),
     title VARCHAR(80) DEFAULT NULL,
-    contact_id BIGINT,
-    contact_sub_id BIGINT,
-    user_id BIGINT,
-    project_id BIGINT,
-    language_id BIGINT,
-    bank_account_id BIGINT,
-    currency_id BIGINT,
-    payment_type_id BIGINT,
+    contact_id BIGINT UNSIGNED,
+    contact_sub_id BIGINT UNSIGNED,
+    user_id BIGINT UNSIGNED,
+    project_id BIGINT UNSIGNED,
+    language_id BIGINT UNSIGNED,
+    bank_account_id BIGINT UNSIGNED,
+    currency_id BIGINT UNSIGNED,
+    payment_type_id BIGINT UNSIGNED,
     header TEXT,
     footer TEXT,
     mwst_type INT,
@@ -221,11 +221,9 @@ CREATE TABLE IF NOT EXISTS invoice (
     network_link TEXT DEFAULT '',
     _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    INDEX USING HASH _checksum,
-    INDEX USING HASH _deleted,
-    FOREIGN KEY contact_id REFERENCES contact(id)
+    INDEX USING HASH (_checksum),
+    INDEX USING HASH (_deleted),
+    FOREIGN KEY (contact_id) REFERENCES contact(id)
         ON UPDATE CASCADE
         ON DELETE RESTRICT
-)
-
+);

@@ -294,6 +294,26 @@ static void contact_group_sync(bXill *app, BXObjectContact *contact) {
   free(group_ids);
 }
 
+bool bx_contact_is_in_database(bXill *app, BXGeneric *item) {
+  BXDatabaseQuery *query = bx_database_new_query(
+      app->mysql, "SELECT _checksum FROM contact WHERE id = :id;");
+  if (query == NULL) {
+    return false;
+  }
+  bx_database_add_bxtype(query, ":id", item);
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    bx_database_free_query(query);
+    return false;
+  }
+
+  if (query->results == NULL || query->results->column_count == 0) {
+    bx_database_free_query(query);
+    return false;
+  }
+
+  return true;
+}
+
 #define GET_CONTACT_PATH "2.0/contact/$"
 bool bx_contact_sync_item(bXill *app, BXGeneric *item) {
   assert(app != NULL);
@@ -305,6 +325,7 @@ bool bx_contact_sync_item(bXill *app, BXGeneric *item) {
     return false;
   }
   if (request->response == NULL || request->response->http_code != 200) {
+    bx_net_request_free(request);
     return false;
   }
 
@@ -414,23 +435,34 @@ bool bx_contact_sync_item(bXill *app, BXGeneric *item) {
   return true;
 }
 
-#define WALK_CONTACT_PATH "2.0/contact"
+#define WALK_CONTACT_PATH "2.0/contact?limit=$&offset=$"
 void bx_contact_walk_items(bXill *app) {
-  BXNetRequest *request = bx_do_request(app->queue, NULL, WALK_CONTACT_PATH);
   bx_log_debug("BX Walk Contact Items");
-  if (request == NULL) {
-    return;
-  }
-  if (!json_is_array(request->decoded)) {
-    bx_net_request_free(request);
-    return;
-  }
+  BXInteger offset = {
+      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
+  const BXInteger limit = {
+      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 20};
 
-  size_t arr_len = json_array_size(request->decoded);
-  for (size_t i = 0; i < arr_len; i++) {
-    BXInteger id =
-        bx_object_get_json_int(json_array_get(request->decoded, i), "id", NULL);
-    bx_contact_sync_item(app, (BXGeneric *)&id);
-  }
-  bx_net_request_free(request);
+  size_t arr_len = 0;
+  do {
+    arr_len = 0;
+    BXNetRequest *request =
+        bx_do_request(app->queue, NULL, WALK_CONTACT_PATH, &limit, &offset);
+    if (request == NULL) {
+      return;
+    }
+    if (!json_is_array(request->decoded)) {
+      bx_net_request_free(request);
+      return;
+    }
+
+    arr_len = json_array_size(request->decoded);
+    for (size_t i = 0; i < arr_len; i++) {
+      BXInteger id = bx_object_get_json_int(json_array_get(request->decoded, i),
+                                            "id", NULL);
+      bx_contact_sync_item(app, (BXGeneric *)&id);
+    }
+    bx_net_request_free(request);
+    offset.value += limit.value;
+  } while (arr_len > 0);
 }

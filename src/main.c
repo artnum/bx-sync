@@ -37,6 +37,7 @@ void *contact_thread(void *arg) {
     bx_language_load(app);
     bx_contact_sector_walk_items(app);
     bx_contact_walk_items(app);
+    sleep(1);
   }
   return 0;
 }
@@ -46,6 +47,17 @@ void *project_thread(void *arg) {
   bx_log_debug("Project data thread %ld", pthread_self());
   while (atomic_load(&app->queue->run)) {
     bx_project_walk_item(app);
+    sleep(1);
+  }
+  return 0;
+}
+
+void *invoice_thread(void *arg) {
+  bXill *app = (bXill *)arg;
+  bx_log_debug("Invoice data thread %ld", pthread_self());
+  while (atomic_load(&app->queue->run)) {
+    bx_invoice_walk_items(app);
+    sleep(1);
   }
   return 0;
 }
@@ -57,7 +69,12 @@ int main(int argc, char **argv) {
 
   bx_mutex_init(&MTX_COUNTRY_LIST);
 
-  enum e_ThreadList { CONTACT_THREAD, PROJECT_THREAD, MAX__THREAD_LIST };
+  enum e_ThreadList {
+    CONTACT_THREAD,
+    PROJECT_THREAD,
+    INVOICE_THREAD,
+    MAX__THREAD_LIST
+  };
   pthread_t threads[MAX__THREAD_LIST];
 
   mysql_library_init(argc, argv, NULL);
@@ -101,6 +118,7 @@ int main(int argc, char **argv) {
   pthread_create(&threads[CONTACT_THREAD], NULL, contact_thread, (void *)&app);
 
   pthread_create(&threads[PROJECT_THREAD], NULL, project_thread, (void *)&app);
+  pthread_create(&threads[INVOICE_THREAD], NULL, invoice_thread, (void *)&app);
 
   bool exit = false;
 

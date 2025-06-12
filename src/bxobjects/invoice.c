@@ -1,8 +1,47 @@
 #include "../include/bxobjects/invoice.h"
+#include "../include/bx_database.h"
 #include "../include/bx_object.h"
 #include "../include/bx_utils.h"
+#include "../include/bxill.h"
+#include "../include/bxobjects/contact.h"
 #include "../include/bxobjects/position.h"
 #include <assert.h>
+#include <sys/types.h>
+
+#define QUERY_INSERT                                                           \
+  "INSERT INTO invoice (id, document_nr, title, contact_id, contact_sub_id, "  \
+  "user_id, project_id, language_id, bank_account_id, currency_id, "           \
+  "payment_type_id, header, footer, mwst_type, mwst_is_net, "                  \
+  "show_position_taxes, is_valid_from, is_valid_to, contact_address, "         \
+  "kb_item_status, reference, api_reference, viewed_by_client_at, "            \
+  "updated_at, esr_id, qr_invoice_id, template_slug, network_link, "           \
+  "_checksum, _last_updated) VALUES (:id, :document_nr, :title, "              \
+  ":contact_id, :contact_sub_id, :user_id, :project_id, :language_id, "        \
+  ":bank_account_id, :currency_id, :payment_type_id, :header, :footer, "       \
+  ":mwst_type, :mwst_is_net, :show_position_taxes, :is_valid_from, "           \
+  ":is_valid_to, :contact_address, :kb_item_status, :reference, "              \
+  ":api_reference, :viewed_by_client_at, :updated_at, :esr_id, "               \
+  ":qr_invoice_id, :template_slug, :network_link, :_checksum, "                \
+  ":_last_updated);"
+
+#define QUERY_UPDATE                                                           \
+  "UPDATE invoice SET document_nr = :document_nr, title = :title, "            \
+  "contact_id = :contact_id, contact_sub_id = :contact_sub_id, "               \
+  "user_id = :user_id, project_id = :project_id, language_id = :language_id, " \
+  "bank_account_id = :bank_account_id, currency_id = :currency_id, "           \
+  "payment_type_id = :payment_type_id, header = :header, footer = :footer, "   \
+  "mwst_type = :mwst_type, mwst_is_net = :mwst_is_net, "                       \
+  "show_position_taxes = :show_position_taxes, is_valid_from = "               \
+  ":is_valid_from,"                                                            \
+  "is_valid_to = :is_valid_to, contact_address = :contact_address, "           \
+  "kb_item_status = :kb_item_status, reference = :reference, "                 \
+  "api_reference = :api_reference, viewed_by_client_at = "                     \
+  ":viewed_by_client_at,"                                                      \
+  "updated_at = :updated_at, esr_id = :esr_id, qr_invoice_id = "               \
+  ":qr_invoice_id,"                                                            \
+  "template_slug = :template_slug, network_link = :network_link, "             \
+  "_checksum = :_checksum, _last_updated = :_last_updated "                    \
+  "WHERE id = :id;"
 
 void bx_object_invoice_free(void *data) {
   BXObjectInvoice *invoice = (BXObjectInvoice *)data;
@@ -10,15 +49,15 @@ void bx_object_invoice_free(void *data) {
     return;
   }
 
-  bx_object_free_value(&invoice->remote_document_nr);
-  bx_object_free_value(&invoice->remote_is_valid_from);
-  bx_object_free_value(&invoice->remote_is_valid_to);
-  bx_object_free_value(&invoice->remote_contact_address);
-  bx_object_free_value(&invoice->remote_template_slug);
-  bx_object_free_value(&invoice->remote_updated_at);
-  bx_object_free_value(&invoice->remote_reference);
-  bx_object_free_value(&invoice->remote_api_reference);
-  bx_object_free_value(&invoice->remote_viewed_by_client_at);
+  bx_object_free_value(&invoice->document_nr);
+  bx_object_free_value(&invoice->is_valid_from);
+  bx_object_free_value(&invoice->is_valid_to);
+  bx_object_free_value(&invoice->contact_address);
+  bx_object_free_value(&invoice->template_slug);
+  bx_object_free_value(&invoice->updated_at);
+  bx_object_free_value(&invoice->reference);
+  bx_object_free_value(&invoice->api_reference);
+  bx_object_free_value(&invoice->viewed_by_client_at);
   if (invoice->remote_taxes != NULL) {
     for (int i = 0; i < invoice->bx_object_taxes_count; i++) {
       bx_object_tax_free(invoice->remote_taxes[i]);
@@ -40,42 +79,40 @@ void bx_object_invoice_dump(void *data) {
   BXObjectInvoice *invoice = (BXObjectInvoice *)data;
 
   _bx_dump_print_title("### DUMP '%s' ID:%lx CS:%lx ###",
-                       invoice->remote_document_nr.value, invoice->id,
+                       invoice->document_nr.value, invoice->id,
                        invoice->checksum);
-  _bx_dump_any("id", &invoice->remote_id, 1);
-  _bx_dump_any("user_id", &invoice->remote_user_id, 1);
-  _bx_dump_any("contact_id", &invoice->remote_contact_id, 1);
-  _bx_dump_any("contact_subid", &invoice->remote_contact_subid, 1);
-  _bx_dump_any("project_id", &invoice->remote_project_id, 1);
-  _bx_dump_any("bank_account_id", &invoice->remote_bank_account_id, 1);
-  _bx_dump_any("currency_id", &invoice->remote_currency_id, 1);
-  _bx_dump_any("payment_type_id", &invoice->remote_payment_type_id, 1);
-  _bx_dump_any("tva_id", &invoice->remote_tva_type, 1);
-  _bx_dump_any("kb_item_status", &invoice->remote_kb_item_status, 1);
-  _bx_dump_any("esr_id", &invoice->remote_esr_id, 1);
-  _bx_dump_any("qr_invoice_id", &invoice->remote_qr_invoice_id, 1);
+  _bx_dump_any("id", &invoice->id, 1);
+  _bx_dump_any("user_id", &invoice->user_id, 1);
+  _bx_dump_any("contact_id", &invoice->contact_id, 1);
+  _bx_dump_any("contact_sub_id", &invoice->contact_sub_id, 1);
+  _bx_dump_any("project_id", &invoice->project_id, 1);
+  _bx_dump_any("bank_account_id", &invoice->bank_account_id, 1);
+  _bx_dump_any("currency_id", &invoice->currency_id, 1);
+  _bx_dump_any("payment_type_id", &invoice->payment_type_id, 1);
+  _bx_dump_any("tva_id", &invoice->tva_type, 1);
+  _bx_dump_any("kb_item_status", &invoice->kb_item_status, 1);
+  _bx_dump_any("esr_id", &invoice->esr_id, 1);
+  _bx_dump_any("qr_invoice_id", &invoice->qr_invoice_id, 1);
 
-  _bx_dump_any("total_gross", &invoice->remote_total_gross, 1);
-  _bx_dump_any("total_net", &invoice->remote_total_net, 1);
-  _bx_dump_any("total_taxes", &invoice->remote_total_taxes, 1);
-  _bx_dump_any("total_reveived_payments",
-               &invoice->remote_total_received_payments, 1);
-  _bx_dump_any("total_credit_vouchers", &invoice->remote_total_credit_vouchers,
+  _bx_dump_any("total_gross", &invoice->total_gross, 1);
+  _bx_dump_any("total_net", &invoice->total_net, 1);
+  _bx_dump_any("total_taxes", &invoice->total_taxes, 1);
+  _bx_dump_any("total_reveived_payments", &invoice->total_received_payments, 1);
+  _bx_dump_any("total_credit_vouchers", &invoice->total_credit_vouchers, 1);
+  _bx_dump_any("total_remaining_payments", &invoice->total_remaining_payments,
                1);
-  _bx_dump_any("total_remaining_payments",
-               &invoice->remote_total_remaining_payments, 1);
-  _bx_dump_any("total", &invoice->remote_total, 1);
-  _bx_dump_any("total_rounding_difference",
-               &invoice->remote_total_rounding_difference, 1);
+  _bx_dump_any("total", &invoice->total, 1);
+  _bx_dump_any("total_rounding_difference", &invoice->total_rounding_difference,
+               1);
 
-  _bx_dump_any("is_valid_from", &invoice->remote_is_valid_from, 1);
-  _bx_dump_any("is_valid_to", &invoice->remote_is_valid_to, 1);
-  _bx_dump_any("contact_address", &invoice->remote_contact_address, 1);
-  _bx_dump_any("template_slug", &invoice->remote_template_slug, 1);
-  _bx_dump_any("updated_at", &invoice->remote_updated_at, 1);
-  _bx_dump_any("reference", &invoice->remote_reference, 1);
-  _bx_dump_any("api_reference", &invoice->remote_api_reference, 1);
-  _bx_dump_any("viewed_by_client_at", &invoice->remote_viewed_by_client_at, 1);
+  _bx_dump_any("is_valid_from", &invoice->is_valid_from, 1);
+  _bx_dump_any("is_valid_to", &invoice->is_valid_to, 1);
+  _bx_dump_any("contact_address", &invoice->contact_address, 1);
+  _bx_dump_any("template_slug", &invoice->template_slug, 1);
+  _bx_dump_any("updated_at", &invoice->updated_at, 1);
+  _bx_dump_any("reference", &invoice->reference, 1);
+  _bx_dump_any("api_reference", &invoice->api_reference, 1);
+  _bx_dump_any("viewed_by_client_at", &invoice->viewed_by_client_at, 1);
 
   _bx_dump_print_subtitle("Taxes");
   for (int i = 0; i < invoice->bx_object_taxes_count; i++) {
@@ -101,71 +138,73 @@ void *bx_object_invoice_decode(void *object) {
     return NULL;
   }
   invoice->type = BXTypeInvoice;
-  bx_utils_gen_id(&invoice->id);
 
   /* integer */
-  invoice->remote_id = bx_object_get_json_uint(jroot, "id", hashState);
-  invoice->remote_user_id =
-      bx_object_get_json_uint(jroot, "user_id", hashState);
-  invoice->remote_contact_id =
-      bx_object_get_json_uint(jroot, "contact_id", hashState);
-  invoice->remote_contact_subid =
+  invoice->id = bx_object_get_json_uint(jroot, "id", hashState);
+  invoice->user_id = bx_object_get_json_uint(jroot, "user_id", hashState);
+  invoice->contact_id = bx_object_get_json_uint(jroot, "contact_id", hashState);
+  invoice->contact_sub_id =
       bx_object_get_json_uint(jroot, "contact_sub_id", hashState);
-  invoice->remote_project_id =
-      bx_object_get_json_uint(jroot, "user_id", hashState);
-  invoice->remote_bank_account_id =
+  invoice->project_id = bx_object_get_json_uint(jroot, "user_id", hashState);
+  invoice->bank_account_id =
       bx_object_get_json_uint(jroot, "bank_account_id", hashState);
-  invoice->remote_currency_id =
+  invoice->currency_id =
       bx_object_get_json_uint(jroot, "currency_id", hashState);
-  invoice->remote_payment_type_id =
+  invoice->payment_type_id =
       bx_object_get_json_uint(jroot, "payment_type_id", hashState);
-  invoice->remote_tva_type =
-      bx_object_get_json_uint(jroot, "mwst_type", hashState);
-  invoice->remote_kb_item_status =
+  invoice->tva_type = bx_object_get_json_uint(jroot, "mwst_type", hashState);
+  invoice->kb_item_status =
       bx_object_get_json_uint(jroot, "kb_item_status", hashState);
-  invoice->remote_esr_id = bx_object_get_json_uint(jroot, "esr_id", hashState);
-  invoice->remote_qr_invoice_id =
+  invoice->esr_id = bx_object_get_json_uint(jroot, "esr_id", hashState);
+  invoice->qr_invoice_id =
       bx_object_get_json_uint(jroot, "qr_invoice_id", hashState);
+  invoice->language_id =
+      bx_object_get_json_uint(jroot, "language_id", hashState);
+  invoice->mwst_type = bx_object_get_json_uint(jroot, "mwst_type", hashState);
+  invoice->show_position_taxes =
+      bx_object_get_json_uint(jroot, "show_position_taxes", hashState);
+  invoice->mwst_is_net =
+      bx_object_get_json_uint(jroot, "mwst_is_net", hashState);
 
   /* double */
-  invoice->remote_total_gross =
+  invoice->total_gross =
       bx_object_get_json_double(jroot, "total_gross", hashState);
-  invoice->remote_total_net =
-      bx_object_get_json_double(jroot, "total_net", hashState);
-  invoice->remote_total_taxes =
+  invoice->total_net = bx_object_get_json_double(jroot, "total_net", hashState);
+  invoice->total_taxes =
       bx_object_get_json_double(jroot, "total_taxes", hashState);
-  invoice->remote_total_received_payments =
+  invoice->total_received_payments =
       bx_object_get_json_double(jroot, "total_received_payments", hashState);
-  invoice->remote_total_credit_vouchers =
+  invoice->total_credit_vouchers =
       bx_object_get_json_double(jroot, "total_credit_vouchers", hashState);
-  invoice->remote_total_remaining_payments =
+  invoice->total_remaining_payments =
       bx_object_get_json_double(jroot, "total_remaining_payments", hashState);
-  invoice->remote_total = bx_object_get_json_double(jroot, "total", hashState);
-  invoice->remote_total_rounding_difference =
+  invoice->total = bx_object_get_json_double(jroot, "total", hashState);
+  invoice->total_rounding_difference =
       bx_object_get_json_double(jroot, "total_rounding_difference", hashState);
 
   /* string */
-  invoice->remote_document_nr =
+  invoice->document_nr =
       bx_object_get_json_string(jroot, "document_nr", hashState);
-  invoice->remote_is_valid_from =
+  invoice->is_valid_from =
       bx_object_get_json_string(jroot, "is_valid_from", hashState);
-  invoice->remote_is_valid_to =
+  invoice->is_valid_to =
       bx_object_get_json_string(jroot, "is_valid_to", hashState);
-  invoice->remote_contact_address =
+  invoice->contact_address =
       bx_object_get_json_string(jroot, "contact_address", hashState);
-  invoice->remote_template_slug =
+  invoice->template_slug =
       bx_object_get_json_string(jroot, "template_slug", hashState);
-  invoice->remote_updated_at =
+  invoice->updated_at =
       bx_object_get_json_string(jroot, "updated_at", hashState);
-  invoice->remote_reference =
-      bx_object_get_json_string(jroot, "reference", hashState);
-  invoice->remote_api_reference =
+  invoice->reference = bx_object_get_json_string(jroot, "reference", hashState);
+  invoice->api_reference =
       bx_object_get_json_string(jroot, "api_reference", hashState);
-  invoice->remote_viewed_by_client_at =
+  invoice->viewed_by_client_at =
       bx_object_get_json_string(jroot, "viewed_by_client_at", hashState);
+  invoice->header = bx_object_get_json_string(jroot, "header", hashState);
+  invoice->footer = bx_object_get_json_string(jroot, "footer", hashState);
+  invoice->title = bx_object_get_json_string(jroot, "title", hashState);
 
-  invoice->remote_tva_is_net =
-      bx_object_get_json_bool(jroot, "tva_is_net", hashState);
+  invoice->tva_is_net = bx_object_get_json_bool(jroot, "tva_is_net", hashState);
 
   json_t *value = json_object_get(jroot, "taxs");
   if (value != NULL && json_is_array(value)) {
@@ -197,4 +236,174 @@ void *bx_object_invoice_decode(void *object) {
   invoice->checksum = XXH3_64bits_digest(hashState);
   XXH3_freeState(hashState);
   return invoice;
+}
+
+#define GET_INVOICE_PATH "2.0/kb_invoice/$"
+bool bx_invoice_sync_item(bXill *app, BXGeneric *item) {
+  assert(app != NULL);
+  assert(item != NULL);
+
+  BXNetRequest *request = NULL;
+  BXObjectInvoice *invoice = NULL;
+  BXDatabaseQuery *query = NULL;
+
+  bx_log_debug("Invoice %ld", ((BXInteger *)item)->value);
+  request = bx_do_request(app->queue, NULL, GET_INVOICE_PATH, item);
+  if (request == NULL) {
+    bx_log_debug("Do request failed");
+    goto fail_and_return;
+  }
+  if (request->response == NULL || request->response->http_code != 200) {
+    if (request->response != NULL) {
+      bx_log_debug("Code not good (response %p, code %d)", request->response,
+                   request->response->http_code);
+    } else {
+      bx_log_debug("Response bad");
+    }
+    goto fail_and_return;
+  }
+  invoice = bx_object_invoice_decode(request->decoded);
+  bx_net_request_free(request);
+  request = NULL;
+  if (invoice == NULL) {
+    bx_log_debug("Decode failed");
+    goto fail_and_return;
+  }
+
+  if (!bx_contact_is_in_database(app, (BXGeneric *)&invoice->contact_id)) {
+    bx_contact_sync_item(app, (BXGeneric *)&invoice->contact_id);
+  }
+
+  query = bx_database_new_query(app->mysql,
+                                "SELECT _checksum FROM invoice WHERE id = :id");
+  if (query == NULL) {
+    goto fail_and_return;
+  }
+  bx_database_add_param_int64(query, ":id", &invoice->id.value);
+  bx_database_execute(query);
+  bx_database_results(query);
+  if (query->results == NULL || query->results->column_count == 0) {
+    bx_database_free_query(query);
+    query = NULL;
+    query = bx_database_new_query(app->mysql, QUERY_INSERT);
+  } else {
+    if (query->results[0].columns[0].i_value == invoice->checksum) {
+      bx_database_free_query(query);
+      bx_object_invoice_free(invoice);
+      return true;
+    }
+    bx_database_free_query(query);
+    query = NULL;
+    query = bx_database_new_query(app->mysql, QUERY_UPDATE);
+  }
+  if (query == NULL) {
+    goto fail_and_return;
+  }
+
+  uint64_t now = time(NULL);
+
+  bx_database_add_bxtype(query, ":id", (BXGeneric *)&invoice->id);
+  bx_database_add_bxtype(query, ":document_nr",
+                         (BXGeneric *)&invoice->document_nr);
+  bx_database_add_bxtype(query, ":title", (BXGeneric *)&invoice->title);
+  bx_database_add_bxtype(query, ":contact_id",
+                         (BXGeneric *)&invoice->contact_id);
+  bx_database_add_bxtype(query, ":contact_sub_id",
+                         (BXGeneric *)&invoice->contact_sub_id);
+  bx_database_add_bxtype(query, ":user_id", (BXGeneric *)&invoice->user_id);
+  bx_database_add_bxtype(query, ":project_id",
+                         (BXGeneric *)&invoice->project_id);
+  bx_database_add_bxtype(query, ":language_id",
+                         (BXGeneric *)&invoice->language_id);
+  bx_database_add_bxtype(query, ":bank_account_id",
+                         (BXGeneric *)&invoice->bank_account_id);
+  bx_database_add_bxtype(query, ":currency_id",
+                         (BXGeneric *)&invoice->currency_id);
+  bx_database_add_bxtype(query, ":payment_type_id",
+                         (BXGeneric *)&invoice->payment_type_id);
+  bx_database_add_bxtype(query, ":header", (BXGeneric *)&invoice->header);
+  bx_database_add_bxtype(query, ":footer", (BXGeneric *)&invoice->footer);
+  bx_database_add_bxtype(query, ":mwst_type", (BXGeneric *)&invoice->mwst_type);
+  bx_database_add_bxtype(query, ":mwst_is_net",
+                         (BXGeneric *)&invoice->mwst_is_net);
+  bx_database_add_bxtype(query, ":show_position_taxes",
+                         (BXGeneric *)&invoice->show_position_taxes);
+  bx_database_add_bxtype(query, ":is_valid_from",
+                         (BXGeneric *)&invoice->is_valid_from);
+  bx_database_add_bxtype(query, ":is_valid_to",
+                         (BXGeneric *)&invoice->is_valid_to);
+  bx_database_add_bxtype(query, ":contact_address",
+                         (BXGeneric *)&invoice->contact_address);
+  bx_database_add_bxtype(query, ":kb_item_status",
+                         (BXGeneric *)&invoice->kb_item_status);
+  bx_database_add_bxtype(query, ":reference", (BXGeneric *)&invoice->reference);
+  bx_database_add_bxtype(query, ":api_reference",
+                         (BXGeneric *)&invoice->api_reference);
+  bx_database_add_bxtype(query, ":viewed_by_client_at",
+                         (BXGeneric *)&invoice->viewed_by_client_at);
+  bx_database_add_bxtype(query, ":updated_at",
+                         (BXGeneric *)&invoice->updated_at);
+  bx_database_add_bxtype(query, ":esr_id", (BXGeneric *)&invoice->esr_id);
+  bx_database_add_bxtype(query, ":qr_invoice_id",
+                         (BXGeneric *)&invoice->qr_invoice_id);
+  bx_database_add_bxtype(query, ":template_slug",
+                         (BXGeneric *)&invoice->template_slug);
+  bx_database_add_bxtype(query, ":network_link",
+                         (BXGeneric *)&invoice->network_link);
+
+  bx_database_add_param_uint64(query, ":_checksum", &invoice->checksum);
+  bx_database_add_param_uint64(query, ":_last_updated", &now);
+
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    goto fail_and_return;
+  }
+
+  bx_object_invoice_free(invoice);
+  bx_database_free_query(query);
+  query = NULL;
+
+  return true;
+
+fail_and_return:
+  if (request != NULL) {
+    bx_net_request_free(request);
+  }
+  if (invoice != NULL) {
+    bx_object_invoice_free(invoice);
+  }
+  if (query != NULL) {
+    bx_database_free_query(query);
+  }
+
+  return false;
+}
+
+#define WALK_INVOICE_PATH "2.0/kb_invoice?limit=$&offset=$"
+void bx_invoice_walk_items(bXill *app) {
+  bx_log_debug("BX Walk Invoice Items");
+  BXInteger offset = {
+      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
+  const BXInteger limit = {
+      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 20};
+  size_t arr_len = 0;
+  do {
+    arr_len = 0;
+    BXNetRequest *request =
+        bx_do_request(app->queue, NULL, WALK_INVOICE_PATH, &limit, &offset);
+    if (request == NULL) {
+      return;
+    }
+    if (!json_is_array(request->decoded)) {
+      bx_net_request_free(request);
+      return;
+    }
+    arr_len = json_array_size(request->decoded);
+    for (size_t i = 0; i < arr_len; i++) {
+      BXInteger id = bx_object_get_json_int(json_array_get(request->decoded, i),
+                                            "id", NULL);
+      bx_invoice_sync_item(app, (BXGeneric *)&id);
+    }
+    bx_net_request_free(request);
+    offset.value += limit.value;
+  } while (arr_len > 0);
 }

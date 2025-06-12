@@ -50,5 +50,6 @@ void bx_object_contact_free(void *data);
 void bx_object_contact_store(MYSQL *mysql, BXObjectContact *contact);
 bool bx_contact_sync_item(bXill *app, BXGeneric *item);
 void bx_contact_walk_items(bXill *app);
+bool bx_contact_is_in_database(bXill *app, BXGeneric *item);
 
 #endif /* BX_OBJECT_CONTACT_H__ */

@@ -126,6 +126,86 @@ static inline char *_bx_item_to_path(const char *fmt, va_list ap) {
   size_t fmt_len = strlen(fmt);
   assert(fmt_len > 0);
 
+  char *path = NULL;
+  size_t path_len =
+      0; // Tracks total length of path (excluding null terminator)
+  size_t origin = 0;
+  size_t i = 0;
+
+  for (i = 0; i < fmt_len; i++) {
+    if (fmt[i] == '$') {
+      BXGeneric *item = va_arg(ap, BXGeneric *);
+      if (item == NULL) {
+        free(path);
+        va_end(ap);
+        return NULL;
+      }
+      char *str = bx_object_value_to_string(item);
+      if (str == NULL) {
+        free(path);
+        va_end(ap);
+        return NULL;
+      }
+      size_t str_len = strlen(str);
+      if (str_len == 0) {
+        free(str);
+        free(path);
+        va_end(ap);
+        return NULL;
+      }
+
+      // Calculate new length: existing path + new fmt segment + str + null
+      // terminator
+      size_t new_len = path_len + (i - origin) + str_len;
+      char *tmp = realloc(path, new_len + 1); // +1 for null terminator
+      if (tmp == NULL) {
+        free(str);
+        free(path);
+        va_end(ap);
+        return NULL;
+      }
+      path = tmp;
+
+      // Copy fmt segment and str directly using memcpy
+      if (i > origin) {
+        memcpy(path + path_len, &fmt[origin], i - origin);
+        path_len += i - origin;
+      }
+      memcpy(path + path_len, str, str_len);
+      path_len += str_len;
+      path[path_len] = '\0'; // Null-terminate
+
+      free(str);
+      origin = i + 1;
+    }
+  }
+
+  // Append any remaining fmt segment
+  if (i > origin) {
+    size_t new_len = path_len + (i - origin);
+    char *tmp = realloc(path, new_len + 1); // +1 for null terminator
+    if (tmp == NULL) {
+      free(path);
+      va_end(ap);
+      return NULL;
+    }
+    path = tmp;
+
+    memcpy(path + path_len, &fmt[origin], i - origin);
+    path_len += i - origin;
+    path[path_len] = '\0'; // Null-terminate
+  }
+
+  va_end(ap);
+  return path;
+}
+
+#if 0
+static inline char *_bx_item_to_path(const char *fmt, va_list ap) {
+  assert(fmt != NULL);
+  size_t fmt_len = strlen(fmt);
+  assert(fmt_len > 0);
+
   size_t total_len = 0;
   size_t origin = 0;
   size_t i = 0;
@@ -178,6 +258,7 @@ static inline char *_bx_item_to_path(const char *fmt, va_list ap) {
 
   return path;
 }
+#endif
 
 char *bx_item_to_path(const char *fmt, ...) {
   va_list ap;
