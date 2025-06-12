@@ -7,39 +7,40 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-#define BX_OBJECT_TYPE_INTEGER   1
-#define BX_OBJECT_TYPE_UINTEGER  2
-#define BX_OBJECT_TYPE_FLOAT     3
-#define BX_OBJECT_TYPE_STRING    4
-#define BX_OBJECT_TYPE_BOOL      5
-#define BX_OBJECT_TYPE_BYTES     6
+#define BX_OBJECT_TYPE_INTEGER      1
+#define BX_OBJECT_TYPE_UINTEGER     2
+#define BX_OBJECT_TYPE_FLOAT        3
+#define BX_OBJECT_TYPE_STRING       4
+#define BX_OBJECT_TYPE_BOOL         5
+#define BX_OBJECT_TYPE_BYTES        6
+#define BX_OBJECT_TYPE_UUID         7
 
 typedef uint8_t BXGeneric;
 
 typedef struct s_BXInteger BXInteger;
 struct s_BXInteger {
-    uint8_t type;
+    BXGeneric type;
     bool isset;
     int64_t value;
 };
 
 typedef struct s_BXUInteger BXUInteger;
 struct s_BXUInteger {
-    uint8_t type;
+    BXGeneric type;
     bool isset;
     uint64_t value;
 };
 
 typedef struct s_BXFloat BXFloat;
 struct s_BXFloat {
-    uint8_t type;
+    BXGeneric type;
     bool isset;
     double value;
 };
 
 typedef struct s_BXString BXString;
 struct s_BXString {
-    uint8_t type;
+    BXGeneric type;
     bool isset;
     char * value;
     size_t value_len;
@@ -47,17 +48,24 @@ struct s_BXString {
 
 typedef struct s_BXBool BXBool;
 struct s_BXBool {
-    uint8_t type;
+    BXGeneric type;
     bool isset;
     bool value;
 };
 
 typedef struct s_BXBytes BXBytes;
 struct s_BXBytes {
-    uint8_t type;
+    BXGeneric type;
     bool isset;
     uint8_t * value;
     size_t value_len;
+};
+
+typedef struct s_BXUuid BXUuid;
+struct s_BXUuid {
+    BXGeneric type;
+    bool isset;
+    uint64_t value[2];
 };
 
 char * bx_object_value_to_string(BXGeneric * value);

@@ -1,17 +1,17 @@
 #ifndef BX_UTILS_H__
 #define BX_UTILS_H__
 
-#include <bx_mutex.h>
-#include <bx_net.h>
+#include "bx_mutex.h"
+#include "bx_net.h"
 
 typedef struct {
-    uint32_t seed;
-    BXMutex mutex;
+  uint32_t seed;
+  BXMutex mutex;
 } BXUtilsPRNGState;
 
 void bx_log_init();
 void bx_utils_init(void);
-bool bx_utils_gen_id(uint64_t * id);
+bool bx_utils_gen_id(uint64_t *id);
 /**
  * \brief Convert a serie of int into an int array.
  * A serie of int would be something like "1,2,3,4", "1/2/3/4", ...,
@@ -23,23 +23,22 @@ bool bx_utils_gen_id(uint64_t * id);
  * \param str The string to convert.
  * \return The int array, index 0 is the number of items. NULL if no item.
  */
-int64_t * bx_int_string_array_to_int_array(const char * str);
-char * bx_item_to_path (const char * fmt, ...);
-BXNetRequest * bx_do_request(
-    BXNetRequestList * queue,
-    json_t * body,
-    char * path_fmt,
-    ...
-);
+int64_t *bx_int_string_array_to_int_array(const char *str);
+char *bx_item_to_path(const char *fmt, ...);
+BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
+                            char *path_fmt, ...);
 
 /* Logging functions */
-void _bx_log_error(char * file, int line, const char *fmt, ...);
-void _bx_log_info(char * file, int line, const char *fmt, ...);
-void _bx_log_debug(char * file, int line, const char *fmt, ...);
-#define bx_log_error(fmt, ...)      _bx_log_error(__FILE__, __LINE__, (fmt) __VA_OPT__ (,) __VA_ARGS__)
-#define bx_log_info(fmt, ...)       _bx_log_info(__FILE__, __LINE__, (fmt) __VA_OPT__ (,) __VA_ARGS__)
-#define bx_log_debug(fmt, ...)       _bx_log_debug(__FILE__, __LINE__, (fmt) __VA_OPT__ (,) __VA_ARGS__)
+void _bx_log_error(char *file, int line, const char *fmt, ...);
+void _bx_log_info(char *file, int line, const char *fmt, ...);
+void _bx_log_debug(char *file, int line, const char *fmt, ...);
+#define bx_log_error(fmt, ...)                                                 \
+  _bx_log_error(__FILE__, __LINE__, (fmt)__VA_OPT__(, ) __VA_ARGS__)
+#define bx_log_info(fmt, ...)                                                  \
+  _bx_log_info(__FILE__, __LINE__, (fmt)__VA_OPT__(, ) __VA_ARGS__)
+#define bx_log_debug(fmt, ...)                                                 \
+  _bx_log_debug(__FILE__, __LINE__, (fmt)__VA_OPT__(, ) __VA_ARGS__)
 void bx_log_end();
-bool bx_string_compare(const char * str1, const char * str2, size_t max);
+bool bx_string_compare(const char *str1, const char *str2, size_t max);
 
 #endif /* BX_UTILS_H__ */

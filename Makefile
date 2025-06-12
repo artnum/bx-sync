@@ -1,5 +1,5 @@
 NAME=bxnet
-CLFAGS=`pkg-config --cflags libcurl jansson libxxhash mariadb ncurses` -Wall -fanalyzer -ggdb -I./src/include/
+CLFAGS=`pkg-config --cflags libcurl jansson libxxhash mariadb ncurses` -Wall -fanalyzer -ggdb
 LIBS=`pkg-config --libs libcurl jansson libxxhash mariadb ncurses` -lpthread -ggdb
 SRCFILES=$(wildcard src/*.c src/*/*.c)
 OBJFILES=$(addprefix build/, $(addsuffix .o,$(basename $(notdir $(SRCFILES)))))

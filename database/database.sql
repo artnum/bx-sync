@@ -1,3 +1,5 @@
+
+-- ** Contact related table **
 CREATE TABLE IF NOT EXISTS contact_group (
     id BIGINT UNSIGNED PRIMARY KEY,
     name TEXT NOT NULL,
@@ -99,11 +101,56 @@ CREATE TABLE IF NOT EXISTS contact (
     INDEX USING HASH (_deleted)
 );
 
+-- ** Invoice related table **
+
+CREATE TABLE IF NOT EXISTS  pr_project (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    uuid BINARY(16) NOT NULL,
+    nr VARCHAR(20) NOT NULL,
+    name TEXT DEFAULT '',
+    start_date VARCHAR(20) DEFAULT NULL,
+    end_date VARCHAR(20) DEFAULT NULL,
+    comment TEXT DEFAULT '',
+    pr_state_id BIGINT UNSIGNED,
+    pr_project_type_id BIGINT UNSIGNED,
+    contact_id BIGINT UNSIGNED NOT NULL,
+    contact_sub_id BIGINT UNSIGNED DEFAULT NULL,
+    pr_invoice_type_id BIGINT UNSIGNED,
+    pr_invoice_type_amount FLOAT,
+    pr_budget_type_id BIGINT UNSIGNED,
+    pr_budget_type_amount  FLOAT,
+        _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    INDEX USING HASH(uuid),
+    INDEX USING HASH(nr),
+    INDEX USING HASH (_checksum),
+    INDEX USING HASH (_deleted),
+    FOREIGN KEY (contact_id) REFERENCES contact(id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS account (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    uuid BINARY(16) NOT NULL,
+
+    INDEX USING HASH(uuid)
+);
+
+CREATE TABLE IF NOT EXISTS unit (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(30),
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+);
+
 CREATE TABLE IF NOT EXISTS invoice_position (
     id BIGINT PRIMARY KEY,
     amount FLOAT NOT NULL,
     account_id BIGINT,
-    unit_id BIGINT,
+    unit_id BIGINT UNSIGNED DEFAULT NULL,
     tax_id BIGINT,
     tax_value FLOAT,
     description TEXT DEFAULT '',
@@ -121,7 +168,11 @@ CREATE TABLE IF NOT EXISTS invoice_position (
     INDEX USING HASH _deleted,
     FOREIGN KEY _invoice REFERENCES invoice(id)
         ON UPDATE CASCADE
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+    FOREIGN KEY (unit_id) REFERENCES unit(id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT
+
 );
 
 CREATE TABLE IF NOT EXISTS tax (
