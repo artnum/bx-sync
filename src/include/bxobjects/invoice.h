@@ -91,6 +91,6 @@ struct s_BXObjectInvoice {
 void *bx_object_invoice_decode(void *data);
 void bx_object_invoice_free(void *data);
 void bx_object_invoice_dump(void *data);
-void bx_invoice_walk_items(bXill *app);
+void bx_invoice_walk_items(bXill *app, MYSQL *conn);
 
 #endif /* BX_OBJECT_INVOICE_H__ */

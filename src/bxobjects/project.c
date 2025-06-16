@@ -66,7 +66,7 @@ static BXObjectProject *decode_object(json_t *object) {
   bxo_getstr(project, comment);
 
   bxo_getdouble(project, pr_invoice_type_amount);
-  bxo_getdouble(project, pr_invoice_type_amount);
+  bxo_getdouble(project, pr_budget_type_amount);
 
   bxo_checksum(project);
 
@@ -86,9 +86,9 @@ void bx_project_free(BXObjectProject *project) {
   free(project);
 }
 
-ObjectState bx_project_check_database(bXill *app, BXObjectProject *project) {
+ObjectState bx_project_check_database(MYSQL *conn, BXObjectProject *project) {
   BXDatabaseQuery *query = bx_database_new_query(
-      app->mysql, "SELECT _checksum FROM pr_project WHERE id = :id");
+      conn, "SELECT _checksum FROM pr_project WHERE id = :id");
   if (query == NULL) {
     return Error;
   }
@@ -129,9 +129,9 @@ static bool bind_params(BXDatabaseQuery *query, BXObjectProject *project) {
   return true;
 }
 
-bool execute_request(bXill *app, BXObjectProject *project,
+bool execute_request(MYSQL *conn, BXObjectProject *project,
                      const char *request) {
-  BXDatabaseQuery *query = bx_database_new_query(app->mysql, request);
+  BXDatabaseQuery *query = bx_database_new_query(conn, request);
   if (query == NULL) {
     return false;
   }
@@ -144,15 +144,15 @@ bool execute_request(bXill *app, BXObjectProject *project,
   return success;
 }
 
-bool bx_project_update_db(bXill *app, BXObjectProject *project) {
-  return execute_request(app, project, QUERY_UPDATE);
+bool bx_project_update_db(MYSQL *conn, BXObjectProject *project) {
+  return execute_request(conn, project, QUERY_UPDATE);
 }
 
-bool bx_project_insert_db(bXill *app, BXObjectProject *project) {
-  return execute_request(app, project, QUERY_INSERT);
+bool bx_project_insert_db(MYSQL *conn, BXObjectProject *project) {
+  return execute_request(conn, project, QUERY_INSERT);
 }
 
-bool bx_project_sync_item(bXill *app, BXGeneric *item) {
+bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   bx_log_debug("Sync Project Id %ld", ((BXUInteger *)item)->value);
   BXNetRequest *request =
       bx_do_request(app->queue, NULL, GET_PROJECT_PATH, item);
@@ -171,12 +171,12 @@ bool bx_project_sync_item(bXill *app, BXGeneric *item) {
   if (project == NULL) {
     return false;
   }
-  if (!bx_contact_sync_item(app, (BXGeneric *)&project->contact_id)) {
+  if (!bx_contact_sync_item(app, conn, (BXGeneric *)&project->contact_id)) {
     bx_project_free(project);
     return false;
   }
 
-  switch (bx_project_check_database(app, project)) {
+  switch (bx_project_check_database(conn, project)) {
   default:
   case NeedNothing:
     break;
@@ -184,12 +184,12 @@ bool bx_project_sync_item(bXill *app, BXGeneric *item) {
     bx_log_error("Error checking for project %ld", project->id.value);
     break;
   case NeedCreate:
-    if (!bx_project_insert_db(app, project)) {
+    if (!bx_project_insert_db(conn, project)) {
       bx_log_error("Failed insert project %ld", project->id.value);
     }
     break;
   case NeedUpdate:
-    if (!bx_project_insert_db(app, project)) {
+    if (!bx_project_insert_db(conn, project)) {
       bx_log_error("Failed insert language %d", project->id.value);
     }
     break;
@@ -199,7 +199,7 @@ bool bx_project_sync_item(bXill *app, BXGeneric *item) {
   return true;
 }
 
-void bx_project_walk_item(bXill *app) {
+void bx_project_walk_item(bXill *app, MYSQL *conn) {
   bx_log_debug("BX Walk Project Items");
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
@@ -221,7 +221,7 @@ void bx_project_walk_item(bXill *app) {
     for (size_t i = 0; i < arr_len; i++) {
       BXInteger id = bx_object_get_json_int(json_array_get(request->decoded, i),
                                             "id", NULL);
-      bx_project_sync_item(app, (BXGeneric *)&id);
+      bx_project_sync_item(app, conn, (BXGeneric *)&id);
     }
     bx_net_request_free(request);
     thrd_yield();

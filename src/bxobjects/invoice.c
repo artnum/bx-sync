@@ -6,8 +6,10 @@
 #include "../include/bxobjects/contact.h"
 #include "../include/bxobjects/position.h"
 #include <assert.h>
+#include <jansson.h>
 #include <sys/types.h>
 #include <threads.h>
+#include <unistd.h>
 
 #define QUERY_INSERT                                                           \
   "INSERT INTO invoice (id, document_nr, title, contact_id, contact_sub_id, "  \
@@ -59,18 +61,11 @@ void bx_object_invoice_free(void *data) {
   bx_object_free_value(&invoice->reference);
   bx_object_free_value(&invoice->api_reference);
   bx_object_free_value(&invoice->viewed_by_client_at);
-  if (invoice->remote_taxes != NULL) {
-    for (int i = 0; i < invoice->bx_object_taxes_count; i++) {
-      bx_object_tax_free(invoice->remote_taxes[i]);
-    }
-    free(invoice->remote_taxes);
-  }
-  if (invoice->remote_positions != NULL) {
-    for (int i = 0; i < invoice->bx_object_remote_positions_count; i++) {
-      bx_object_position_free(invoice->remote_positions[i]);
-    }
-    free(invoice->remote_positions);
-  }
+  bx_object_free_value(&invoice->title);
+  bx_object_free_value(&invoice->footer);
+  bx_object_free_value(&invoice->header);
+  bx_object_free_value(&invoice->network_link);
+
   free(invoice);
 }
 
@@ -204,78 +199,33 @@ void *bx_object_invoice_decode(void *object) {
   invoice->header = bx_object_get_json_string(jroot, "header", hashState);
   invoice->footer = bx_object_get_json_string(jroot, "footer", hashState);
   invoice->title = bx_object_get_json_string(jroot, "title", hashState);
+  invoice->network_link =
+      bx_object_get_json_string(jroot, "network_link", hashState);
 
   invoice->tva_is_net = bx_object_get_json_bool(jroot, "tva_is_net", hashState);
-
-  json_t *value = json_object_get(jroot, "taxs");
-  if (value != NULL && json_is_array(value)) {
-    invoice->bx_object_taxes_count = json_array_size(value);
-    invoice->remote_taxes =
-        calloc(invoice->bx_object_taxes_count, sizeof(invoice->remote_taxes));
-    if (invoice->remote_taxes != NULL) {
-      for (int i = 0; i < invoice->bx_object_taxes_count; i++) {
-        invoice->remote_taxes[i] =
-            bx_object_tax_decode(json_array_get(value, i));
-      }
-    }
-  }
-  value = NULL;
-
-  value = json_object_get(jroot, "positions");
-  if (value != NULL && json_is_array(value)) {
-    invoice->bx_object_remote_positions_count = json_array_size(value);
-    invoice->remote_positions =
-        calloc(invoice->bx_object_remote_positions_count,
-               sizeof(*invoice->remote_positions));
-    if (invoice->remote_positions != NULL) {
-      for (int i = 0; i < invoice->bx_object_remote_positions_count; i++) {
-        invoice->remote_positions[i] =
-            bx_object_position_decode(json_array_get(value, i));
-      }
-    }
-  }
   invoice->checksum = XXH3_64bits_digest(hashState);
+
   XXH3_freeState(hashState);
   return invoice;
 }
 
-#define GET_INVOICE_PATH "2.0/kb_invoice/$"
-bool bx_invoice_sync_item(bXill *app, BXGeneric *item) {
-  assert(app != NULL);
+bool _bx_invoice_sync_item(MYSQL *conn, json_t *item) {
   assert(item != NULL);
 
-  BXNetRequest *request = NULL;
   BXObjectInvoice *invoice = NULL;
   BXDatabaseQuery *query = NULL;
 
-  bx_log_debug("Invoice %ld", ((BXInteger *)item)->value);
-  request = bx_do_request(app->queue, NULL, GET_INVOICE_PATH, item);
-  if (request == NULL) {
-    bx_log_debug("Do request failed");
-    goto fail_and_return;
-  }
-  if (request->response == NULL || request->response->http_code != 200) {
-    if (request->response != NULL) {
-      bx_log_debug("Code not good (response %p, code %d)", request->response,
-                   request->response->http_code);
-    } else {
-      bx_log_debug("Response bad");
-    }
-    goto fail_and_return;
-  }
-  invoice = bx_object_invoice_decode(request->decoded);
-  bx_net_request_free(request);
-  request = NULL;
+  invoice = bx_object_invoice_decode(item);
   if (invoice == NULL) {
     bx_log_debug("Decode failed");
     goto fail_and_return;
   }
 
-  if (!bx_contact_is_in_database(app, (BXGeneric *)&invoice->contact_id)) {
-    bx_contact_sync_item(app, (BXGeneric *)&invoice->contact_id);
+  if (!bx_contact_is_in_database(conn, (BXGeneric *)&invoice->contact_id)) {
+    goto fail_and_return;
   }
 
-  query = bx_database_new_query(app->mysql,
+  query = bx_database_new_query(conn,
                                 "SELECT _checksum FROM invoice WHERE id = :id");
   if (query == NULL) {
     goto fail_and_return;
@@ -286,7 +236,7 @@ bool bx_invoice_sync_item(bXill *app, BXGeneric *item) {
   if (query->results == NULL || query->results->column_count == 0) {
     bx_database_free_query(query);
     query = NULL;
-    query = bx_database_new_query(app->mysql, QUERY_INSERT);
+    query = bx_database_new_query(conn, QUERY_INSERT);
   } else {
     if (query->results[0].columns[0].i_value == invoice->checksum) {
       bx_database_free_query(query);
@@ -295,7 +245,7 @@ bool bx_invoice_sync_item(bXill *app, BXGeneric *item) {
     }
     bx_database_free_query(query);
     query = NULL;
-    query = bx_database_new_query(app->mysql, QUERY_UPDATE);
+    query = bx_database_new_query(conn, QUERY_UPDATE);
   }
   if (query == NULL) {
     goto fail_and_return;
@@ -359,28 +309,49 @@ bool bx_invoice_sync_item(bXill *app, BXGeneric *item) {
     goto fail_and_return;
   }
 
-  bx_object_invoice_free(invoice);
   bx_database_free_query(query);
+  bx_object_invoice_free(invoice);
   query = NULL;
 
   return true;
 
 fail_and_return:
-  if (request != NULL) {
-    bx_net_request_free(request);
+  if (query != NULL) {
+    bx_database_free_query(query);
   }
   if (invoice != NULL) {
     bx_object_invoice_free(invoice);
-  }
-  if (query != NULL) {
-    bx_database_free_query(query);
   }
 
   return false;
 }
 
+#define GET_INVOICE_PATH "2.0/kb_invoice/$"
+bool bx_invoice_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
+  assert(app != NULL);
+  assert(item != NULL);
+  BXNetRequest *request = NULL;
+  request = bx_do_request(app->queue, NULL, GET_INVOICE_PATH, item);
+  if (request == NULL) {
+    return false;
+  }
+  if (request->response == NULL || request->response->http_code != 200) {
+    if (request->response != NULL) {
+      bx_log_debug("Code not good (response %p, code %d)", request->response,
+                   request->response->http_code);
+    } else {
+      bx_log_debug("Response bad");
+    }
+    bx_net_request_free(request);
+    return false;
+  }
+  bool retVal = _bx_invoice_sync_item(conn, request->decoded);
+  bx_net_request_free(request);
+  return retVal;
+}
+
 #define WALK_INVOICE_PATH "2.0/kb_invoice?limit=$&offset=$"
-void bx_invoice_walk_items(bXill *app) {
+void bx_invoice_walk_items(bXill *app, MYSQL *conn) {
   bx_log_debug("BX Walk Invoice Items");
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
@@ -400,9 +371,7 @@ void bx_invoice_walk_items(bXill *app) {
     }
     arr_len = json_array_size(request->decoded);
     for (size_t i = 0; i < arr_len; i++) {
-      BXInteger id = bx_object_get_json_int(json_array_get(request->decoded, i),
-                                            "id", NULL);
-      bx_invoice_sync_item(app, (BXGeneric *)&id);
+      _bx_invoice_sync_item(conn, json_array_get(request->decoded, i));
     }
     bx_net_request_free(request);
     thrd_yield();

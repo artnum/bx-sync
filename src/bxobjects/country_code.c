@@ -15,8 +15,11 @@ bool bx_country_code_load(bXill *app) {
   bx_log_debug("BX Country Code load");
   BXNetRequest *request =
       bx_do_request(app->queue, NULL, GET_CONTACT_GROUP_PATH);
-  if (request == NULL || request->response == NULL ||
-      request->response->http_code != 200) {
+  if (request == NULL) {
+    return false;
+  }
+  if (request->response == NULL || request->response->http_code != 200) {
+    bx_net_request_free(request);
     return false;
   }
 
@@ -49,7 +52,7 @@ bool bx_country_code_load(bXill *app) {
     bx_object_free_value(&code);
   }
   bx_mutex_unlock(&MTX_COUNTRY_LIST);
-
+  bx_net_request_free(request);
   return true;
 }
 

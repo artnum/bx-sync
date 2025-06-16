@@ -250,7 +250,8 @@ void bx_object_contact_dump(void *data) {
   _bx_dump_any("profile_image", &contact->profile_image, 1);
 }
 
-static void contact_group_sync(bXill *app, BXObjectContact *contact) {
+static void contact_group_sync(bXill *app, MYSQL *conn,
+                               BXObjectContact *contact) {
   BXDatabaseQuery *query = NULL;
   uint64_t *group_ids = (uint64_t *)bx_int_string_array_to_int_array(
       contact->contact_groupd_ids.value);
@@ -262,12 +263,12 @@ static void contact_group_sync(bXill *app, BXObjectContact *contact) {
   item.type = BX_OBJECT_TYPE_INTEGER;
   for (int i = 0; i <= *group_ids; i++) {
     item.value = *(group_ids + i);
-    if (!bx_contact_group_sync_item(app, (BXGeneric *)&item)) {
+    if (!bx_contact_group_sync_item(app, conn, (BXGeneric *)&item)) {
       continue;
     }
-    query = bx_database_new_query(app->mysql,
-                                  "SELECT contact_group FROM cg2c WHERE "
-                                  "contact = :cid AND contact_group = :cgid");
+    query =
+        bx_database_new_query(conn, "SELECT contact_group FROM cg2c WHERE "
+                                    "contact = :cid AND contact_group = :cgid");
     if (query == NULL) {
       continue;
     }
@@ -278,7 +279,7 @@ static void contact_group_sync(bXill *app, BXObjectContact *contact) {
     if (query->results == NULL || query->row_count <= 0) {
       bx_database_free_query(query);
       query = NULL;
-      query = bx_database_new_query(app->mysql,
+      query = bx_database_new_query(conn,
                                     "INSERT INTO cg2c (contact, contact_group)"
                                     " VALUES (:cid, :cgid)");
       if (query == NULL) {
@@ -295,9 +296,9 @@ static void contact_group_sync(bXill *app, BXObjectContact *contact) {
   free(group_ids);
 }
 
-bool bx_contact_is_in_database(bXill *app, BXGeneric *item) {
+bool bx_contact_is_in_database(MYSQL *conn, BXGeneric *item) {
   BXDatabaseQuery *query = bx_database_new_query(
-      app->mysql, "SELECT _checksum FROM contact WHERE id = :id;");
+      conn, "SELECT _checksum FROM contact WHERE id = :id;");
   if (query == NULL) {
     return false;
   }
@@ -312,37 +313,27 @@ bool bx_contact_is_in_database(bXill *app, BXGeneric *item) {
     return false;
   }
 
+  bx_database_free_query(query);
   return true;
 }
 
 #define GET_CONTACT_PATH "2.0/contact/$"
-bool bx_contact_sync_item(bXill *app, BXGeneric *item) {
+bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item) {
   assert(app != NULL);
   assert(item != NULL);
-  bx_log_debug("Contact %ld", ((BXInteger *)item)->value);
-  BXNetRequest *request =
-      bx_do_request(app->queue, NULL, GET_CONTACT_PATH, item);
-  if (request == NULL) {
-    return false;
-  }
-  if (request->response == NULL || request->response->http_code != 200) {
-    bx_net_request_free(request);
-    return false;
-  }
 
-  BXObjectContact *contact = bx_object_contact_decode(request->decoded);
-  bx_net_request_free(request);
+  BXObjectContact *contact = bx_object_contact_decode(item);
   if (contact == NULL) {
     return false;
   }
 
-  bx_user_sync_item(app, (BXGeneric *)&contact->user_id);
+  bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id);
   if (contact->user_id.value != contact->owner_id.value) {
-    bx_user_sync_item(app, (BXGeneric *)&contact->owner_id);
+    bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id);
   }
 
   BXDatabaseQuery *query = bx_database_new_query(
-      app->mysql, "SELECT _checksum FROM contact WHERE id = :id;");
+      conn, "SELECT _checksum FROM contact WHERE id = :id;");
   if (query == NULL) {
     bx_object_contact_free(contact);
     return false;
@@ -354,17 +345,17 @@ bool bx_contact_sync_item(bXill *app, BXGeneric *item) {
   if (query->results == NULL || query->results->column_count == 0) {
     bx_database_free_query(query);
     query = NULL;
-    query = bx_database_new_query(app->mysql, QUERY_INSERT);
+    query = bx_database_new_query(conn, QUERY_INSERT);
   } else {
     if (query->results[0].columns[0].i_value == contact->checksum) {
       bx_database_free_query(query);
-      contact_group_sync(app, contact);
+      contact_group_sync(app, conn, contact);
       bx_object_contact_free(contact);
       return true;
     }
     bx_database_free_query(query);
     query = NULL;
-    query = bx_database_new_query(app->mysql, QUERY_UPDATE);
+    query = bx_database_new_query(conn, QUERY_UPDATE);
   }
   if (query == NULL) {
     bx_object_contact_free(contact);
@@ -422,7 +413,7 @@ bool bx_contact_sync_item(bXill *app, BXGeneric *item) {
   bx_database_free_query(query);
   query = NULL;
 
-  contact_group_sync(app, contact);
+  contact_group_sync(app, conn, contact);
 
   uint64_t *branch_ids = (uint64_t *)bx_int_string_array_to_int_array(
       contact->contact_branch_ids.value);
@@ -434,9 +425,23 @@ bool bx_contact_sync_item(bXill *app, BXGeneric *item) {
 
   return true;
 }
+bool bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
+  BXNetRequest *request =
+      bx_do_request(app->queue, NULL, GET_CONTACT_PATH, item);
+  if (request == NULL) {
+    return false;
+  }
+  if (request->response == NULL || request->response->http_code != 200) {
+    bx_net_request_free(request);
+    return false;
+  }
+  bool retVal = _bx_contact_sync_item(app, conn, request->decoded);
+  bx_net_request_free(request);
+  return retVal;
+}
 
 #define WALK_CONTACT_PATH "2.0/contact?limit=$&offset=$"
-void bx_contact_walk_items(bXill *app) {
+void bx_contact_walk_items(bXill *app, MYSQL *conn) {
   bx_log_debug("BX Walk Contact Items");
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
@@ -458,12 +463,9 @@ void bx_contact_walk_items(bXill *app) {
 
     arr_len = json_array_size(request->decoded);
     for (size_t i = 0; i < arr_len; i++) {
-      BXInteger id = bx_object_get_json_int(json_array_get(request->decoded, i),
-                                            "id", NULL);
-      bx_contact_sync_item(app, (BXGeneric *)&id);
+      _bx_contact_sync_item(app, conn, json_array_get(request->decoded, i));
     }
     bx_net_request_free(request);
-    thrd_yield();
     offset.value += limit.value;
   } while (arr_len > 0);
 }

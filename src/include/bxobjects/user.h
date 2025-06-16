@@ -19,6 +19,6 @@ struct s_BXObjectUser {
   BXBool remote_is_accountant;
 };
 
-bool bx_user_sync_item(bXill *app, BXGeneric *item);
+bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item);
 
 #endif /* BX_OBJECT_USER_H__ */

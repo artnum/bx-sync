@@ -830,6 +830,10 @@ static void *_bx_net_loop_worker(void *l) {
   uint64_t request_count = 0;
   const float max_request_share = 1;
   BXNetRequest *request = NULL;
+  time_t start = 0;
+  time_t stop = 0;
+  uint64_t reqCount = 0;
+  time(&start);
 
   while (atomic_load(&list->run)) {
     request = bx_net_request_list_remove(list, false);
@@ -837,6 +841,14 @@ static void *_bx_net_loop_worker(void *l) {
       /* request is locked in search loop */
       // do request
       request->response = bx_fetch(net, request->path, request->params);
+      reqCount++;
+      time(&stop);
+      if (stop - start > 1) {
+        float reqSec = reqCount / (float)(stop - start);
+        printf("SPEED : %0.2f req/sec\n", reqSec);
+        start = stop;
+        reqCount = 0;
+      }
       /* readd in list so it can be processed */
       bx_net_request_list_add(list, request);
       atomic_store(&request->done, true);
@@ -864,9 +876,9 @@ static void *_bx_net_loop_worker(void *l) {
       if (us_sleep <= 0 || us_sleep > DEFAULT_RATELIMIT_US * 100) {
         us_sleep = DEFAULT_RATELIMIT_US;
       }
-      bx_log_debug("US_SLEEP %d, LIMIT %d, REMAINING %d, RESET %d", us_sleep,
+      /*bx_log_debug("US_SLEEP %d, LIMIT %d, REMAINING %d, RESET %d", us_sleep,
                    net->limits.max_request, net->limits.remaining_request,
-                   net->limits.reset_time);
+                   net->limits.reset_time);*/
       bx_mutex_unlock(&net->mutex_limit);
     }
 

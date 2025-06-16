@@ -3,6 +3,7 @@
 #include "include/bx_mutex.h"
 #include "include/bx_net.h"
 #include "include/bx_object_value.h"
+#include "include/bxill.h"
 #include <assert.h>
 #include <fcntl.h>
 #include <jansson.h>
@@ -15,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <threads.h>
 #include <unistd.h>
 
 #define a 0x5DEECE66D
@@ -313,13 +315,77 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
   return request;
 }
 
-BXMutex io_mutex;
 extern WINDOW *LOG_WINDOW;
-FILE *fp;
+struct s_BXLog LOG;
 
-void bx_log_init() {
-  bx_mutex_init(&io_mutex);
-  fp = fopen("/tmp/bxnet.log", "a");
+bool bx_log_init() {
+  LOG.head = NULL;
+  bx_mutex_init(&LOG.mutex);
+  LOG.fp = fopen("/tmp/bxnet.log", "a");
+  if (!LOG.fp) {
+    return false;
+  }
+  return true;
+}
+
+void *bx_log_out_thread(void *arg) {
+  bXill *app = (bXill *)arg;
+  struct s_BXLogMsg *current = NULL;
+  while (atomic_load(&app->logthread)) {
+    bx_mutex_lock(&LOG.mutex);
+    current = LOG.head;
+    LOG.head = NULL;
+    bx_mutex_unlock(&LOG.mutex);
+
+    struct s_BXLogMsg *reversed = NULL;
+    while (current) {
+      struct s_BXLogMsg *next = (struct s_BXLogMsg *)current->next;
+      current->next = reversed;
+      reversed = current;
+      current = next;
+    }
+
+    current = reversed;
+    while (current) {
+      struct s_BXLogMsg *next = (struct s_BXLogMsg *)current->next;
+      fprintf(LOG.fp, "%s\n", current->msg);
+      free(current);
+      current = next;
+    }
+    fflush(LOG.fp);
+    current = NULL;
+    thrd_sleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 1000000}, NULL);
+  }
+
+  bx_mutex_lock(&LOG.mutex);
+  current = LOG.head;
+  struct s_BXLogMsg *next = NULL;
+  while (current) {
+    next = (struct s_BXLogMsg *)current->next;
+    fprintf(LOG.fp, "%s\n", current->msg);
+    free(current);
+    current = next;
+  }
+  fprintf(LOG.fp, "--- END OF LOG THREAD ---\n");
+  fflush(LOG.fp);
+  bx_mutex_unlock(&LOG.mutex);
+  return 0;
+}
+
+void _bx_log_queue(char *msg, const char *err, char *file, int line) {
+  struct s_BXLogMsg *new = NULL;
+  new = malloc(sizeof(*new));
+  if (new == NULL) {
+    return;
+  }
+  snprintf(new->msg, 255, "%s [%s:%d] %s", err, file, line, msg);
+  if (bx_mutex_lock(&LOG.mutex) != false) {
+    new->next = LOG.head;
+    LOG.head = new;
+    bx_mutex_unlock(&LOG.mutex);
+  } else {
+    free(new);
+  }
 }
 
 void _bx_log_debug(char *file, int line, const char *fmt, ...) {
@@ -328,9 +394,7 @@ void _bx_log_debug(char *file, int line, const char *fmt, ...) {
   va_start(ap, fmt);
   vsnprintf(x, 255, fmt, ap);
   va_end(ap);
-  assert(bx_mutex_lock(&io_mutex) != false);
-  fprintf(fp, "[%s:%d] %s\n", file, line, x);
-  bx_mutex_unlock(&io_mutex);
+  _bx_log_queue(x, "DEBUG", file, line);
 }
 
 void _bx_log_info(char *file, int line, const char *fmt, ...) {
@@ -339,9 +403,7 @@ void _bx_log_info(char *file, int line, const char *fmt, ...) {
   va_start(ap, fmt);
   vsnprintf(x, 255, fmt, ap);
   va_end(ap);
-  assert(bx_mutex_lock(&io_mutex) != false);
-  fprintf(fp, "[%s:%d] %s\n", file, line, x);
-  bx_mutex_unlock(&io_mutex);
+  _bx_log_queue(x, "INFO", file, line);
 }
 
 void _bx_log_error(char *file, int line, const char *fmt, ...) {
@@ -350,12 +412,10 @@ void _bx_log_error(char *file, int line, const char *fmt, ...) {
   va_start(ap, fmt);
   vsnprintf(x, 255, fmt, ap);
   va_end(ap);
-  assert(bx_mutex_lock(&io_mutex) != false);
-  fprintf(fp, "[%s:%d] %s\n", file, line, x);
-  bx_mutex_unlock(&io_mutex);
+  _bx_log_queue(x, "ERROR", file, line);
 }
 
-void bx_log_end() { fclose(fp); }
+void bx_log_end() { fclose(LOG.fp); }
 
 bool bx_string_compare(const char *str1, const char *str2, size_t max) {
   for (size_t i = 0; i < max && *str1 != '\0' && *str2 != '\0'; i++) {

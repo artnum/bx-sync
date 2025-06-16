@@ -92,7 +92,9 @@ void bx_database_free_query(BXDatabaseQuery *query) {
   if (query->query) {
     free(query->query);
   }
-  mysql_stmt_close(query->stmt);
+  if (query->stmt) {
+    mysql_stmt_close(query->stmt);
+  }
 
   free(query);
 }
@@ -168,7 +170,9 @@ BXDatabaseQuery *bx_database_new_query(MYSQL *mysql, const char *query) {
     }
     j++;
   }
-  new->query[j] = '\0';
+  if (j < new->query_length) {
+    new->query[j] = '\0';
+  }
   bx_log_debug("%s", new->query);
   new->exectued = false;
   return new;
@@ -290,8 +294,6 @@ static bool add_bxstr(BXDatabaseQuery *query, const char *name,
   if (param == NULL) {
     return false;
   }
-  printf("NAME %s ", name);
-  printf("ISSET %d VALUE %s\n", value->isset, value->value);
   if (!value->isset || value->value == NULL) {
     return set_null(param);
   }
@@ -400,11 +402,13 @@ bool bx_database_add_bxtype(BXDatabaseQuery *query, const char *name,
   if (param == NULL) {
     return false;
   }
+  printf("NULL PARAM %s\n\tFOR QUERY %s\n", name, query->query);
   return set_null(param);
 }
 
 static inline void _bx_database_param_to_bind(MYSQL_BIND *bind,
                                               BXDatabaseParameter *parameter) {
+
   bind->is_null = (char *)parameter->is_null;
   if (bind->is_null) {
     bind->buffer_type = MYSQL_TYPE_NULL;
@@ -414,6 +418,7 @@ static inline void _bx_database_param_to_bind(MYSQL_BIND *bind,
     bind->buffer = NULL;
     return;
   }
+
   bind->buffer_type = parameter->type;
   bind->buffer = parameter->value;
   switch (parameter->type) {
@@ -560,7 +565,7 @@ bool bx_database_results(BXDatabaseQuery *query) {
   MYSQL_FIELD *fields;
 
   if (!query->has_dataset) {
-    return query->has_failed;
+    return !query->has_failed;
   }
 
   if (query->result_metadata == NULL || query->has_failed) {

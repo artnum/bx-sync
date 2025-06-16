@@ -65,7 +65,7 @@ static inline BXObjectUser *decode_object(json_t *root) {
   return user;
 }
 
-bool bx_user_sync_item(bXill *app, BXGeneric *item) {
+bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   bx_log_debug("BX Use Sync Item");
   BXNetRequest *request = bx_do_request(app->queue, NULL, GET_USER_PATH, item);
   if (request == NULL) {
@@ -75,7 +75,6 @@ bool bx_user_sync_item(bXill *app, BXGeneric *item) {
       request->response->http_code != 200) {
     return false;
   }
-  printf("%s\n", request->response->data);
   BXObjectUser *user = decode_object(request->decoded);
   bx_net_request_free(request);
   if (user == NULL) {
@@ -85,14 +84,14 @@ bool bx_user_sync_item(bXill *app, BXGeneric *item) {
   char is_superadmin = user->remote_is_superadmin.value ? 1 : 0;
   char is_accountant = user->remote_is_accountant.value ? 1 : 0;
   time_t now = time(NULL);
-  BXDatabaseQuery *query = bx_database_new_query(
-      app->mysql, "SELECT _checksum FROM user WHERE id = :id;");
+  BXDatabaseQuery *query =
+      bx_database_new_query(conn, "SELECT _checksum FROM user WHERE id = :id;");
   bx_database_add_param_int64(query, ":id", &user->remote_id.value);
   bx_database_execute(query);
   bx_database_results(query);
   if (query->results == NULL || query->results->column_count == 0) {
     bx_database_free_query(query);
-    query = bx_database_new_query(app->mysql, QUERY_INSERT);
+    query = bx_database_new_query(conn, QUERY_INSERT);
 
     bx_database_add_bxtype(query, ":id", (BXGeneric *)&user->remote_id);
     bx_database_add_bxtype(query, ":firstname",
@@ -121,7 +120,7 @@ bool bx_user_sync_item(bXill *app, BXGeneric *item) {
   }
 
   bx_database_free_query(query);
-  query = bx_database_new_query(app->mysql, QUERY_UPDATE);
+  query = bx_database_new_query(conn, QUERY_UPDATE);
   uint64_t not_deleted = 0;
   bx_database_add_param_char(query, ":firstname", user->remote_firstname.value,
                              user->remote_firstname.value_len);

@@ -44,7 +44,7 @@ struct s_ItemMustBeDeleted {
 };
 
 #define WALK_CONTACT_SECTOR_PATH "2.0/contact_branch"
-bool bx_contact_sector_walk_items(bXill *app) {
+bool bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
   BXNetRequest *request =
       bx_do_request(app->queue, NULL, WALK_CONTACT_SECTOR_PATH);
   if (request == NULL || request->response == NULL ||
@@ -69,7 +69,7 @@ bool bx_contact_sector_walk_items(bXill *app) {
    * too much data than not enough
    */
   BXDatabaseQuery *query_ids = bx_database_new_query(
-      app->mysql, "SELECT id FROM contact_sector WHERE _deleted = 0;");
+      conn, "SELECT id FROM contact_sector WHERE _deleted = 0;");
   if (query_ids != NULL) {
     if (bx_database_execute(query_ids)) {
       bx_database_results(query_ids);
@@ -110,14 +110,14 @@ bool bx_contact_sector_walk_items(bXill *app) {
 
     time_t now = time(NULL);
     BXDatabaseQuery *query = bx_database_new_query(
-        app->mysql, "SELECT _checksum FROM contact_sector WHERE id = :id;");
+        conn, "SELECT _checksum FROM contact_sector WHERE id = :id;");
     bx_database_add_param_int64(query, ":id", &contact_sector->remote_id.value);
     bx_database_execute(query);
     bx_database_results(query);
     if (query->results == NULL || query->results->column_count == 0) {
       bx_database_free_query(query);
       query = bx_database_new_query(
-          app->mysql,
+          conn,
           "INSERT INTO contact_sector (_checksum, id, name, _last_updated)"
           "VALUES (:_checksum, :id, :name, :_last_updated);");
       bx_database_add_param_char(query, ":name",
@@ -141,9 +141,8 @@ bool bx_contact_sector_walk_items(bXill *app) {
 
     bx_database_free_query(query);
     query = bx_database_new_query(
-        app->mysql,
-        "UPDATE contact_sector SET _checksum = :_checksum, name = :name, "
-        "_last_updated = :_last_updated, _deleted = :_deleted;");
+        conn, "UPDATE contact_sector SET _checksum = :_checksum, name = :name, "
+              "_last_updated = :_last_updated, _deleted = :_deleted;");
     uint64_t not_deleted = 0;
     bx_database_add_param_char(query, ":name",
                                contact_sector->remote_name.value,
@@ -163,7 +162,7 @@ bool bx_contact_sector_walk_items(bXill *app) {
     int64_t *to_delete = &_to_delete;
     time_t now = time(NULL);
     BXDatabaseQuery *query = bx_database_new_query(
-        app->mysql,
+        conn,
         "UPDATE contact_sector SET _deleted = :_deleted  WHERE id = :id;");
     bx_database_add_param_int64(query, ":_deleted ", &now);
     bx_database_add_param_int64(query, ":id", to_delete);

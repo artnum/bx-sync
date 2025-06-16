@@ -14,6 +14,6 @@ struct s_BXObjectContactGroup {
   BXString remote_name;
 };
 
-bool bx_contact_group_sync_item(bXill *app, BXGeneric *item);
+bool bx_contact_group_sync_item(bXill *app, MYSQL *conn, BXGeneric *item);
 
 #endif /* BX_OBJECT_CONTACT_GROUP_H__ */

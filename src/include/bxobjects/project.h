@@ -28,7 +28,7 @@ struct s_BXObjectProject {
   BXFloat pr_budget_type_amount;
 };
 
-void bx_project_walk_item(bXill *app);
-bool bx_project_sync_item(bXill *app, BXGeneric *item);
+void bx_project_walk_item(bXill *app, MYSQL *conn);
+bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item);
 
 #endif /* PROJECT_H__ */

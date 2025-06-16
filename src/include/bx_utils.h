@@ -3,13 +3,25 @@
 
 #include "bx_mutex.h"
 #include "bx_net.h"
+#include <stdio.h>
 
 typedef struct {
   uint32_t seed;
   BXMutex mutex;
 } BXUtilsPRNGState;
 
-void bx_log_init();
+struct s_BXLogMsg {
+  char msg[255];
+  void *next;
+};
+
+struct s_BXLog {
+  FILE *fp;
+  BXMutex mutex;
+  struct s_BXLogMsg *head;
+};
+
+bool bx_log_init();
 void bx_utils_init(void);
 bool bx_utils_gen_id(uint64_t *id);
 /**
@@ -40,5 +52,6 @@ void _bx_log_debug(char *file, int line, const char *fmt, ...);
   _bx_log_debug(__FILE__, __LINE__, (fmt)__VA_OPT__(, ) __VA_ARGS__)
 void bx_log_end();
 bool bx_string_compare(const char *str1, const char *str2, size_t max);
+void *bx_log_out_thread(void *arg);
 
 #endif /* BX_UTILS_H__ */

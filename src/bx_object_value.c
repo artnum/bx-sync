@@ -1,6 +1,7 @@
 #include "include/bx_object_value.h"
 #include "include/bx_object.h"
 #include <assert.h>
+#include <xxh3.h>
 
 static inline char *_bx_uint2str(BXUInteger *value) {
   char *str = NULL;
@@ -85,6 +86,51 @@ static inline char *_bx_bool2str(BXBool *value) {
     }
   }
   return str;
+}
+
+uint64_t bx_object_value_to_index(BXGeneric *value) {
+  assert(value != NULL);
+  switch (*(uint8_t *)value) {
+  case BX_OBJECT_TYPE_INTEGER:
+    if (!((BXInteger *)value)->isset) {
+      return 0;
+    }
+    return (uint64_t)((BXInteger *)value)->value;
+  case BX_OBJECT_TYPE_UINTEGER:
+    if (!((BXUInteger *)value)->isset) {
+      return 0;
+    }
+    return ((BXUInteger *)value)->value;
+  case BX_OBJECT_TYPE_BOOL:
+    if (!((BXBool *)value)->isset) {
+      return 0;
+    }
+    return (uint64_t)((BXBool *)value)->value;
+  case BX_OBJECT_TYPE_FLOAT:
+    if (!((BXFloat *)value)->isset) {
+      return 0;
+    }
+    return XXH3_64bits((void *)&((BXFloat *)value)->value, sizeof(double));
+  case BX_OBJECT_TYPE_STRING:
+    if (!((BXString *)value)->isset) {
+      return 0;
+    }
+    return XXH3_64bits(((BXString *)value)->value,
+                       ((BXString *)value)->value_len);
+  case BX_OBJECT_TYPE_BYTES:
+    if (!((BXBytes *)value)->isset) {
+      return 0;
+    }
+    return XXH3_64bits(((BXBytes *)value)->value,
+                       ((BXBytes *)value)->value_len);
+  case BX_OBJECT_TYPE_UUID:
+    if (!((BXUuid *)value)->isset) {
+      return 0;
+    }
+    return XXH3_64bits((void *)&((BXUuid *)value)->value, sizeof(uint64_t) * 2);
+  default:
+    return 0;
+  }
 }
 
 char *bx_object_value_to_string(BXGeneric *value) {
