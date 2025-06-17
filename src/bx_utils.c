@@ -219,6 +219,7 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
 
   char *path = _bx_item_to_path(path_fmt, ap);
   if (path == NULL) {
+    bx_log_debug("Request parsing faile %s", path_fmt);
     return NULL;
   }
 

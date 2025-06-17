@@ -485,6 +485,7 @@ bool bx_database_execute(BXDatabaseQuery *query) {
   if (query->warning_rows > 0) {
     bx_log_debug("MYSQL Warning %d, query %s", query->warning_rows,
                  query->query);
+    bx_database_print_warnings(query->stmt->mysql);
   }
   /* mysql_stmt_result_metadata returns NULL if the query doesn't produce
    * a dataset (INSERT, UPDATE, ...) with no error set.
@@ -710,4 +711,24 @@ bool bx_database_results(BXDatabaseQuery *query) {
   free_query_metadata(query);
   free(binds);
   return true;
+}
+
+void bx_database_print_warnings(MYSQL *conn) {
+  if (mysql_query(conn, "SHOW WARNINGS")) {
+    bx_log_debug("SHOW WARNINGS query failed: %s", mysql_error(conn));
+    return;
+  }
+
+  MYSQL_RES *result = mysql_store_result(conn);
+  if (!result) {
+    bx_log_debug("Could not get result set: %s", mysql_error(conn));
+    return;
+  }
+
+  MYSQL_ROW row;
+  while ((row = mysql_fetch_row(result))) {
+    bx_log_debug("Level: %s, Code: %s, Message: %s", row[0], row[1], row[2]);
+  }
+
+  mysql_free_result(result);
 }

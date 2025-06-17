@@ -123,9 +123,8 @@ CREATE TABLE IF NOT EXISTS  pr_project (
     INDEX USING HASH(uuid),
     INDEX USING HASH(nr),
     INDEX USING HASH (_checksum),
-    FOREIGN KEY (contact_id) REFERENCES contact(id)
-        ON DELETE RESTRICT
-        ON UPDATE CASCADE
+    INDEX USING HASH (id),
+    FOREIGN KEY (contact_id) REFERENCES contact(id) ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS account (
@@ -177,12 +176,8 @@ CREATE TABLE IF NOT EXISTS invoice (
     _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
     INDEX USING HASH (_checksum),
-    FOREIGN KEY (contact_id) REFERENCES contact(id)
-        ON UPDATE CASCADE
-        ON DELETE RESTRICT,
-    FOREIGN KEY (project_id) REFERENCES pr_project(id)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE
+    FOREIGN KEY (contact_id) REFERENCES contact(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (project_id) REFERENCES pr_project(id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS invoice_position (
@@ -202,15 +197,9 @@ CREATE TABLE IF NOT EXISTS invoice_position (
     _invoice_id BIGINT UNSIGNED,
     _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
     INDEX USING HASH (_checksum),
-    INDEX USING HASH (_deleted),
-    FOREIGN KEY (_invoice_id) REFERENCES invoice(id)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE,
-    FOREIGN KEY (unit_id) REFERENCES unit(id)
-        ON UPDATE CASCADE
-        ON DELETE RESTRICT
+    FOREIGN KEY (_invoice_id) REFERENCES invoice(id) ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY (unit_id) REFERENCES unit(id) ON UPDATE CASCADE ON DELETE RESTRICT
 
 );
 
@@ -218,9 +207,9 @@ CREATE TABLE IF NOT EXISTS taxes (
   id BIGINT UNSIGNED PRIMARY KEY,
   uuid BINARY(16) NOT NULL,
   name VARCHAR(80) NOT NULL,
-  code VARCHAR(80) NOT NULL,
+  code VARCHAR(80),
   digit INTEGER NOT NULL,
-  type VARCHAR(20) NOT NULL,
+  type VARCHAR(80) NOT NULL,
   account_id BIGINT UNSIGNED NOT NULL,
   tax_settlement_type VARCHAR(80) NOT NULL,
   value FLOAT NOT NULL,
@@ -233,6 +222,6 @@ CREATE TABLE IF NOT EXISTS taxes (
   end_month INTEGER,
     _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
- INDEX USING HASH (_checksum)
+  INDEX USING HASH (_checksum)
 );
 

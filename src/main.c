@@ -1,4 +1,5 @@
 #include "include/bx_conf.h"
+#include "include/bx_database.h"
 #include "include/bx_mutex.h"
 #include "include/bx_net.h"
 #include "include/bx_utils.h"
@@ -9,6 +10,7 @@
 #include "include/bxobjects/invoice.h"
 #include "include/bxobjects/language.h"
 #include "include/bxobjects/project.h"
+#include "include/bxobjects/taxes.h"
 
 #include <jansson.h>
 #include <mariadb/ma_list.h>
@@ -55,8 +57,9 @@ void *random_item_thread(void *arg) {
   conn = thread_setup_mysql(app);
   bx_log_debug("Random items thread data thread %lx", pthread_self());
   while (atomic_load(&(app->queue->run))) {
+    bx_taxes_walk_item(app, conn);
     mysql_commit(conn);
-    thrd_yield();
+    usleep(500);
   }
   thread_teardown_mysql(conn);
   return 0;

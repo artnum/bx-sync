@@ -413,6 +413,7 @@ bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
       (void *)bx_country_list_get_code(contact->country_id.value), 2);
 
   if (!bx_database_execute(query) || !bx_database_results(query)) {
+    bx_object_contact_dump(contact);
     bx_database_free_query(query);
     return false;
   }
@@ -458,13 +459,10 @@ void bx_contact_walk_items(bXill *app, MYSQL *conn) {
   const BXInteger limit = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BX_LIST_LIMIT};
   BXBool show_archived = {
-      .type = BX_OBJECT_TYPE_BOOL, .isset = true, .value = true};
+      .type = BX_OBJECT_TYPE_BOOL, .isset = true, .value = false};
 
   size_t arr_len = 0;
   for (int i = 0; i < 2; i++) {
-    /* alternate between archived and not archived, show_archived trigger "show
-     * only archived users" */
-    show_archived.value = !show_archived.value;
     do {
       arr_len = 0;
       BXNetRequest *request = bx_do_request(app->queue, NULL, WALK_CONTACT_PATH,
@@ -478,13 +476,17 @@ void bx_contact_walk_items(bXill *app, MYSQL *conn) {
       }
 
       arr_len = json_array_size(request->decoded);
-      for (size_t i = 0; i < arr_len; i++) {
-        _bx_contact_sync_item(app, conn, json_array_get(request->decoded, i),
+      for (size_t j = 0; j < arr_len; j++) {
+        _bx_contact_sync_item(app, conn, json_array_get(request->decoded, j),
                               show_archived);
       }
       mysql_commit(conn);
       bx_net_request_free(request);
       offset.value += limit.value;
     } while (arr_len > 0);
+    /* alternate between archived and not archived, show_archived trigger "show
+     * only archived users" */
+    show_archived.value = true;
+    offset.value = 0;
   }
 }

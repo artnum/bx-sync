@@ -84,6 +84,27 @@ inline static void _bx_dump_key(const char *key, int level) {
   }
 }
 
+inline static void _bx_dump_uuid(const char *key, BXUuid uuid, int level) {
+  _bx_dump_key(key, level);
+  if (!uuid.isset) {
+    printf("\e[0;35m[NOT SET]\e[0m\n");
+  } else {
+    printf("\e[0;32m");
+    printf("0x%lX%lX", uuid.value[0], uuid.value[1]);
+    printf("\e[0m\n");
+  }
+}
+
+inline static void _bx_dump_uinteger(const char *key, BXUInteger integer,
+                                     int level) {
+  _bx_dump_key(key, level);
+  if (!integer.isset) {
+    printf("\e[0;35m[NOT SET]\e[0m\n");
+  } else {
+    printf("\e[0;32m%ld\e[0m\n", integer.value);
+  }
+}
+
 inline static void _bx_dump_integer(const char *key, BXInteger integer,
                                     int level) {
   _bx_dump_key(key, level);
@@ -142,6 +163,12 @@ inline static void _bx_dump_print_subtitle(const char *titlefmt, ...) {
 
 inline static void _bx_dump_any(const char *key, const void *value, int level) {
   switch (*(uint8_t *)value) {
+  case BX_OBJECT_TYPE_UINTEGER:
+    _bx_dump_uinteger(key, *(BXUInteger *)value, level);
+    break;
+  case BX_OBJECT_TYPE_UUID:
+    _bx_dump_uuid(key, *(BXUuid *)value, level);
+    break;
   case BX_OBJECT_TYPE_INTEGER:
     _bx_dump_integer(key, *(BXInteger *)value, level);
     break;

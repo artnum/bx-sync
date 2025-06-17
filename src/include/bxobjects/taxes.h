@@ -3,6 +3,7 @@
 
 #include "../bx_object.h"
 #include "../bx_object_value.h"
+#include "../bxill.h"
 #include <stdint.h>
 
 typedef struct s_BXObjectTax BXObjectTax;
@@ -30,5 +31,6 @@ struct s_BXObjectTax {
 
 void *bx_object_tax_decode(void *jroot);
 void bx_object_tax_free(void *data);
+void bx_taxes_walk_item(bXill *app, MYSQL *conn);
 
 #endif /* BX_OBJECT_TAX_H__ */

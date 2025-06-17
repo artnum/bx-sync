@@ -1,7 +1,6 @@
 #include "include/bx_object.h"
 #include "include/bx_html_entities.h"
 #include "include/bx_object_value.h"
-#include "include/bx_utils.h"
 
 #include <assert.h>
 #include <jansson.h>

@@ -84,6 +84,25 @@ void bx_project_free(BXObjectProject *project) {
   free(project);
 }
 
+void bx_project_dump(BXObjectProject *project) {
+  printf("\n");
+  _bx_dump_any("id", &project->id, 0);
+  _bx_dump_any("uuid", &project->uuid, 0);
+  _bx_dump_any("nr", &project->nr, 0);
+  _bx_dump_any("name", &project->name, 0);
+  _bx_dump_any("start_date", &project->start_date, 0);
+  _bx_dump_any("end_date", &project->end_date, 0);
+  _bx_dump_any("comment", &project->comment, 0);
+  _bx_dump_any("pr_state_id", &project->pr_state_id, 0);
+  _bx_dump_any("pr_project_type_id", &project->pr_project_type_id, 0);
+  _bx_dump_any("contact_id", &project->contact_id, 0);
+  _bx_dump_any("contact_sub_id", &project->contact_sub_id, 0);
+  _bx_dump_any("pr_invoice_type_id", &project->pr_project_type_id, 0);
+  _bx_dump_any("pr_invoice_type_amount", &project->pr_invoice_type_amount, 0);
+  _bx_dump_any("pr_budget_type_id", &project->pr_budget_type_id, 0);
+  _bx_dump_any("pr_budget_type_amount", &project->pr_budget_type_amount, 0);
+}
+
 ObjectState bx_project_check_database(MYSQL *conn, BXObjectProject *project) {
   BXDatabaseQuery *query = bx_database_new_query(
       conn, "SELECT _checksum FROM pr_project WHERE id = :id");

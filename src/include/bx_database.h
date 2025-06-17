@@ -90,6 +90,8 @@ const char *bx_database_get_column_name(BXDatabaseQuery *query,
 bool bx_database_add_bxtype(BXDatabaseQuery *query, const char *name,
                             BXGeneric *value);
 
+void bx_database_print_warnings(MYSQL *conn);
+
 #define bx_database_add_param_int8(query, name, value)                         \
   bx_database_add_param_int(query, name, value, sizeof(int8_t),                \
                             MYSQL_TYPE_TINY, false)
