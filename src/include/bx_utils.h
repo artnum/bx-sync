@@ -10,18 +10,24 @@ typedef struct {
   BXMutex mutex;
 } BXUtilsPRNGState;
 
+#define LOG_MSG_BUFFER_MAX 500
 struct s_BXLogMsg {
-  char msg[255];
+  char msg[LOG_MSG_BUFFER_MAX];
   void *next;
 };
 
+#define LOG_LEVEL_DEBUG 0x80
+#define LOG_LEVEL_INFO 0x08
+#define LOG_LEVEL_ERROR 0x01
+
 struct s_BXLog {
   FILE *fp;
+  uint8_t level;
   BXMutex mutex;
   struct s_BXLogMsg *head;
 };
 
-bool bx_log_init();
+bool bx_log_init(const char *path, int level);
 void bx_utils_init(void);
 bool bx_utils_gen_id(uint64_t *id);
 /**

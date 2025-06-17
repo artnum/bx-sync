@@ -1,6 +1,7 @@
 #include "include/bx_object.h"
 #include "include/bx_html_entities.h"
 #include "include/bx_object_value.h"
+#include "include/bx_utils.h"
 
 #include <assert.h>
 #include <jansson.h>
@@ -161,38 +162,66 @@ BXString bx_object_get_json_string(json_t *object, const char *key,
 
   return str;
 }
-
-/* convert only string into two uint64_t */
 BXUuid bx_object_get_json_uuid(json_t *object, const char *key,
                                XXH3_state_t *state) {
-  json_t *value = NULL;
   BXUuid uuid = {.type = BX_OBJECT_TYPE_UUID, .isset = false, .value = {0, 0}};
-  value = json_object_get(object, key);
+
+  // Get the JSON value for the key
+  json_t *value = json_object_get(object, key);
   if (value == NULL || json_is_null(value)) {
     return uuid;
   }
+
+  // Ensure the value is a string
   if (!json_is_string(value)) {
     return uuid;
   }
+
+  // Get the string and its length
+  const char *uuidstr = json_string_value(value);
   size_t len = json_string_length(value);
-  if (len < 36 || len > 36) {
+  if (len != 36) {
     return uuid;
   }
-  const char *uuidstr = json_string_value(value);
+
+  // Validate UUID format: 8-4-4-4-12 hex digits with hyphens
+  size_t segment_lengths[] = {8, 4, 4, 4, 12};
+  size_t segment = 0, pos = 0, hex_count = 0;
+  uint8_t bytes[16] = {0}; // Temporary buffer for 128-bit UUID
+
   for (size_t i = 0; i < len; i++) {
-    if (uuidstr[i] >= '0' && uuidstr[i] <= '9') {
-      uuid.value[i / 16] = uuidstr[i] - '9';
-    } else if (uuidstr[i] >= 'A' && uuidstr[i] <= 'F') {
-      uuid.value[i / 16] = uuidstr[i] - 'A' + 0xA;
-    } else if (uuidstr[i] >= 'a' && uuidstr[i] <= 'f') {
-      uuid.value[i / 16] = uuidstr[i] - 'a' + 0xA;
-    } else {
+    if (segment < 5 && pos == segment_lengths[segment]) {
       if (uuidstr[i] != '-') {
-        return uuid;
+        return uuid; // Expected hyphen missing
       }
+      segment++;
+      pos = 0;
       continue;
     }
-    uuid.value[i / 16] <<= 4;
+    char c = tolower(uuidstr[i]);
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+      return uuid; // Invalid character
+    }
+    // Convert hex digit to value
+    uint8_t nibble = (c >= '0' && c <= '9') ? (c - '0') : (c - 'a' + 10);
+    bytes[hex_count / 2] |= nibble << ((1 - (hex_count % 2)) * 4);
+    hex_count++;
+    pos++;
+  }
+
+  // Ensure we processed exactly 32 hex digits
+  if (hex_count != 32 || segment != 4 || pos != 12) {
+    return uuid;
+  }
+
+  // Convert bytes to uint64_t[2]
+  for (int i = 0; i < 8; i++) {
+    uuid.value[0] = (uuid.value[0] << 8) | bytes[i];
+    uuid.value[1] = (uuid.value[1] << 8) | bytes[i + 8];
+  }
+
+  if (state != NULL) {
+    XXH3_64bits_update(state, &uuid.value, sizeof(uint64_t) * 2);
   }
   uuid.isset = true;
   return uuid;

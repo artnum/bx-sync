@@ -236,3 +236,17 @@ const char *bx_conf_get_string(BXConf *conf, const char *key) {
 
   return v->s_value;
 }
+
+int bx_conf_get_int(BXConf *conf, const char *key) {
+  assert(conf != NULL);
+  assert(key != NULL);
+
+  BXConfValue *v = NULL;
+  bx_mutex_lock(&conf->mutex);
+  v = _bx_conf_get(conf, key);
+  if (v == NULL || v->type != IntegerType) {
+    return 0;
+  }
+  bx_mutex_unlock(&conf->mutex);
+  return v->i_value;
+}

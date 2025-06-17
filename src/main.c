@@ -34,6 +34,7 @@ MYSQL *thread_setup_mysql(bXill *app) {
                      bx_conf_get_string(app->conf, "mysql-password"),
                      bx_conf_get_string(app->conf, "mysql-database"), 0, NULL,
                      0);
+  mysql_autocommit(conn, 0);
   bx_conf_release(app->conf, "mysql-host");
   bx_conf_release(app->conf, "mysql-user");
   bx_conf_release(app->conf, "mysql-password");
@@ -47,15 +48,44 @@ void thread_teardown_mysql(MYSQL *conn) {
   mysql_thread_end();
 }
 
+void *random_item_thread(void *arg) {
+  bXill *app = (bXill *)arg;
+  MYSQL *conn = NULL;
+
+  conn = thread_setup_mysql(app);
+  bx_log_debug("Random items thread data thread %lx", pthread_self());
+  while (atomic_load(&(app->queue->run))) {
+    mysql_commit(conn);
+    thrd_yield();
+  }
+  thread_teardown_mysql(conn);
+  return 0;
+}
+
+void *contact_sector_thread(void *arg) {
+  bXill *app = (bXill *)arg;
+  MYSQL *conn = NULL;
+
+  conn = thread_setup_mysql(app);
+  bx_log_debug("Contact Sector data thread %lx", pthread_self());
+  while (atomic_load(&(app->queue->run))) {
+    bx_contact_sector_walk_items(app, conn);
+    mysql_commit(conn);
+    thrd_yield();
+  }
+  thread_teardown_mysql(conn);
+  return 0;
+}
+
 void *contact_thread(void *arg) {
   bXill *app = (bXill *)arg;
   MYSQL *conn = NULL;
 
   conn = thread_setup_mysql(app);
+  bx_language_load(app, conn);
+  mysql_commit(conn);
   bx_log_debug("Contact data thread %lx", pthread_self());
   while (atomic_load(&(app->queue->run))) {
-    bx_language_load(app, conn);
-    bx_contact_sector_walk_items(app, conn);
     bx_contact_walk_items(app, conn);
     thrd_yield();
   }
@@ -98,19 +128,24 @@ int main(int argc, char **argv) {
     CONTACT_THREAD,
     PROJECT_THREAD,
     INVOICE_THREAD,
+    CONTACT_SECTOR_THREAD,
+    RANDOM_ITEM_THREAD,
+
     MAX__THREAD_LIST
   };
   pthread_t threads[MAX__THREAD_LIST];
 
   mysql_library_init(argc, argv, NULL);
-  bx_log_init();
-  bx_utils_init();
 
   conf = bx_conf_init();
   if (!bx_conf_loadfile(conf, "conf.json")) {
     bx_conf_destroy(&conf);
     return -1;
   }
+  bx_log_init(bx_conf_get_string(conf, "log-file"),
+              bx_conf_get_int(conf, "log-level"));
+  bx_conf_release(conf, "log-file");
+  bx_utils_init();
   app.conf = conf;
   atomic_store(&app.logthread, true);
   pthread_t log_thread;
@@ -135,6 +170,10 @@ int main(int argc, char **argv) {
 
   pthread_create(&threads[PROJECT_THREAD], NULL, project_thread, (void *)&app);
   pthread_create(&threads[INVOICE_THREAD], NULL, invoice_thread, (void *)&app);
+  pthread_create(&threads[CONTACT_SECTOR_THREAD], NULL, contact_sector_thread,
+                 (void *)&app);
+  pthread_create(&threads[RANDOM_ITEM_THREAD], NULL, random_item_thread,
+                 (void *)&app);
 
   bool exit = false;
 

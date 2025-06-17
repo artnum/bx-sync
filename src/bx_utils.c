@@ -202,66 +202,6 @@ static inline char *_bx_item_to_path(const char *fmt, va_list ap) {
   return path;
 }
 
-#if 0
-static inline char *_bx_item_to_path(const char *fmt, va_list ap) {
-  assert(fmt != NULL);
-  size_t fmt_len = strlen(fmt);
-  assert(fmt_len > 0);
-
-  size_t total_len = 0;
-  size_t origin = 0;
-  size_t i = 0;
-  char *path = NULL;
-  for (i = 0; i < fmt_len; i++) {
-    if (fmt[i] == '$') {
-      BXGeneric *item = va_arg(ap, BXGeneric *);
-      if (item == NULL) {
-        break;
-      }
-      char *str = bx_object_value_to_string(item);
-      if (str == NULL) {
-        break;
-      }
-      size_t str_len = strlen(str);
-      if (str_len == 0) {
-        free(str);
-        break;
-      }
-      total_len = i - origin + str_len + 1;
-      void *tmp = realloc(path, total_len);
-      if (tmp == NULL) {
-        free(str);
-        break;
-      }
-      path = tmp;
-      if (origin == 0) {
-        *path = '\0';
-      }
-      strncat(path, &fmt[origin], i - origin);
-      strncat(path, str, str_len);
-      free(str);
-      origin = i + 1;
-    }
-  }
-  va_end(ap);
-
-  if (i != origin) {
-    total_len = i - origin + 1;
-    void *tmp = realloc(path, total_len);
-    if (tmp == NULL) {
-      return path;
-    }
-    path = tmp;
-    if (origin == 0) {
-      *path = '\0';
-    }
-    strncat(path, &fmt[origin], i - origin);
-  }
-
-  return path;
-}
-#endif
-
 char *bx_item_to_path(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
@@ -318,10 +258,11 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
 extern WINDOW *LOG_WINDOW;
 struct s_BXLog LOG;
 
-bool bx_log_init() {
+bool bx_log_init(const char *path, int level) {
   LOG.head = NULL;
+  LOG.level = level;
   bx_mutex_init(&LOG.mutex);
-  LOG.fp = fopen("/tmp/bxnet.log", "a");
+  LOG.fp = fopen(path, "a");
   if (!LOG.fp) {
     return false;
   }
@@ -378,7 +319,12 @@ void _bx_log_queue(char *msg, const char *err, char *file, int line) {
   if (new == NULL) {
     return;
   }
-  snprintf(new->msg, 255, "%s [%s:%d] %s", err, file, line, msg);
+  if (err == NULL) {
+    snprintf(new->msg, LOG_MSG_BUFFER_MAX, "%s", msg);
+  } else {
+    snprintf(new->msg, LOG_MSG_BUFFER_MAX, "%s [%s:%d] %s", err, file, line,
+             msg);
+  }
   if (bx_mutex_lock(&LOG.mutex) != false) {
     new->next = LOG.head;
     LOG.head = new;
@@ -389,28 +335,37 @@ void _bx_log_queue(char *msg, const char *err, char *file, int line) {
 }
 
 void _bx_log_debug(char *file, int line, const char *fmt, ...) {
-  char x[255];
+  if (LOG.level < LOG_LEVEL_DEBUG) {
+    return;
+  }
+  char x[LOG_MSG_BUFFER_MAX];
   va_list ap;
   va_start(ap, fmt);
-  vsnprintf(x, 255, fmt, ap);
+  vsnprintf(x, LOG_MSG_BUFFER_MAX, fmt, ap);
   va_end(ap);
   _bx_log_queue(x, "DEBUG", file, line);
 }
 
 void _bx_log_info(char *file, int line, const char *fmt, ...) {
-  char x[255];
+  if (LOG.level < LOG_LEVEL_INFO) {
+    return;
+  }
+  char x[LOG_MSG_BUFFER_MAX];
   va_list ap;
   va_start(ap, fmt);
-  vsnprintf(x, 255, fmt, ap);
+  vsnprintf(x, LOG_MSG_BUFFER_MAX, fmt, ap);
   va_end(ap);
   _bx_log_queue(x, "INFO", file, line);
 }
 
 void _bx_log_error(char *file, int line, const char *fmt, ...) {
-  char x[255];
+  if (LOG.level < LOG_LEVEL_ERROR) {
+    return;
+  }
+  char x[LOG_MSG_BUFFER_MAX];
   va_list ap;
   va_start(ap, fmt);
-  vsnprintf(x, 255, fmt, ap);
+  vsnprintf(x, LOG_MSG_BUFFER_MAX, fmt, ap);
   va_end(ap);
   _bx_log_queue(x, "ERROR", file, line);
 }

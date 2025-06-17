@@ -5,13 +5,11 @@
 #include "../include/bx_object_value.h"
 #include "../include/bx_utils.h"
 #include "../include/bxill.h"
-#include "../include/bxobjects/contact.h"
 #include <jansson.h>
 #include <stdint.h>
 #include <threads.h>
 
 #define GET_PROJECT_PATH "2.0/pr_project/$"
-#define WALK_PROJECT_PATH "2.0/pr_project"
 #define QUERY_UPDATE                                                           \
   "UPDATE pr_project SET uuid = :uuid, nr = :nr, name = :name,"                \
   "start_date = :start_date, end_date = :end_date, comment = :comment,"        \
@@ -23,7 +21,7 @@
   ":pr_budget_type_amount"                                                     \
   "_checksum := :_checkum, _last_updated = :_last_updated WHERE id = :id;"
 #define QUERY_INSERT                                                           \
-  "INSERT INTO pr_project (id, uuid, nr, name, start_date,"                    \
+  "INSERT IGNORE INTO pr_project (id, uuid, nr, name, start_date,"             \
   "end_date, comment, pr_state_id, pr_project_type_id, contact_id,"            \
   "contact_sub_id, pr_invoice_type_id, pr_invoice_type_amount, "               \
   "pr_budget_type_id,"                                                         \
@@ -109,6 +107,27 @@ ObjectState bx_project_check_database(MYSQL *conn, BXObjectProject *project) {
   return NeedNothing;
 }
 
+bool bx_project_is_in_database(MYSQL *conn, BXGeneric *item) {
+  BXDatabaseQuery *query =
+      bx_database_new_query(conn, "SELECT id FROM pr_project WHERE id = :id;");
+  if (query == NULL) {
+    return false;
+  }
+  bx_database_add_bxtype(query, ":id", item);
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    bx_database_free_query(query);
+    return false;
+  }
+
+  if (query->results == NULL || query->results->column_count == 0) {
+    bx_database_free_query(query);
+    return false;
+  }
+
+  bx_database_free_query(query);
+  return true;
+}
+
 static bool bind_params(BXDatabaseQuery *query, BXObjectProject *project) {
   uint64_t now = 0;
   now = time(NULL);
@@ -152,30 +171,11 @@ bool bx_project_insert_db(MYSQL *conn, BXObjectProject *project) {
   return execute_request(conn, project, QUERY_INSERT);
 }
 
-bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
-  bx_log_debug("Sync Project Id %ld", ((BXUInteger *)item)->value);
-  BXNetRequest *request =
-      bx_do_request(app->queue, NULL, GET_PROJECT_PATH, item);
-  if (request == NULL) {
-    return false;
-  }
-
-  if (request->response == NULL || request->response->http_code != 200) {
-    return false;
-  }
-
-  bx_log_debug("PROJECT %s", request->response->data);
-
-  BXObjectProject *project = decode_object(request->decoded);
-  bx_net_request_free(request);
+bool _bx_project_sync_item(MYSQL *conn, json_t *item) {
+  BXObjectProject *project = decode_object(item);
   if (project == NULL) {
     return false;
   }
-  if (!bx_contact_sync_item(app, conn, (BXGeneric *)&project->contact_id)) {
-    bx_project_free(project);
-    return false;
-  }
-
   switch (bx_project_check_database(conn, project)) {
   default:
   case NeedNothing:
@@ -199,8 +199,26 @@ bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   return true;
 }
 
+bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
+  bx_log_debug("Sync Project Id %ld", ((BXUInteger *)item)->value);
+  BXNetRequest *request =
+      bx_do_request(app->queue, NULL, GET_PROJECT_PATH, item);
+  if (request == NULL) {
+    return false;
+  }
+
+  if (request->response == NULL || request->response->http_code != 200) {
+    return false;
+  }
+
+  bx_net_request_free(request);
+  return _bx_project_sync_item(conn, request->decoded);
+}
+
+#define WALK_PROJECT_PATH "2.0/pr_project?limit=$&offset=$"
 void bx_project_walk_item(bXill *app, MYSQL *conn) {
   bx_log_debug("BX Walk Project Items");
+  int len0hit_count = 0;
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
   const BXInteger limit = {
@@ -208,7 +226,8 @@ void bx_project_walk_item(bXill *app, MYSQL *conn) {
   size_t arr_len = 0;
   do {
     arr_len = 0;
-    BXNetRequest *request = bx_do_request(app->queue, NULL, WALK_PROJECT_PATH);
+    BXNetRequest *request =
+        bx_do_request(app->queue, NULL, WALK_PROJECT_PATH, &limit, &offset);
     if (request == NULL) {
       return;
     }
@@ -218,13 +237,16 @@ void bx_project_walk_item(bXill *app, MYSQL *conn) {
     }
 
     arr_len = json_array_size(request->decoded);
-    for (size_t i = 0; i < arr_len; i++) {
-      BXInteger id = bx_object_get_json_int(json_array_get(request->decoded, i),
-                                            "id", NULL);
-      bx_project_sync_item(app, conn, (BXGeneric *)&id);
+    if (arr_len == 0) {
+      len0hit_count++;
+    } else {
+      len0hit_count = 0;
     }
+    for (size_t i = 0; i < arr_len; i++) {
+      _bx_project_sync_item(conn, json_array_get(request->decoded, i));
+    }
+    mysql_commit(conn);
     bx_net_request_free(request);
-    thrd_yield();
     offset.value += limit.value;
   } while (arr_len > 0);
 }

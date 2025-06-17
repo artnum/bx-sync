@@ -1,6 +1,5 @@
 #include "../include/bxobjects/contact.h"
 #include "../include/bx_database.h"
-#include "../include/bx_decode.h"
 #include "../include/bx_net.h"
 #include "../include/bx_object.h"
 #include "../include/bx_object_value.h"
@@ -28,17 +27,18 @@
   "remarks = :remarks, updated_at = :updated_at, profile_image = "             \
   ":profile_image,"                                                            \
   "language_id = :language_id"                                                 \
-  "_checksum = :_checksum, _last_updated = :_last_updated"                     \
+  "_checksum = :_checksum, _last_updated = :_last_updated, _archived = "       \
+  ":archived"                                                                  \
   " WHERE id = :id;"
 #define QUERY_INSERT                                                           \
-  "INSERT INTO contact (id, contact_type_id, salutation_id, country,"          \
+  "INSERT IGNORE INTO contact (id, contact_type_id, salutation_id, country,"   \
   "user_id, owner_id, title_id, salutation_form, postcode, nr, name_1, "       \
   "name_2,"                                                                    \
   "birthday, address, city, mail, mail_second, phone_fixed, "                  \
   "phone_fixed_second,"                                                        \
   "phone_mobile, fax, url, skype_name, remarks, updated_at, profile_image, "   \
   "language_id,"                                                               \
-  "_checksum, _last_updated"                                                   \
+  "_checksum, _last_updated, _archived"                                        \
   ") VALUES (:id, :contact_type_id, :salutation_id, :country, :user_id, "      \
   ":owner_id,"                                                                 \
   ":title_id, :salutation_form, :postcode, :nr, :name_1, name_2, :birthday, "  \
@@ -47,7 +47,7 @@
   ":phone_mobile,"                                                             \
   ":fax, :url, :skype_name, :remarks, :updated_at, :profile_image, "           \
   ":language_id, "                                                             \
-  ":_checksum, :_last_updated"                                                 \
+  ":_checksum, :_last_updated, :_archived"                                     \
   ");"
 
 void bx_object_contact_free(void *data) {
@@ -297,8 +297,8 @@ static void contact_group_sync(bXill *app, MYSQL *conn,
 }
 
 bool bx_contact_is_in_database(MYSQL *conn, BXGeneric *item) {
-  BXDatabaseQuery *query = bx_database_new_query(
-      conn, "SELECT _checksum FROM contact WHERE id = :id;");
+  BXDatabaseQuery *query =
+      bx_database_new_query(conn, "SELECT id FROM contact WHERE id = :id;");
   if (query == NULL) {
     return false;
   }
@@ -317,8 +317,8 @@ bool bx_contact_is_in_database(MYSQL *conn, BXGeneric *item) {
   return true;
 }
 
-#define GET_CONTACT_PATH "2.0/contact/$"
-bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item) {
+bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
+                           BXBool is_archived) {
   assert(app != NULL);
   assert(item != NULL);
 
@@ -327,9 +327,14 @@ bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item) {
     return false;
   }
 
-  bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id);
-  if (contact->user_id.value != contact->owner_id.value) {
+  if (!bx_user_is_in_database(conn, (BXGeneric *)&contact->user_id)) {
+    bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id);
+    mysql_commit(conn);
+  }
+  if (contact->user_id.value != contact->owner_id.value &&
+      !bx_user_is_in_database(conn, (BXGeneric *)&contact->owner_id)) {
     bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id);
+    mysql_commit(conn);
   }
 
   BXDatabaseQuery *query = bx_database_new_query(
@@ -400,6 +405,7 @@ bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item) {
   bx_database_add_bxtype(query, ":profile_image",
                          (BXGeneric *)&contact->profile_image);
 
+  bx_database_add_bxtype(query, ":_archived", (BXGeneric *)&is_archived);
   bx_database_add_param_uint64(query, ":_checksum", &contact->checksum);
   bx_database_add_param_uint64(query, ":_last_updated", &now);
   bx_database_add_param_char(
@@ -425,9 +431,12 @@ bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item) {
 
   return true;
 }
-bool bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
+
+#define GET_CONTACT_PATH "2.0/contact/$?show_archived=$"
+bool bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
+                          BXBool show_archived) {
   BXNetRequest *request =
-      bx_do_request(app->queue, NULL, GET_CONTACT_PATH, item);
+      bx_do_request(app->queue, NULL, GET_CONTACT_PATH, item, &show_archived);
   if (request == NULL) {
     return false;
   }
@@ -435,37 +444,47 @@ bool bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
     bx_net_request_free(request);
     return false;
   }
-  bool retVal = _bx_contact_sync_item(app, conn, request->decoded);
+  bool retVal =
+      _bx_contact_sync_item(app, conn, request->decoded, show_archived);
   bx_net_request_free(request);
   return retVal;
 }
 
-#define WALK_CONTACT_PATH "2.0/contact?limit=$&offset=$"
+#define WALK_CONTACT_PATH "2.0/contact?limit=$&offset=$&show_archived=$"
 void bx_contact_walk_items(bXill *app, MYSQL *conn) {
   bx_log_debug("BX Walk Contact Items");
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
   const BXInteger limit = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BX_LIST_LIMIT};
+  BXBool show_archived = {
+      .type = BX_OBJECT_TYPE_BOOL, .isset = true, .value = true};
 
   size_t arr_len = 0;
-  do {
-    arr_len = 0;
-    BXNetRequest *request =
-        bx_do_request(app->queue, NULL, WALK_CONTACT_PATH, &limit, &offset);
-    if (request == NULL) {
-      return;
-    }
-    if (!json_is_array(request->decoded)) {
-      bx_net_request_free(request);
-      return;
-    }
+  for (int i = 0; i < 2; i++) {
+    /* alternate between archived and not archived, show_archived trigger "show
+     * only archived users" */
+    show_archived.value = !show_archived.value;
+    do {
+      arr_len = 0;
+      BXNetRequest *request = bx_do_request(app->queue, NULL, WALK_CONTACT_PATH,
+                                            &limit, &offset, &show_archived);
+      if (request == NULL) {
+        return;
+      }
+      if (!json_is_array(request->decoded)) {
+        bx_net_request_free(request);
+        return;
+      }
 
-    arr_len = json_array_size(request->decoded);
-    for (size_t i = 0; i < arr_len; i++) {
-      _bx_contact_sync_item(app, conn, json_array_get(request->decoded, i));
-    }
-    bx_net_request_free(request);
-    offset.value += limit.value;
-  } while (arr_len > 0);
+      arr_len = json_array_size(request->decoded);
+      for (size_t i = 0; i < arr_len; i++) {
+        _bx_contact_sync_item(app, conn, json_array_get(request->decoded, i),
+                              show_archived);
+      }
+      mysql_commit(conn);
+      bx_net_request_free(request);
+      offset.value += limit.value;
+    } while (arr_len > 0);
+  }
 }

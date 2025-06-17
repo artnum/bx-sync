@@ -5,6 +5,7 @@
 #include "../include/bxill.h"
 #include "../include/bxobjects/contact.h"
 #include "../include/bxobjects/position.h"
+#include "../include/bxobjects/project.h"
 #include <assert.h>
 #include <jansson.h>
 #include <sys/types.h>
@@ -12,17 +13,18 @@
 #include <unistd.h>
 
 #define QUERY_INSERT                                                           \
-  "INSERT INTO invoice (id, document_nr, title, contact_id, contact_sub_id, "  \
+  "INSERT IGNORE INTO invoice (id, document_nr, title, contact_id, "           \
+  "contact_sub_id, "                                                           \
   "user_id, project_id, language_id, bank_account_id, currency_id, "           \
   "payment_type_id, header, footer, mwst_type, mwst_is_net, "                  \
   "show_position_taxes, is_valid_from, is_valid_to, contact_address, "         \
-  "kb_item_status, reference, api_reference, viewed_by_client_at, "            \
+  "kb_item_status_id, reference, api_reference, viewed_by_client_at, "         \
   "updated_at, esr_id, qr_invoice_id, template_slug, network_link, "           \
   "_checksum, _last_updated) VALUES (:id, :document_nr, :title, "              \
   ":contact_id, :contact_sub_id, :user_id, :project_id, :language_id, "        \
   ":bank_account_id, :currency_id, :payment_type_id, :header, :footer, "       \
   ":mwst_type, :mwst_is_net, :show_position_taxes, :is_valid_from, "           \
-  ":is_valid_to, :contact_address, :kb_item_status, :reference, "              \
+  ":is_valid_to, :contact_address, :kb_item_status_id, :reference, "           \
   ":api_reference, :viewed_by_client_at, :updated_at, :esr_id, "               \
   ":qr_invoice_id, :template_slug, :network_link, :_checksum, "                \
   ":_last_updated);"
@@ -37,7 +39,7 @@
   "show_position_taxes = :show_position_taxes, is_valid_from = "               \
   ":is_valid_from,"                                                            \
   "is_valid_to = :is_valid_to, contact_address = :contact_address, "           \
-  "kb_item_status = :kb_item_status, reference = :reference, "                 \
+  "kb_item_status_id = :kb_item_status_id, reference = :reference, "           \
   "api_reference = :api_reference, viewed_by_client_at = "                     \
   ":viewed_by_client_at,"                                                      \
   "updated_at = :updated_at, esr_id = :esr_id, qr_invoice_id = "               \
@@ -86,7 +88,7 @@ void bx_object_invoice_dump(void *data) {
   _bx_dump_any("currency_id", &invoice->currency_id, 1);
   _bx_dump_any("payment_type_id", &invoice->payment_type_id, 1);
   _bx_dump_any("tva_id", &invoice->tva_type, 1);
-  _bx_dump_any("kb_item_status", &invoice->kb_item_status, 1);
+  _bx_dump_any("kb_item_status_id", &invoice->kb_item_status_id, 1);
   _bx_dump_any("esr_id", &invoice->esr_id, 1);
   _bx_dump_any("qr_invoice_id", &invoice->qr_invoice_id, 1);
 
@@ -109,16 +111,6 @@ void bx_object_invoice_dump(void *data) {
   _bx_dump_any("reference", &invoice->reference, 1);
   _bx_dump_any("api_reference", &invoice->api_reference, 1);
   _bx_dump_any("viewed_by_client_at", &invoice->viewed_by_client_at, 1);
-
-  _bx_dump_print_subtitle("Taxes");
-  for (int i = 0; i < invoice->bx_object_taxes_count; i++) {
-    bx_object_tax_dump(invoice->remote_taxes[i]);
-  }
-
-  _bx_dump_print_subtitle("Positions");
-  for (int i = 0; i < invoice->bx_object_remote_positions_count; i++) {
-    bx_object_position_dump(invoice->remote_positions[i]);
-  }
 }
 
 void *bx_object_invoice_decode(void *object) {
@@ -141,7 +133,7 @@ void *bx_object_invoice_decode(void *object) {
   invoice->contact_id = bx_object_get_json_uint(jroot, "contact_id", hashState);
   invoice->contact_sub_id =
       bx_object_get_json_uint(jroot, "contact_sub_id", hashState);
-  invoice->project_id = bx_object_get_json_uint(jroot, "user_id", hashState);
+  invoice->project_id = bx_object_get_json_uint(jroot, "project_id", hashState);
   invoice->bank_account_id =
       bx_object_get_json_uint(jroot, "bank_account_id", hashState);
   invoice->currency_id =
@@ -149,8 +141,8 @@ void *bx_object_invoice_decode(void *object) {
   invoice->payment_type_id =
       bx_object_get_json_uint(jroot, "payment_type_id", hashState);
   invoice->tva_type = bx_object_get_json_uint(jroot, "mwst_type", hashState);
-  invoice->kb_item_status =
-      bx_object_get_json_uint(jroot, "kb_item_status", hashState);
+  invoice->kb_item_status_id =
+      bx_object_get_json_uint(jroot, "kb_item_status_id", hashState);
   invoice->esr_id = bx_object_get_json_uint(jroot, "esr_id", hashState);
   invoice->qr_invoice_id =
       bx_object_get_json_uint(jroot, "qr_invoice_id", hashState);
@@ -224,6 +216,12 @@ bool _bx_invoice_sync_item(MYSQL *conn, json_t *item) {
   if (!bx_contact_is_in_database(conn, (BXGeneric *)&invoice->contact_id)) {
     goto fail_and_return;
   }
+  if (!bx_project_is_in_database(conn, (BXGeneric *)&invoice->project_id) &&
+      invoice->project_id.value > 0) {
+    goto fail_and_return;
+  } else if (invoice->project_id.value == 0) {
+    invoice->project_id.isset = false;
+  }
 
   query = bx_database_new_query(conn,
                                 "SELECT _checksum FROM invoice WHERE id = :id");
@@ -285,8 +283,8 @@ bool _bx_invoice_sync_item(MYSQL *conn, json_t *item) {
                          (BXGeneric *)&invoice->is_valid_to);
   bx_database_add_bxtype(query, ":contact_address",
                          (BXGeneric *)&invoice->contact_address);
-  bx_database_add_bxtype(query, ":kb_item_status",
-                         (BXGeneric *)&invoice->kb_item_status);
+  bx_database_add_bxtype(query, ":kb_item_status_id",
+                         (BXGeneric *)&invoice->kb_item_status_id);
   bx_database_add_bxtype(query, ":reference", (BXGeneric *)&invoice->reference);
   bx_database_add_bxtype(query, ":api_reference",
                          (BXGeneric *)&invoice->api_reference);
@@ -373,8 +371,8 @@ void bx_invoice_walk_items(bXill *app, MYSQL *conn) {
     for (size_t i = 0; i < arr_len; i++) {
       _bx_invoice_sync_item(conn, json_array_get(request->decoded, i));
     }
+    mysql_commit(conn);
     bx_net_request_free(request);
-    thrd_yield();
     offset.value += limit.value;
   } while (arr_len > 0);
 }

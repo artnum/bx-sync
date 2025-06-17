@@ -173,7 +173,6 @@ BXDatabaseQuery *bx_database_new_query(MYSQL *mysql, const char *query) {
   if (j < new->query_length) {
     new->query[j] = '\0';
   }
-  bx_log_debug("%s", new->query);
   new->exectued = false;
   return new;
 }
@@ -476,12 +475,17 @@ bool bx_database_execute(BXDatabaseQuery *query) {
   query->has_failed = false;
   if (mysql_stmt_execute(query->stmt) != 0) {
     query->has_failed = true;
-    bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(query->stmt));
+    bx_log_error("[MYSQL ERROR] %s %s", mysql_stmt_error(query->stmt),
+                 query->query);
     free(binds);
     return false;
   }
   query->affected_rows = mysql_stmt_affected_rows(query->stmt);
-
+  query->warning_rows = mysql_stmt_warning_count(query->stmt);
+  if (query->warning_rows > 0) {
+    bx_log_debug("MYSQL Warning %d, query %s", query->warning_rows,
+                 query->query);
+  }
   /* mysql_stmt_result_metadata returns NULL if the query doesn't produce
    * a dataset (INSERT, UPDATE, ...) with no error set.
    * So we can differentiate between SELECT, ... here so in result we can

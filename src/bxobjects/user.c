@@ -13,7 +13,7 @@
   "VALUES (:_checksum, :_last_updated, :id, :firstname, :lastname, "           \
   ":email, :salutation_type, :is_superadmin, :is_accountant);"
 #define QUERY_UPDATE                                                           \
-  "INSERT INTO user (_checksum, _last_updated, "                               \
+  "INSERT IGNORE INTO user (_checksum, _last_updated, "                        \
   "id, firstname, lastname, email, salutation_type, is_superadmin, "           \
   "is_accountant) "                                                            \
   "VALUES (:_checksum, :_last_updated, :id, :firstname, :lastname, "           \
@@ -63,6 +63,27 @@ static inline BXObjectUser *decode_object(json_t *root) {
   XXH3_freeState(hashState);
 
   return user;
+}
+
+bool bx_user_is_in_database(MYSQL *conn, BXGeneric *item) {
+  BXDatabaseQuery *query =
+      bx_database_new_query(conn, "SELECT id FROM user  WHERE id = :id;");
+  if (query == NULL) {
+    return false;
+  }
+  bx_database_add_bxtype(query, ":id", item);
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    bx_database_free_query(query);
+    return false;
+  }
+
+  if (query->results == NULL || query->results->column_count == 0) {
+    bx_database_free_query(query);
+    return false;
+  }
+
+  bx_database_free_query(query);
+  return true;
 }
 
 bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {

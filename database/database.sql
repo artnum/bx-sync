@@ -93,12 +93,11 @@ CREATE TABLE IF NOT EXISTS contact (
     profile_image TEXT NULL,
     _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _archived BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     FOREIGN KEY (owner_id) REFERENCES user(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     FOREIGN KEY (language_id) REFERENCES language(id) ON DELETE RESTRICT ON UPDATE CASCADE,
-    INDEX USING HASH (_checksum),
-    INDEX USING HASH (_deleted)
+    INDEX USING HASH (_checksum)
 );
 
 -- ** Invoice related table **
@@ -119,13 +118,11 @@ CREATE TABLE IF NOT EXISTS  pr_project (
     pr_invoice_type_amount FLOAT,
     pr_budget_type_id BIGINT UNSIGNED,
     pr_budget_type_amount  FLOAT,
-        _checksum BIGINT UNSIGNED NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
     INDEX USING HASH(uuid),
     INDEX USING HASH(nr),
     INDEX USING HASH (_checksum),
-    INDEX USING HASH (_deleted),
     FOREIGN KEY (contact_id) REFERENCES contact(id)
         ON DELETE RESTRICT
         ON UPDATE CASCADE
@@ -143,52 +140,10 @@ CREATE TABLE IF NOT EXISTS unit (
     name VARCHAR(30),
     _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS invoice_position (
-    id BIGINT PRIMARY KEY,
-    amount FLOAT NOT NULL,
-    account_id BIGINT,
-    unit_id BIGINT UNSIGNED DEFAULT NULL,
-    tax_id BIGINT,
-    tax_value FLOAT,
-    description TEXT DEFAULT '',
-    unit_price FLOAT,
-    discount FLOAT DEFAULT 0.0,
-    position INT,
-    internal_position INT,
-    type VARCHAR(20),
-    parent_id BIGINT DEFAULT NULL,
-    _invoice BIGINT,
-    _checksum BIGINT UNSIGNED NOT NULL,
-    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    INDEX USING HASH _checksum,
-    INDEX USING HASH _deleted,
-    FOREIGN KEY _invoice REFERENCES invoice(id)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE,
-    FOREIGN KEY (unit_id) REFERENCES unit(id)
-        ON UPDATE CASCADE
-        ON DELETE RESTRICT
 
-);
-
-CREATE TABLE IF NOT EXISTS tax (
-    id BIGINT PRIMARY KEY,
-    percentage FLOAT,
-    value FLOAT,
-    _invoice BIGINT,
-    _checksum BIGINT UNSIGNED NOT NULL,
-    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    INDEX USING HASH _checksum,
-    INDEX USING HASH _deleted,
-    FOREIGN KEY _invoice REFERENCES invoice(id)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE
-);
 
 CREATE TABLE IF NOT EXISTS invoice (
     id BIGINT UNSIGNED PRIMARY KEY,
@@ -210,7 +165,7 @@ CREATE TABLE IF NOT EXISTS invoice (
     is_valid_from VARCHAR(10),
     is_valid_to VARCHAR(10),
     contact_address TEXT,
-    kb_item_status INT,
+    kb_item_status_id INT,
     reference TEXT,
     api_reference TEXT,
     viewed_by_client_at VARCHAR(19),
@@ -222,8 +177,62 @@ CREATE TABLE IF NOT EXISTS invoice (
     _checksum BIGINT UNSIGNED NOT NULL,
     _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
     INDEX USING HASH (_checksum),
-    INDEX USING HASH (_deleted),
     FOREIGN KEY (contact_id) REFERENCES contact(id)
         ON UPDATE CASCADE
-        ON DELETE RESTRICT
+        ON DELETE RESTRICT,
+    FOREIGN KEY (project_id) REFERENCES pr_project(id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS invoice_position (
+    id BIGINT PRIMARY KEY,
+    amount FLOAT NOT NULL,
+    account_id BIGINT,
+    unit_id BIGINT UNSIGNED DEFAULT NULL,
+    tax_id BIGINT,
+    tax_value FLOAT,
+    description TEXT DEFAULT '',
+    unit_price FLOAT,
+    discount FLOAT DEFAULT 0.0,
+    position INT,
+    internal_position INT,
+    type VARCHAR(20),
+    parent_id BIGINT DEFAULT NULL,
+    _invoice_id BIGINT UNSIGNED,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    INDEX USING HASH (_checksum),
+    INDEX USING HASH (_deleted),
+    FOREIGN KEY (_invoice_id) REFERENCES invoice(id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE,
+    FOREIGN KEY (unit_id) REFERENCES unit(id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT
+
+);
+
+CREATE TABLE IF NOT EXISTS taxes (
+  id BIGINT UNSIGNED PRIMARY KEY,
+  uuid BINARY(16) NOT NULL,
+  name VARCHAR(80) NOT NULL,
+  code VARCHAR(80) NOT NULL,
+  digit INTEGER NOT NULL,
+  type VARCHAR(20) NOT NULL,
+  account_id BIGINT UNSIGNED NOT NULL,
+  tax_settlement_type VARCHAR(80) NOT NULL,
+  value FLOAT NOT NULL,
+  net_tax_value VARCHAR(255) DEFAULT NULL,
+  start_year INTEGER,
+  end_year INTEGER,
+  is_active BOOLEAN DEFAULT true,
+  display_name VARCHAR(255),
+  start_month INTEGER,
+  end_month INTEGER,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+ INDEX USING HASH (_checksum)
+);
+

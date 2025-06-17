@@ -4,7 +4,7 @@
 #include "bxobjects/contact.h"
 #include "bxobjects/invoice.h"
 #include "bxobjects/position.h"
-#include "bxobjects/tax.h"
+#include "bxobjects/taxes.h"
 
 typedef struct s_BXObjectFunctions BXObjectFunctions;
 struct s_BXObjectFunctions {
@@ -26,7 +26,7 @@ static const BXObjectFunctions FunctionHandlers[] = {
     {.type = BXTypeInvoiceTax,
      .decode_function = bx_object_tax_decode,
      .free_function = bx_object_tax_free,
-     .dump_function = bx_object_tax_dump},
+     .dump_function = NULL},
     {.type = BXTypeInvoicePositionCE,
      .decode_function = bx_object_position_decode,
      .free_function = bx_object_position_free,

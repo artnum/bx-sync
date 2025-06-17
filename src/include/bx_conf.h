@@ -37,6 +37,7 @@ bool bx_conf_set(BXConf *conf, const char *key, void *value,
                  enum e_BXConfValueType type);
 void bx_conf_release(BXConf *conf, const char *key);
 const char *bx_conf_get_string(BXConf *conf, const char *key);
+int bx_conf_get_int(BXConf *conf, const char *key);
 bool bx_conf_loadfile(BXConf *conf, const char *filepath);
 
 #endif /* BX_CONF_H__ */

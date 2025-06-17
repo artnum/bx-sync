@@ -16,7 +16,8 @@
   "_checksum = :_checksum, _last_updated = :_last_updated"                     \
   " WHERE id = :id"
 #define QUERY_INSERT                                                           \
-  "INSERT INTO language (id, name, decimal_point, thousands_separator,"        \
+  "INSERT IGNORE INTO language (id, name, decimal_point, "                     \
+  "thousands_separator,"                                                       \
   "date_format_id, date_format, iso_639_1, _checksum, _last_updated)"          \
   " VALUES (:id, :name, :decimal_point, :thousands_separator, "                \
   ":date_format_id,"                                                           \

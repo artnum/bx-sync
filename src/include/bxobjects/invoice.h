@@ -5,7 +5,6 @@
 #include "../bx_object_value.h"
 #include "../bxill.h"
 #include "position.h"
-#include "tax.h"
 
 typedef struct s_BXObjectPositions BXObjectPositions;
 struct s_BXObjectPositions {
@@ -52,7 +51,7 @@ struct s_BXObjectInvoice {
   BXUInteger esr_id;
   BXUInteger qr_invoice_id;
   BXUInteger tva_type;
-  BXUInteger kb_item_status;
+  BXUInteger kb_item_status_id;
   BXUInteger mwst_type;
   BXUInteger mwst_is_net;
   BXUInteger show_position_taxes;
@@ -83,9 +82,7 @@ struct s_BXObjectInvoice {
   BXString network_link;
 
   int bx_object_taxes_count;
-  BXObjectTax **remote_taxes;
   int bx_object_remote_positions_count;
-  BXObjectGenericPosition **remote_positions;
 };
 
 void *bx_object_invoice_decode(void *data);

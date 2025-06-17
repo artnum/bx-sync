@@ -30,5 +30,6 @@ struct s_BXObjectProject {
 
 void bx_project_walk_item(bXill *app, MYSQL *conn);
 bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item);
+bool bx_project_is_in_database(MYSQL *conn, BXGeneric *item);
 
 #endif /* PROJECT_H__ */

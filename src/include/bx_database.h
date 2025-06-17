@@ -56,6 +56,7 @@ struct s_BXDatabaseQuery {
   bool has_dataset;
   bool has_failed;
   uint64_t affected_rows;
+  uint64_t warning_rows;
   MYSQL_RES *result_metadata;
 
   BXDatabaseParameter *parameters;
