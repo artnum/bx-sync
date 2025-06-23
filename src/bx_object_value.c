@@ -151,3 +151,198 @@ char *bx_object_value_to_string(BXGeneric *value) {
   }
   return NULL;
 }
+
+int bx_object_value_compare(BXAny *a, BXGeneric *b) {
+  assert(a != NULL);
+  assert(b != NULL);
+
+  uint8_t a_type = *(uint8_t *)a;
+  uint8_t b_type = *(uint8_t *)b;
+  int retVal = 0;
+
+  if (a_type != b_type) {
+    char *a_str = NULL;
+    switch (a_type) {
+    case BX_OBJECT_TYPE_BYTES:
+      a_str = bx_object_value_to_string((BXGeneric *)&a->__bytes);
+      break;
+    case BX_OBJECT_TYPE_STRING:
+      a_str = bx_object_value_to_string((BXGeneric *)&a->__string);
+      break;
+    case BX_OBJECT_TYPE_FLOAT:
+      a_str = bx_object_value_to_string((BXGeneric *)&a->__float);
+      break;
+    case BX_OBJECT_TYPE_BOOL:
+      a_str = bx_object_value_to_string((BXGeneric *)&a->__bool);
+      break;
+    case BX_OBJECT_TYPE_INTEGER:
+      a_str = bx_object_value_to_string((BXGeneric *)&a->__int);
+      break;
+    case BX_OBJECT_TYPE_UUID:
+      a_str = bx_object_value_to_string((BXGeneric *)&a->__uuid);
+      break;
+    case BX_OBJECT_TYPE_UINTEGER:
+      a_str = bx_object_value_to_string((BXGeneric *)&a->__uint);
+      break;
+    }
+    char *b_str = bx_object_value_to_string(b);
+    if (b_str == NULL || a_str == NULL) {
+      if (b_str != NULL) {
+        free(b_str);
+      }
+      if (a_str != NULL) {
+        free(a_str);
+      }
+      return 0;
+    }
+    retVal = strcmp(a_str, b_str);
+    free(a);
+    free(b);
+    return retVal;
+  }
+
+  switch (a_type) {
+  case BX_OBJECT_TYPE_BOOL: {
+    BXBool *a_val = (BXBool *)&a->__bool;
+    BXBool *b_val = (BXBool *)b;
+    if (a_val->value < b_val->value) {
+      return -1;
+    }
+    if (a_val->value > b_val->value) {
+      return 1;
+    }
+    return 0;
+  }
+
+  case BX_OBJECT_TYPE_INTEGER: {
+    BXInteger *a_val = (BXInteger *)&a->__int;
+    BXInteger *b_val = (BXInteger *)b;
+    if (a_val->value < b_val->value) {
+      return -1;
+    }
+    if (a_val->value > b_val->value) {
+      return 1;
+    }
+    return 0;
+  }
+  case BX_OBJECT_TYPE_UINTEGER: {
+    BXUInteger *a_val = (BXUInteger *)&a->__uint;
+    BXUInteger *b_val = (BXUInteger *)b;
+    if (a_val->value < b_val->value) {
+      return -1;
+    }
+    if (a_val->value > b_val->value) {
+      return 1;
+    }
+    return 0;
+  }
+  case BX_OBJECT_TYPE_FLOAT: {
+    BXFloat *a_val = (BXFloat *)&a->__float;
+    BXFloat *b_val = (BXFloat *)b;
+    if (a_val->value < b_val->value) {
+      return -1;
+    }
+    if (a_val->value > b_val->value) {
+      return 1;
+    }
+    return 0;
+  }
+  case BX_OBJECT_TYPE_UUID: {
+    BXUuid *a_val = (BXUuid *)&a->__uuid;
+    BXUuid *b_val = (BXUuid *)b;
+    if (a_val->value[0] < b_val->value[0]) {
+      return -1;
+    }
+    if (a_val->value[0] > b_val->value[0]) {
+      return 1;
+    }
+    if (a_val->value[1] < b_val->value[1]) {
+      return -1;
+    }
+    if (a_val->value[1] > b_val->value[1]) {
+      return 1;
+    }
+    return 0;
+  }
+  case BX_OBJECT_TYPE_STRING: {
+    BXString *a_val = (BXString *)&a->__string;
+    BXString *b_val = (BXString *)b;
+    if (a_val->value_len == b_val->value_len) {
+      return strncmp(a_val->value, b_val->value, a_val->value_len);
+    }
+    if (a_val->value_len < b_val->value_len) {
+      return -1;
+    }
+    if (a_val->value_len > b_val->value_len) {
+      return 1;
+    }
+  }
+  case BX_OBJECT_TYPE_BYTES: {
+    BXBytes *a_val = (BXBytes *)&a->__bytes;
+    BXBytes *b_val = (BXBytes *)b;
+    if (a_val->value_len == b_val->value_len) {
+      for (size_t i = 0; i < a_val->value_len; i++) {
+        if (a_val->value[i] < b_val->value[i]) {
+          return -1;
+        }
+        if (a_val->value[i] > b_val->value[i]) {
+          return 1;
+        }
+      }
+      return 0;
+    }
+    if (a_val->value_len < b_val->value_len) {
+      return -1;
+    }
+    if (a_val->value_len > b_val->value_len) {
+      return 1;
+    }
+  }
+  }
+
+  return 0;
+}
+
+bool bx_object_value_copy(BXAny *dest, BXGeneric *src) {
+  assert(dest != NULL);
+  assert(src != NULL);
+  *(uint8_t *)dest = *(uint8_t *)src;
+  switch (*(uint8_t *)src) {
+  case BX_OBJECT_TYPE_INTEGER:
+    memcpy(&dest->__int, src, sizeof(BXInteger));
+    return true;
+  case BX_OBJECT_TYPE_UINTEGER:
+    memcpy(&dest->__uint, src, sizeof(BXUInteger));
+    return true;
+  case BX_OBJECT_TYPE_UUID:
+    memcpy(&dest->__uuid, src, sizeof(BXUuid));
+    return true;
+  case BX_OBJECT_TYPE_FLOAT:
+    memcpy(&dest->__float, src, sizeof(BXFloat));
+    return true;
+  case BX_OBJECT_TYPE_BOOL:
+    memcpy(&dest->__bool, src, sizeof(BXBool));
+    return true;
+  case BX_OBJECT_TYPE_BYTES: {
+    memcpy(&dest->__bytes, src, sizeof(BXBytes));
+    BXBytes *d = (BXBytes *)&dest->__bytes;
+    d->value = calloc(d->value_len, sizeof(d->value));
+    if (!d->value) {
+      return false;
+    }
+    memcpy(d->value, ((BXBytes *)src)->value, d->value_len);
+    return true;
+  }
+  case BX_OBJECT_TYPE_STRING: {
+    memcpy(&dest->__string, src, sizeof(BXString));
+    BXString *d = (BXString *)&dest->__string;
+    d->value = calloc(d->value_len, sizeof(d->value));
+    if (!d->value) {
+      return false;
+    }
+    memcpy(d->value, ((BXString *)src)->value, d->value_len);
+    return true;
+  }
+  }
+  return false;
+}

@@ -232,12 +232,43 @@ inline static void bx_object_free_string(BXString string) {
   }
   string.value_len = 0;
 }
+inline static void bx_object_free_bytes(BXBytes bytes) {
+  if (bytes.value != NULL) {
+    free(bytes.value);
+  }
+  bytes.value_len = 0;
+}
 
 void bx_object_free_value(void *value) {
   if (value == NULL) {
     return;
   }
-  if (*(uint8_t *)value == BX_OBJECT_TYPE_STRING) {
-    bx_object_free_string(*(BXString *)value);
+  uint8_t type = *(uint8_t *)value;
+  switch (type) {
+  case BX_OBJECT_TYPE_STRING: {
+    ((BXString *)value)->isset = false;
+    return bx_object_free_string(*(BXString *)value);
+  }
+  case BX_OBJECT_TYPE_BYTES: {
+    ((BXBytes *)value)->isset = false;
+    return bx_object_free_bytes(*(BXBytes *)value);
+  }
+  case BX_OBJECT_TYPE_INTEGER: {
+    ((BXInteger *)value)->isset = false;
+  }
+  case BX_OBJECT_TYPE_UINTEGER: {
+    ((BXUInteger *)value)->isset = false;
+  }
+  case BX_OBJECT_TYPE_FLOAT: {
+    ((BXFloat *)value)->isset = false;
+  }
+  case BX_OBJECT_TYPE_BOOL: {
+    ((BXBool *)value)->isset = false;
+  }
+  case BX_OBJECT_TYPE_UUID: {
+    ((BXUuid *)value)->isset = false;
+    ((BXUuid *)value)->value[0] = 0;
+    ((BXUuid *)value)->value[1] = 0;
+  }
   }
 }

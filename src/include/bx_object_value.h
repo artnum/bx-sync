@@ -68,6 +68,16 @@ struct s_BXUuid {
   uint64_t value[2];
 };
 
+typedef union {
+  BXUInteger __int;
+  BXUInteger __uint;
+  BXFloat __float;
+  BXBool __bool;
+  BXUuid __uuid;
+  BXString __string;
+  BXBytes __bytes;
+} BXAny;
+
 char *bx_object_value_to_string(BXGeneric *value);
 uint64_t bx_object_value_to_index(BXGeneric *value);
 
@@ -184,4 +194,6 @@ inline static void _bx_dump_any(const char *key, const void *value, int level) {
   }
 }
 
+int bx_object_value_compare(BXAny *a, BXGeneric *b);
+bool bx_object_value_copy(BXAny *dest, BXGeneric *src);
 #endif /* BX_OBJECT_VALUE_H__ */

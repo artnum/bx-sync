@@ -80,9 +80,6 @@ struct s_BXObjectInvoice {
   BXString header;
   BXString footer;
   BXString network_link;
-
-  int bx_object_taxes_count;
-  int bx_object_remote_positions_count;
 };
 
 void *bx_object_invoice_decode(void *data);

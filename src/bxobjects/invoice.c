@@ -1,16 +1,18 @@
 #include "../include/bxobjects/invoice.h"
 #include "../include/bx_database.h"
+#include "../include/bx_ids_cache.h"
 #include "../include/bx_object.h"
 #include "../include/bx_utils.h"
 #include "../include/bxill.h"
 #include "../include/bxobjects/contact.h"
-#include "../include/bxobjects/position.h"
 #include "../include/bxobjects/project.h"
 #include <assert.h>
 #include <jansson.h>
 #include <sys/types.h>
 #include <threads.h>
 #include <unistd.h>
+
+Cache *ThreadCache = NULL;
 
 #define QUERY_INSERT                                                           \
   "INSERT IGNORE INTO invoice (id, document_nr, title, contact_id, "           \
@@ -20,14 +22,20 @@
   "show_position_taxes, is_valid_from, is_valid_to, contact_address, "         \
   "kb_item_status_id, reference, api_reference, viewed_by_client_at, "         \
   "updated_at, esr_id, qr_invoice_id, template_slug, network_link, "           \
-  "_checksum, _last_updated) VALUES (:id, :document_nr, :title, "              \
+  "_checksum, _last_updated, total_gross, total_net, total_taxes, "            \
+  "total_received_payments, total_credit_vouchers, total_remaining_payments, " \
+  "total, total_rounding_difference) "                                         \
+  "VALUES (:id, :document_nr, :title, "                                        \
   ":contact_id, :contact_sub_id, :user_id, :project_id, :language_id, "        \
   ":bank_account_id, :currency_id, :payment_type_id, :header, :footer, "       \
   ":mwst_type, :mwst_is_net, :show_position_taxes, :is_valid_from, "           \
   ":is_valid_to, :contact_address, :kb_item_status_id, :reference, "           \
   ":api_reference, :viewed_by_client_at, :updated_at, :esr_id, "               \
   ":qr_invoice_id, :template_slug, :network_link, :_checksum, "                \
-  ":_last_updated);"
+  ":_last_updated, :total_gross, :total_net, :total_taxes, "                   \
+  ":total_received_payments, :total_credit_vouchers, "                         \
+  ":total_remaining_payments, :total, :total_rounding_difference "             \
+  ");"
 
 #define QUERY_UPDATE                                                           \
   "UPDATE invoice SET document_nr = :document_nr, title = :title, "            \
@@ -45,7 +53,12 @@
   "updated_at = :updated_at, esr_id = :esr_id, qr_invoice_id = "               \
   ":qr_invoice_id,"                                                            \
   "template_slug = :template_slug, network_link = :network_link, "             \
-  "_checksum = :_checksum, _last_updated = :_last_updated "                    \
+  "_checksum = :_checksum, _last_updated = :_last_updated, total_gross = "     \
+  ":total_gross, total_net = :total_net, total_taxes = :total_taxes, "         \
+  "total_received_payments = :total_received_payments, total_credit_vouchers " \
+  "= :total_credit_vouchers, total_remaining_payments = "                      \
+  ":total_remaining_payments, total = :total, total_rounding_difference = "    \
+  ":total_rounding_difference "                                                \
   "WHERE id = :id;"
 
 void bx_object_invoice_free(void *data) {
@@ -169,6 +182,20 @@ void *bx_object_invoice_decode(void *object) {
   invoice->total = bx_object_get_json_double(jroot, "total", hashState);
   invoice->total_rounding_difference =
       bx_object_get_json_double(jroot, "total_rounding_difference", hashState);
+  invoice->total_gross =
+      bx_object_get_json_double(jroot, "total_gross", hashState);
+  invoice->total_net = bx_object_get_json_double(jroot, "total_net", hashState);
+  invoice->total_taxes =
+      bx_object_get_json_double(jroot, "total_taxes", hashState);
+  invoice->total_received_payments =
+      bx_object_get_json_double(jroot, "total_received_payments", hashState);
+  invoice->total_credit_vouchers =
+      bx_object_get_json_double(jroot, "total_credit_vouchers", hashState);
+  invoice->total_remaining_payments =
+      bx_object_get_json_double(jroot, "total_remaining_payments", hashState);
+  invoice->total = bx_object_get_json_double(jroot, "total", hashState);
+  invoice->total_rounding_difference =
+      bx_object_get_json_double(jroot, "total_rounding_difference", hashState);
 
   /* string */
   invoice->document_nr =
@@ -193,8 +220,8 @@ void *bx_object_invoice_decode(void *object) {
   invoice->title = bx_object_get_json_string(jroot, "title", hashState);
   invoice->network_link =
       bx_object_get_json_string(jroot, "network_link", hashState);
-
   invoice->tva_is_net = bx_object_get_json_bool(jroot, "tva_is_net", hashState);
+
   invoice->checksum = XXH3_64bits_digest(hashState);
 
   XXH3_freeState(hashState);
@@ -211,6 +238,10 @@ bool _bx_invoice_sync_item(MYSQL *conn, json_t *item) {
   if (invoice == NULL) {
     bx_log_debug("Decode failed");
     goto fail_and_return;
+  }
+
+  if (ThreadCache) {
+    cache_set_item(ThreadCache, (BXGeneric *)&invoice->id, invoice->checksum);
   }
 
   if (!bx_contact_is_in_database(conn, (BXGeneric *)&invoice->contact_id)) {
@@ -300,6 +331,21 @@ bool _bx_invoice_sync_item(MYSQL *conn, json_t *item) {
   bx_database_add_bxtype(query, ":network_link",
                          (BXGeneric *)&invoice->network_link);
 
+  bx_database_add_bxtype(query, ":total_gross",
+                         (BXGeneric *)&invoice->total_gross);
+  bx_database_add_bxtype(query, ":total_net", (BXGeneric *)&invoice->total_net);
+  bx_database_add_bxtype(query, ":total_taxes",
+                         (BXGeneric *)&invoice->total_taxes);
+  bx_database_add_bxtype(query, ":total_received_payments",
+                         (BXGeneric *)&invoice->total_received_payments);
+  bx_database_add_bxtype(query, ":total_credit_vouchers",
+                         (BXGeneric *)&invoice->total_credit_vouchers);
+  bx_database_add_bxtype(query, ":total_remaining_payments",
+                         (BXGeneric *)&invoice->total_remaining_payments);
+  bx_database_add_bxtype(query, ":total", (BXGeneric *)&invoice->total);
+  bx_database_add_bxtype(query, ":total_rounding_difference",
+                         (BXGeneric *)&invoice->total_rounding_difference);
+
   bx_database_add_param_uint64(query, ":_checksum", &invoice->checksum);
   bx_database_add_param_uint64(query, ":_last_updated", &now);
 
@@ -356,6 +402,12 @@ void bx_invoice_walk_items(bXill *app, MYSQL *conn) {
   const BXInteger limit = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BX_LIST_LIMIT};
   size_t arr_len = 0;
+  if (ThreadCache == NULL) {
+    ThreadCache = cache_create();
+    if (ThreadCache == NULL) {
+      bx_log_debug("CACHE Not created");
+    }
+  }
   do {
     arr_len = 0;
     BXNetRequest *request =
