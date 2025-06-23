@@ -1,6 +1,7 @@
 #include "include/bx_ids_cache.h"
 #include "include/bx_object.h"
 #include "include/bx_object_value.h"
+#include "include/bx_utils.h"
 #include <iso646.h>
 #include <stdlib.h>
 
@@ -14,15 +15,16 @@ bool _grow_cache(Cache *c) {
   if (!new) {
     return false;
   }
+  memset((void *)(new + c->size), 0, CACHE_CHUNK_SIZE * sizeof(*new));
   c->items = new;
   c->size += CACHE_CHUNK_SIZE;
   return true;
 }
 
 CacheItem *_find_item(Cache *c, BXGeneric *item_id) {
-  uint32_t left = 0;
-  uint32_t right = c->count - 1;
-  uint32_t middle = 0;
+  int64_t left = 0;
+  int64_t right = c->count - 1;
+  int64_t middle = 0;
   if (c == NULL || item_id == NULL) {
     return NULL;
   }
@@ -50,6 +52,9 @@ void _swap_items(CacheItem *a, CacheItem *b) {
   uint64_t tck = a->checksum;
   a->checksum = b->checksum;
   b->checksum = tck;
+  uint64_t version = a->last_seen;
+  a->last_seen = b->last_seen;
+  b->last_seen = version;
 }
 
 int _cmp(BXAny *a, BXAny *b) {
@@ -105,14 +110,26 @@ Cache *cache_create() {
   if (!c) {
     return NULL;
   }
-  c->items = NULL;
-  c->count = 0;
-  c->size = 0;
   if (!_grow_cache(c)) {
     free(c);
     return NULL;
   }
   return c;
+}
+
+void cache_stats(Cache *c, const char *name) {
+
+  char *min = NULL;
+  char *max = NULL;
+  if (c->count > 0) {
+    min = bx_any_to_str(&c->items[0].id);
+    max = bx_any_to_str(&c->items[c->count - 1].id);
+    bx_log_info("Cache %s : %lu items, %lu total, %lu version, [%s:%s] range",
+                name, c->count, c->size, c->version, min, max);
+    return;
+  }
+  bx_log_info("Cache %s : %lu items, %lu total, %lu version, [0:0] range", name,
+              c->count, c->size, c->version);
 }
 
 void cache_print(Cache *c) {
@@ -150,16 +167,18 @@ bool cache_set_item(Cache *c, BXGeneric *item_id, uint64_t checksum) {
     return false;
   }
   if (current && current->checksum == checksum) {
+    current->last_seen = c->version;
     return true;
   }
   if (current == NULL) {
-    if (c->count + 1 > c->size) {
+    if (c->count >= c->size) {
       if (!_grow_cache(c)) {
         return false;
       }
     }
     bx_object_value_copy(&c->items[c->count].id, item_id);
     c->items[c->count].checksum = checksum;
+    c->items[c->count].last_seen = c->version;
     c->count++;
     _heapsort_cache(c);
     return true;
@@ -168,9 +187,36 @@ bool cache_set_item(Cache *c, BXGeneric *item_id, uint64_t checksum) {
   bx_object_free_value(current);
   bx_object_value_copy(&current->id, item_id);
   current->checksum = checksum;
+  current->last_seen = c->version;
 
   _heapsort_cache(c);
   return true;
+}
+
+CacheState cache_check_item(Cache *c, BXGeneric *item_id, uint64_t checksum) {
+  CacheItem *current = _find_item(c, item_id);
+  if (current == NULL) {
+    return CacheNotSet;
+  }
+  if (current->checksum != checksum) {
+    return CacheNotSync;
+  }
+  current->last_seen = c->version;
+  return CacheOk;
+}
+
+void cache_store(Cache *c, const char *filename) {
+  FILE *fp = NULL;
+  _heapsort_cache(c);
+  fp = fopen(filename, "w");
+  if (!fp) {
+    return;
+  }
+  for (uint32_t i = 0; i < c->count; i++) {
+    char *id = bx_any_to_str(&c->items[i].id);
+    fprintf(fp, "%lX:%s;", c->items[i].checksum, id);
+  }
+  fclose(fp);
 }
 
 void cache_destroy(Cache *c) {

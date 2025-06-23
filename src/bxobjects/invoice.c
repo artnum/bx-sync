@@ -12,8 +12,6 @@
 #include <threads.h>
 #include <unistd.h>
 
-Cache *ThreadCache = NULL;
-
 #define QUERY_INSERT                                                           \
   "INSERT IGNORE INTO invoice (id, document_nr, title, contact_id, "           \
   "contact_sub_id, "                                                           \
@@ -228,20 +226,23 @@ void *bx_object_invoice_decode(void *object) {
   return invoice;
 }
 
-bool _bx_invoice_sync_item(MYSQL *conn, json_t *item) {
+bool _bx_invoice_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
   assert(item != NULL);
 
-  BXObjectInvoice *invoice = NULL;
   BXDatabaseQuery *query = NULL;
+  BXObjectInvoice *invoice = NULL;
 
   invoice = bx_object_invoice_decode(item);
   if (invoice == NULL) {
     bx_log_debug("Decode failed");
     goto fail_and_return;
   }
-
-  if (ThreadCache) {
-    cache_set_item(ThreadCache, (BXGeneric *)&invoice->id, invoice->checksum);
+  CacheState cacheItemState =
+      cache_check_item(cache, (BXGeneric *)&invoice->id, invoice->checksum);
+  /* 0 means in database with same hash */
+  if (cacheItemState == CacheOk) {
+    bx_object_invoice_free(invoice);
+    return true;
   }
 
   if (!bx_contact_is_in_database(conn, (BXGeneric *)&invoice->contact_id)) {
@@ -254,27 +255,15 @@ bool _bx_invoice_sync_item(MYSQL *conn, json_t *item) {
     invoice->project_id.isset = false;
   }
 
-  query = bx_database_new_query(conn,
-                                "SELECT _checksum FROM invoice WHERE id = :id");
-  if (query == NULL) {
-    goto fail_and_return;
-  }
-  bx_database_add_param_int64(query, ":id", &invoice->id.value);
-  bx_database_execute(query);
-  bx_database_results(query);
-  if (query->results == NULL || query->results->column_count == 0) {
-    bx_database_free_query(query);
-    query = NULL;
+  /* 1: Not in database, so insert
+   * 2: In database, different checksum, so update
+   */
+  if (cacheItemState == CacheNotSet) {
     query = bx_database_new_query(conn, QUERY_INSERT);
-  } else {
-    if (query->results[0].columns[0].i_value == invoice->checksum) {
-      bx_database_free_query(query);
-      bx_object_invoice_free(invoice);
-      return true;
-    }
-    bx_database_free_query(query);
-    query = NULL;
+  } else if (cacheItemState == CacheNotSync) {
     query = bx_database_new_query(conn, QUERY_UPDATE);
+  } else {
+    goto fail_and_return;
   }
   if (query == NULL) {
     goto fail_and_return;
@@ -353,6 +342,9 @@ bool _bx_invoice_sync_item(MYSQL *conn, json_t *item) {
     goto fail_and_return;
   }
 
+  if (query->warning_rows == 0 && !query->has_failed) {
+    cache_set_item(cache, (BXGeneric *)&invoice->id, invoice->checksum);
+  }
   bx_database_free_query(query);
   bx_object_invoice_free(invoice);
   query = NULL;
@@ -371,7 +363,8 @@ fail_and_return:
 }
 
 #define GET_INVOICE_PATH "2.0/kb_invoice/$"
-bool bx_invoice_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
+bool bx_invoice_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
+                          Cache *cache) {
   assert(app != NULL);
   assert(item != NULL);
   BXNetRequest *request = NULL;
@@ -389,25 +382,19 @@ bool bx_invoice_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
     bx_net_request_free(request);
     return false;
   }
-  bool retVal = _bx_invoice_sync_item(conn, request->decoded);
+  bool retVal = _bx_invoice_sync_item(conn, request->decoded, cache);
   bx_net_request_free(request);
   return retVal;
 }
 
 #define WALK_INVOICE_PATH "2.0/kb_invoice?limit=$&offset=$"
-void bx_invoice_walk_items(bXill *app, MYSQL *conn) {
+void bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache) {
   bx_log_debug("BX Walk Invoice Items");
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
   const BXInteger limit = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BX_LIST_LIMIT};
   size_t arr_len = 0;
-  if (ThreadCache == NULL) {
-    ThreadCache = cache_create();
-    if (ThreadCache == NULL) {
-      bx_log_debug("CACHE Not created");
-    }
-  }
   do {
     arr_len = 0;
     BXNetRequest *request =
@@ -421,9 +408,8 @@ void bx_invoice_walk_items(bXill *app, MYSQL *conn) {
     }
     arr_len = json_array_size(request->decoded);
     for (size_t i = 0; i < arr_len; i++) {
-      _bx_invoice_sync_item(conn, json_array_get(request->decoded, i));
+      _bx_invoice_sync_item(conn, json_array_get(request->decoded, i), cache);
     }
-    mysql_commit(conn);
     bx_net_request_free(request);
     offset.value += limit.value;
   } while (arr_len > 0);

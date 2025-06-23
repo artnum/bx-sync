@@ -1,6 +1,7 @@
 #ifndef BX_OBJECT_INVOICE_H__
 #define BX_OBJECT_INVOICE_H__
 
+#include "../bx_ids_cache.h"
 #include "../bx_object.h"
 #include "../bx_object_value.h"
 #include "../bxill.h"
@@ -85,6 +86,6 @@ struct s_BXObjectInvoice {
 void *bx_object_invoice_decode(void *data);
 void bx_object_invoice_free(void *data);
 void bx_object_invoice_dump(void *data);
-void bx_invoice_walk_items(bXill *app, MYSQL *conn);
+void bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache);
 
 #endif /* BX_OBJECT_INVOICE_H__ */

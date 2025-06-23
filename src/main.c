@@ -1,5 +1,6 @@
 #include "include/bx_conf.h"
 #include "include/bx_database.h"
+#include "include/bx_ids_cache.h"
 #include "include/bx_mutex.h"
 #include "include/bx_net.h"
 #include "include/bx_utils.h"
@@ -36,7 +37,6 @@ MYSQL *thread_setup_mysql(bXill *app) {
                      bx_conf_get_string(app->conf, "mysql-password"),
                      bx_conf_get_string(app->conf, "mysql-database"), 0, NULL,
                      0);
-  mysql_autocommit(conn, 0);
   bx_conf_release(app->conf, "mysql-host");
   bx_conf_release(app->conf, "mysql-user");
   bx_conf_release(app->conf, "mysql-password");
@@ -58,7 +58,6 @@ void *random_item_thread(void *arg) {
   bx_log_debug("Random items thread data thread %lx", pthread_self());
   while (atomic_load(&(app->queue->run))) {
     bx_taxes_walk_item(app, conn);
-    mysql_commit(conn);
     usleep(500);
   }
   thread_teardown_mysql(conn);
@@ -73,7 +72,6 @@ void *contact_sector_thread(void *arg) {
   bx_log_debug("Contact Sector data thread %lx", pthread_self());
   while (atomic_load(&(app->queue->run))) {
     bx_contact_sector_walk_items(app, conn);
-    mysql_commit(conn);
     thrd_yield();
   }
   thread_teardown_mysql(conn);
@@ -86,7 +84,6 @@ void *contact_thread(void *arg) {
 
   conn = thread_setup_mysql(app);
   bx_language_load(app, conn);
-  mysql_commit(conn);
   bx_log_debug("Contact data thread %lx", pthread_self());
   while (atomic_load(&(app->queue->run))) {
     bx_contact_walk_items(app, conn);
@@ -100,11 +97,25 @@ void *project_thread(void *arg) {
   bXill *app = (bXill *)arg;
   MYSQL *conn = NULL;
   bx_log_debug("Project data thread %ld", pthread_self());
+  time_t start;
+  time(&start);
+  Cache *my_cache;
+  my_cache = cache_create();
+  if (my_cache == NULL) {
+    bx_log_error("Cache init failed");
+    return 0;
+  }
   conn = thread_setup_mysql(app);
   while (atomic_load(&app->queue->run)) {
-    bx_project_walk_item(app, conn);
+    bx_project_walk_item(app, conn, my_cache);
+    my_cache->version++;
     thrd_yield();
+    if (time(NULL) - start > 5) {
+      time(&start);
+      cache_stats(my_cache, "projects");
+    }
   }
+  cache_destroy(my_cache);
   thread_teardown_mysql(conn);
   return 0;
 }
@@ -114,10 +125,23 @@ void *invoice_thread(void *arg) {
   MYSQL *conn = NULL;
   bx_log_debug("Invoice data thread %ld", pthread_self());
   conn = thread_setup_mysql(app);
-  while (atomic_load(&app->queue->run)) {
-    bx_invoice_walk_items(app, conn);
-    thrd_yield();
+  Cache *my_cache;
+  time_t start;
+  time(&start);
+  my_cache = cache_create();
+  if (my_cache == NULL) {
+    bx_log_error("Cache init failed");
   }
+  while (atomic_load(&app->queue->run)) {
+    bx_invoice_walk_items(app, conn, my_cache);
+    my_cache->version++;
+    thrd_yield();
+    if (time(NULL) - start > 5) {
+      time(&start);
+      cache_stats(my_cache, "invoices");
+    }
+  }
+  cache_destroy(my_cache);
   thread_teardown_mysql(conn);
   return 0;
 }

@@ -1,6 +1,7 @@
 #ifndef PROJECT_H__
 #define PROJECT_H__
 
+#include "../bx_ids_cache.h"
 #include "../bx_object.h"
 #include "../bx_object_value.h"
 #include "../bxill.h"
@@ -28,8 +29,9 @@ struct s_BXObjectProject {
   BXFloat pr_budget_type_amount;
 };
 
-void bx_project_walk_item(bXill *app, MYSQL *conn);
-bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item);
+void bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache);
+bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
+                          Cache *cache);
 bool bx_project_is_in_database(MYSQL *conn, BXGeneric *item);
 
 #endif /* PROJECT_H__ */

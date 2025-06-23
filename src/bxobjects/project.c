@@ -178,6 +178,9 @@ bool execute_request(MYSQL *conn, BXObjectProject *project,
       !bx_database_results(query)) {
     success = false;
   }
+  if (query->warning_rows > 0) {
+    success = false;
+  }
   bx_database_free_query(query);
   return success;
 }
@@ -190,35 +193,41 @@ bool bx_project_insert_db(MYSQL *conn, BXObjectProject *project) {
   return execute_request(conn, project, QUERY_INSERT);
 }
 
-bool _bx_project_sync_item(MYSQL *conn, json_t *item) {
+bool _bx_project_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
+
   BXObjectProject *project = decode_object(item);
   if (project == NULL) {
     return false;
   }
-  switch (bx_project_check_database(conn, project)) {
-  default:
-  case NeedNothing:
-    break;
-  case Error:
-    bx_log_error("Error checking for project %ld", project->id.value);
-    break;
-  case NeedCreate:
-    if (!bx_project_insert_db(conn, project)) {
-      bx_log_error("Failed insert project %ld", project->id.value);
-    }
-    break;
-  case NeedUpdate:
-    if (!bx_project_insert_db(conn, project)) {
-      bx_log_error("Failed insert language %d", project->id.value);
-    }
-    break;
+  CacheState ProjectState =
+      cache_check_item(cache, (BXGeneric *)&project->id, project->checksum);
+  if (ProjectState == CacheOk) {
+    bx_project_free(project);
+    return true;
   }
 
+  if (ProjectState == CacheNotSet) {
+    if (!bx_project_insert_db(conn, project)) {
+      bx_log_error("Failed insert project %ld", project->id.value);
+      goto fail_and_return;
+    }
+  } else if (ProjectState == CacheNotSync) {
+    if (!bx_project_update_db(conn, project)) {
+      bx_log_error("Failed insert language %d", project->id.value);
+      goto fail_and_return;
+    }
+  }
+  cache_set_item(cache, (BXGeneric *)&project->id, project->checksum);
   bx_project_free(project);
   return true;
+
+fail_and_return:
+  bx_project_free(project);
+  return false;
 }
 
-bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
+bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
+                          Cache *cache) {
   bx_log_debug("Sync Project Id %ld", ((BXUInteger *)item)->value);
   BXNetRequest *request =
       bx_do_request(app->queue, NULL, GET_PROJECT_PATH, item);
@@ -231,11 +240,11 @@ bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   }
 
   bx_net_request_free(request);
-  return _bx_project_sync_item(conn, request->decoded);
+  return _bx_project_sync_item(conn, request->decoded, cache);
 }
 
 #define WALK_PROJECT_PATH "2.0/pr_project?limit=$&offset=$"
-void bx_project_walk_item(bXill *app, MYSQL *conn) {
+void bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
   bx_log_debug("BX Walk Project Items");
   int len0hit_count = 0;
   BXInteger offset = {
@@ -262,9 +271,8 @@ void bx_project_walk_item(bXill *app, MYSQL *conn) {
       len0hit_count = 0;
     }
     for (size_t i = 0; i < arr_len; i++) {
-      _bx_project_sync_item(conn, json_array_get(request->decoded, i));
+      _bx_project_sync_item(conn, json_array_get(request->decoded, i), cache);
     }
-    mysql_commit(conn);
     bx_net_request_free(request);
     offset.value += limit.value;
   } while (arr_len > 0);

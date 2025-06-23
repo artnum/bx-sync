@@ -152,6 +152,37 @@ char *bx_object_value_to_string(BXGeneric *value) {
   return NULL;
 }
 
+char *bx_any_to_str(BXAny *a) {
+  char *a_str = NULL;
+  if (a == NULL) {
+    return NULL;
+  }
+  switch (*(uint8_t *)a) {
+  case BX_OBJECT_TYPE_BYTES:
+    a_str = bx_object_value_to_string((BXGeneric *)&a->__bytes);
+    break;
+  case BX_OBJECT_TYPE_STRING:
+    a_str = bx_object_value_to_string((BXGeneric *)&a->__string);
+    break;
+  case BX_OBJECT_TYPE_FLOAT:
+    a_str = bx_object_value_to_string((BXGeneric *)&a->__float);
+    break;
+  case BX_OBJECT_TYPE_BOOL:
+    a_str = bx_object_value_to_string((BXGeneric *)&a->__bool);
+    break;
+  case BX_OBJECT_TYPE_INTEGER:
+    a_str = bx_object_value_to_string((BXGeneric *)&a->__int);
+    break;
+  case BX_OBJECT_TYPE_UUID:
+    a_str = bx_object_value_to_string((BXGeneric *)&a->__uuid);
+    break;
+  case BX_OBJECT_TYPE_UINTEGER:
+    a_str = bx_object_value_to_string((BXGeneric *)&a->__uint);
+    break;
+  }
+  return a_str;
+}
+
 int bx_object_value_compare(BXAny *a, BXGeneric *b) {
   assert(a != NULL);
   assert(b != NULL);
@@ -161,30 +192,7 @@ int bx_object_value_compare(BXAny *a, BXGeneric *b) {
   int retVal = 0;
 
   if (a_type != b_type) {
-    char *a_str = NULL;
-    switch (a_type) {
-    case BX_OBJECT_TYPE_BYTES:
-      a_str = bx_object_value_to_string((BXGeneric *)&a->__bytes);
-      break;
-    case BX_OBJECT_TYPE_STRING:
-      a_str = bx_object_value_to_string((BXGeneric *)&a->__string);
-      break;
-    case BX_OBJECT_TYPE_FLOAT:
-      a_str = bx_object_value_to_string((BXGeneric *)&a->__float);
-      break;
-    case BX_OBJECT_TYPE_BOOL:
-      a_str = bx_object_value_to_string((BXGeneric *)&a->__bool);
-      break;
-    case BX_OBJECT_TYPE_INTEGER:
-      a_str = bx_object_value_to_string((BXGeneric *)&a->__int);
-      break;
-    case BX_OBJECT_TYPE_UUID:
-      a_str = bx_object_value_to_string((BXGeneric *)&a->__uuid);
-      break;
-    case BX_OBJECT_TYPE_UINTEGER:
-      a_str = bx_object_value_to_string((BXGeneric *)&a->__uint);
-      break;
-    }
+    char *a_str = bx_any_to_str(a);
     char *b_str = bx_object_value_to_string(b);
     if (b_str == NULL || a_str == NULL) {
       if (b_str != NULL) {

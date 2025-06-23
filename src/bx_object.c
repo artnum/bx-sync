@@ -255,20 +255,25 @@ void bx_object_free_value(void *value) {
   }
   case BX_OBJECT_TYPE_INTEGER: {
     ((BXInteger *)value)->isset = false;
+    break;
   }
   case BX_OBJECT_TYPE_UINTEGER: {
     ((BXUInteger *)value)->isset = false;
+    break;
   }
   case BX_OBJECT_TYPE_FLOAT: {
     ((BXFloat *)value)->isset = false;
+    break;
   }
   case BX_OBJECT_TYPE_BOOL: {
     ((BXBool *)value)->isset = false;
+    break;
   }
   case BX_OBJECT_TYPE_UUID: {
     ((BXUuid *)value)->isset = false;
     ((BXUuid *)value)->value[0] = 0;
     ((BXUuid *)value)->value[1] = 0;
+    break;
   }
   }
 }

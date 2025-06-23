@@ -302,6 +302,15 @@ BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params) {
     return NULL;
   }
   header_list = tmp;
+  tmp = curl_slist_append(
+      header_list, "User-Agent: bx-sync/dev "
+                   "(https://github.com/artnum/bx-sync; etienne@artnum.ch)");
+  if (tmp == NULL) {
+    curl_slist_free_all(header_list);
+    free(url);
+    return NULL;
+  }
+  header_list = tmp;
 
   /* critical section */
   assert(bx_mutex_lock(&net->mutex) != false);

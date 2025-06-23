@@ -329,12 +329,10 @@ bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
 
   if (!bx_user_is_in_database(conn, (BXGeneric *)&contact->user_id)) {
     bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id);
-    mysql_commit(conn);
   }
   if (contact->user_id.value != contact->owner_id.value &&
       !bx_user_is_in_database(conn, (BXGeneric *)&contact->owner_id)) {
     bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id);
-    mysql_commit(conn);
   }
 
   BXDatabaseQuery *query = bx_database_new_query(
@@ -480,7 +478,6 @@ void bx_contact_walk_items(bXill *app, MYSQL *conn) {
         _bx_contact_sync_item(app, conn, json_array_get(request->decoded, j),
                               show_archived);
       }
-      mysql_commit(conn);
       bx_net_request_free(request);
       offset.value += limit.value;
     } while (arr_len > 0);
