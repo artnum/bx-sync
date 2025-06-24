@@ -6,5 +6,6 @@
   "mysql-password": "the mysql password",
   "mysql-database": "bxill",
   "log-file": "path/to/log.log",
-  "log-level": 255
+  "log-level": 255,
+  "prune-drift": 10
 }

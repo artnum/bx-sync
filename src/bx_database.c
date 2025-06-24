@@ -250,7 +250,7 @@ static bool set_null(BXDatabaseParameter *param) {
 }
 
 static bool add_bxint(BXDatabaseQuery *query, const char *name,
-                      BXInteger *value) {
+                      const BXInteger *value) {
   BXDatabaseParameter *param = _find_param(query, name);
   if (param == NULL) {
     return false;
@@ -259,7 +259,7 @@ static bool add_bxint(BXDatabaseQuery *query, const char *name,
     return set_null(param);
   }
 
-  param->value = &value->value;
+  param->value = (void *)&value->value;
   param->value_length = sizeof(value->value);
   param->type = MYSQL_TYPE_LONGLONG;
   param->is_null = 0;
@@ -269,7 +269,7 @@ static bool add_bxint(BXDatabaseQuery *query, const char *name,
 }
 
 static bool add_bxuint(BXDatabaseQuery *query, const char *name,
-                       BXUInteger *value) {
+                       const BXUInteger *value) {
   BXDatabaseParameter *param = _find_param(query, name);
   if (param == NULL) {
     return false;
@@ -278,7 +278,7 @@ static bool add_bxuint(BXDatabaseQuery *query, const char *name,
     return set_null(param);
   }
 
-  param->value = &value->value;
+  param->value = (void *)&value->value;
   param->value_length = sizeof(value->value);
   param->type = MYSQL_TYPE_LONGLONG;
   param->is_null = 0;
@@ -288,7 +288,7 @@ static bool add_bxuint(BXDatabaseQuery *query, const char *name,
 }
 
 static bool add_bxstr(BXDatabaseQuery *query, const char *name,
-                      BXString *value) {
+                      const BXString *value) {
   BXDatabaseParameter *param = _find_param(query, name);
   if (param == NULL) {
     return false;
@@ -296,7 +296,7 @@ static bool add_bxstr(BXDatabaseQuery *query, const char *name,
   if (!value->isset || value->value == NULL) {
     return set_null(param);
   }
-  param->value = value->value;
+  param->value = (void *)value->value;
   param->value_length = value->value_len;
   param->type = MYSQL_TYPE_STRING;
   param->is_null = 0;
@@ -305,7 +305,7 @@ static bool add_bxstr(BXDatabaseQuery *query, const char *name,
 }
 
 static bool add_bxfloat(BXDatabaseQuery *query, const char *name,
-                        BXFloat *value) {
+                        const BXFloat *value) {
   BXDatabaseParameter *param = _find_param(query, name);
   if (param == NULL) {
     return false;
@@ -313,7 +313,7 @@ static bool add_bxfloat(BXDatabaseQuery *query, const char *name,
   if (!value->isset) {
     return set_null(param);
   }
-  param->value = &value->value;
+  param->value = (void *)&value->value;
   param->value_length = sizeof(value->value);
   param->type = MYSQL_TYPE_DOUBLE;
   param->is_null = 0;
@@ -322,7 +322,7 @@ static bool add_bxfloat(BXDatabaseQuery *query, const char *name,
 }
 
 static bool add_bxbool(BXDatabaseQuery *query, const char *name,
-                       BXBool *value) {
+                       const BXBool *value) {
   BXDatabaseParameter *param = _find_param(query, name);
   if (param == NULL) {
     return false;
@@ -332,7 +332,7 @@ static bool add_bxbool(BXDatabaseQuery *query, const char *name,
   }
 
   param->type = MYSQL_TYPE_TINY;
-  param->value = &value->value;
+  param->value = (void *)&value->value;
   param->value_length = sizeof(value->value);
   param->is_null = 0;
   param->is_unsigned = 0;
@@ -342,7 +342,7 @@ static bool add_bxbool(BXDatabaseQuery *query, const char *name,
 }
 
 static bool add_bxbytes(BXDatabaseQuery *query, const char *name,
-                        BXBytes *value) {
+                        const BXBytes *value) {
   BXDatabaseParameter *param = _find_param(query, name);
   if (param == NULL) {
     return false;
@@ -350,7 +350,7 @@ static bool add_bxbytes(BXDatabaseQuery *query, const char *name,
   if (!value->isset || value->value == NULL) {
     return set_null(param);
   }
-  param->value = value->value;
+  param->value = (void *)value->value;
   param->value_length = value->value_len;
   param->type = MYSQL_TYPE_BLOB;
   param->is_null = 0;
@@ -359,7 +359,7 @@ static bool add_bxbytes(BXDatabaseQuery *query, const char *name,
 }
 
 static bool add_bxuuid(BXDatabaseQuery *query, const char *name,
-                       BXUuid *value) {
+                       const BXUuid *value) {
   BXDatabaseParameter *param = _find_param(query, name);
   if (param == NULL) {
     return false;
@@ -367,7 +367,7 @@ static bool add_bxuuid(BXDatabaseQuery *query, const char *name,
   if (!value->isset) {
     return set_null(param);
   }
-  param->value = &value->value;
+  param->value = (void *)&value->value;
   param->value_length = sizeof(uint64_t) * 2;
   param->type = MYSQL_TYPE_BLOB;
   param->is_null = 0;
@@ -376,7 +376,7 @@ static bool add_bxuuid(BXDatabaseQuery *query, const char *name,
 }
 
 bool bx_database_add_bxtype(BXDatabaseQuery *query, const char *name,
-                            BXGeneric *value) {
+                            const BXGeneric *value) {
   assert(query != NULL);
   assert(name != NULL);
 

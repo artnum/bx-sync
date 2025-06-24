@@ -152,6 +152,29 @@ char *bx_object_value_to_string(BXGeneric *value) {
   return NULL;
 }
 
+const BXGeneric *bx_any_to_generic(BXAny *a) {
+  if (a == NULL) {
+    return NULL;
+  }
+  switch (*(uint8_t *)a) {
+  case BX_OBJECT_TYPE_BYTES:
+    return (BXGeneric *)&a->__bytes;
+  case BX_OBJECT_TYPE_STRING:
+    return (BXGeneric *)&a->__string;
+  case BX_OBJECT_TYPE_FLOAT:
+    return (BXGeneric *)&a->__float;
+  case BX_OBJECT_TYPE_BOOL:
+    return (BXGeneric *)&a->__bool;
+  case BX_OBJECT_TYPE_INTEGER:
+    return (BXGeneric *)&a->__int;
+  case BX_OBJECT_TYPE_UUID:
+    return (BXGeneric *)&a->__uuid;
+  case BX_OBJECT_TYPE_UINTEGER:
+    return (BXGeneric *)&a->__uint;
+  }
+  return NULL;
+}
+
 char *bx_any_to_str(BXAny *a) {
   char *a_str = NULL;
   if (a == NULL) {

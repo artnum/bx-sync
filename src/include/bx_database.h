@@ -71,7 +71,36 @@ struct s_BXDatabaseQuery {
   bool exectued;
 };
 
+/**
+ * Prepare a query. It's a client side PDO-like system.
+ *
+ * @param[in] mysql The MYSQL connection handle
+ * @param[in] query The query.
+ *
+ * @return A mysql query handle.
+ */
 BXDatabaseQuery *bx_database_new_query(MYSQL *mysql, const char *query);
+/**
+ * Execute a query.
+ *
+ * @param[in] query The prepared query
+ *
+ * @return If failure or success occur.
+ */
+bool bx_database_execute(BXDatabaseQuery *query);
+bool bx_database_results(BXDatabaseQuery *query);
+/**
+ * Free a database query.
+ *
+ * @param[in] query The query to free. Passing NULL does nothing.
+ */
+void bx_database_free_query(BXDatabaseQuery *query);
+
+const char *bx_database_get_column_name(BXDatabaseQuery *query,
+                                        BXDatabaseColumn *column);
+
+bool bx_database_add_bxtype(BXDatabaseQuery *query, const char *name,
+                            const BXGeneric *value);
 bool bx_database_add_param_str(BXDatabaseQuery *query, const char *name,
                                void *value, size_t value_len,
                                enum enum_field_types type);
@@ -80,15 +109,9 @@ bool bx_database_add_param_int(BXDatabaseQuery *query, const char *name,
                                enum enum_field_types type, bool is_unsigned);
 bool bx_database_replace_param(BXDatabaseQuery *query, const char *name,
                                void *value, size_t value_len);
-bool bx_database_execute(BXDatabaseQuery *query);
-bool bx_database_results(BXDatabaseQuery *query);
+
 void bx_database_dump_column(BXDatabaseColumn *column);
 void bx_database_dump_row(BXDatabaseQuery *query, BXDatabaseRow *row);
-void bx_database_free_query(BXDatabaseQuery *query);
-const char *bx_database_get_column_name(BXDatabaseQuery *query,
-                                        BXDatabaseColumn *column);
-bool bx_database_add_bxtype(BXDatabaseQuery *query, const char *name,
-                            BXGeneric *value);
 
 void bx_database_print_warnings(MYSQL *conn);
 

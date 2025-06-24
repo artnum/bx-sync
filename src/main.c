@@ -93,6 +93,9 @@ void *contact_thread(void *arg) {
   return 0;
 }
 
+/**
+ * Thread to synchronize pr_project endpoint
+ */
 void *project_thread(void *arg) {
   bXill *app = (bXill *)arg;
   MYSQL *conn = NULL;
@@ -129,11 +132,14 @@ void *invoice_thread(void *arg) {
   time_t start;
   time(&start);
   my_cache = cache_create();
+  cache_load(my_cache, "./invoices.dat");
+  cache_stats(my_cache, "invoices");
   if (my_cache == NULL) {
     bx_log_error("Cache init failed");
   }
   while (atomic_load(&app->queue->run)) {
     bx_invoice_walk_items(app, conn, my_cache);
+    bx_invoice_prune_items(app, conn, my_cache);
     my_cache->version++;
     thrd_yield();
     if (time(NULL) - start > 5) {
@@ -141,6 +147,7 @@ void *invoice_thread(void *arg) {
       cache_stats(my_cache, "invoices");
     }
   }
+  cache_store(my_cache, "./invoices.dat");
   cache_destroy(my_cache);
   thread_teardown_mysql(conn);
   return 0;

@@ -86,6 +86,25 @@ struct s_BXObjectInvoice {
 void *bx_object_invoice_decode(void *data);
 void bx_object_invoice_free(void *data);
 void bx_object_invoice_dump(void *data);
+/**
+ * Get each invoice by quering API endpoint and fill the database.
+ *
+ * @param[in] app   Global app state.
+ * @param[in] conn  MYSQL connection handle
+ * @param[in] cache Cache object for this endpoint.
+ */
 void bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache);
+
+/**
+ * Get each item in cache that have drifted too much and deletes it from
+ * database. Each time a walk is completed, a "version" is incremented, at each
+ * walk, this version is set as "last seen" for the item. When the "last seen"
+ * drift more that the configured value, the item is deleted from database.
+ *
+ * @param[in] app   Global app state.
+ * @param[in] conn  MYSQL connection handle.
+ * @param[in] cache Cache object for this endpoint.
+ */
+void bx_invoice_prune_items(bXill *app, MYSQL *conn, Cache *cache);
 
 #endif /* BX_OBJECT_INVOICE_H__ */

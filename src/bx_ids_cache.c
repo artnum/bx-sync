@@ -2,7 +2,7 @@
 #include "include/bx_object.h"
 #include "include/bx_object_value.h"
 #include "include/bx_utils.h"
-#include <iso646.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #define CACHE_CHUNK_SIZE 1000
@@ -114,6 +114,7 @@ Cache *cache_create() {
     free(c);
     return NULL;
   }
+  c->version = 1;
   return c;
 }
 
@@ -121,15 +122,38 @@ void cache_stats(Cache *c, const char *name) {
 
   char *min = NULL;
   char *max = NULL;
+  uint64_t cs = c->count * sizeof(CacheItem) / 1024;
   if (c->count > 0) {
     min = bx_any_to_str(&c->items[0].id);
     max = bx_any_to_str(&c->items[c->count - 1].id);
-    bx_log_info("Cache %s : %lu items, %lu total, %lu version, [%s:%s] range",
-                name, c->count, c->size, c->version, min, max);
+    bx_log_info("Cache %s : %lu size [kb], %lu items, %lu total, %lu version, "
+                "[%s:%s] range",
+                name, cs, c->count, c->size, c->version, min, max);
     return;
   }
-  bx_log_info("Cache %s : %lu items, %lu total, %lu version, [0:0] range", name,
-              c->count, c->size, c->version);
+  bx_log_info("Cache %s : %lu size [kb], %lu items, %lu total, %lu version, "
+              "[0:0] range",
+              name, cs, c->count, c->size, c->version);
+}
+
+BXGeneric *_item_to_id(CacheItem *item) {
+  switch (*(uint8_t *)item) {
+  case BX_OBJECT_TYPE_INTEGER:
+    return (BXGeneric *)&item->id.__int;
+  case BX_OBJECT_TYPE_UINTEGER:
+    return (BXGeneric *)&item->id.__uint;
+  case BX_OBJECT_TYPE_FLOAT:
+    return (BXGeneric *)&item->id.__float;
+  case BX_OBJECT_TYPE_UUID:
+    return (BXGeneric *)&item->id.__uuid;
+  case BX_OBJECT_TYPE_STRING:
+    return (BXGeneric *)&item->id.__string;
+  case BX_OBJECT_TYPE_BYTES:
+    return (BXGeneric *)&item->id.__bytes;
+  case BX_OBJECT_TYPE_BOOL:
+    return (BXGeneric *)&item->id.__bool;
+  }
+  return NULL;
 }
 
 void cache_print(Cache *c) {
@@ -158,6 +182,82 @@ void cache_print(Cache *c) {
       break;
     }
     printf("CHECKSUM %lX\n", c->items[i].checksum);
+  }
+}
+
+CacheItem *cache_get_by_id(Cache *c, BXGeneric *item_id) {
+  return _find_item(c, item_id);
+}
+
+CacheItem *cache_get(Cache *c, uint32_t id) {
+  if (id >= c->count) {
+    return NULL;
+  }
+  return &c->items[id];
+}
+
+void cache_iter_init(Cache *c, CacheIter *iter) {
+  if (iter == NULL) {
+    return;
+  }
+  iter->current = 0;
+  iter->c = c;
+  iter->version = c->version;
+}
+
+const BXGeneric *cache_iter_next_id(CacheIter *iter) {
+  CacheItem *item = NULL;
+  do {
+    item = cache_get(iter->c, iter->current);
+    if (item == NULL) {
+      iter->current = 0;
+      return NULL;
+    }
+    iter->current++;
+  } while (item != NULL && item->last_seen == 0);
+  return _item_to_id(item);
+}
+
+const BXGeneric *cache_iter_next_prunable_id(CacheIter *iter, uint64_t drift,
+                                             bool del) {
+  CacheItem *item = NULL;
+  if (iter->version <= drift) {
+    return NULL;
+  }
+  while ((item = cache_get(iter->c, iter->current)) != NULL) {
+
+    if (item->last_seen > 0 && item->last_seen <= iter->version - drift) {
+      iter->current++;
+      if (del) {
+        item->last_seen = 0;
+      }
+      return _item_to_id(item);
+    }
+    iter->current++;
+  }
+
+  return NULL;
+}
+
+void cache_prune(Cache *c) {
+  uint32_t j = 0;
+  for (uint32_t i = 0; i < c->count; i++) {
+    if (c->items[i].last_seen != 0) {
+      c->items[j] = c->items[i];
+      j++;
+    }
+  }
+  if (j < c->count) {
+    memset(&c->items[j], 0, (c->count - j) * sizeof(CacheItem));
+  }
+  c->count = j;
+}
+
+void cache_delete_idx(Cache *c, uint32_t idx) {
+  CacheItem *item = NULL;
+  item = cache_get(c, idx);
+  if (item != NULL) {
+    item->last_seen = 0;
   }
 }
 
@@ -205,21 +305,225 @@ CacheState cache_check_item(Cache *c, BXGeneric *item_id, uint64_t checksum) {
   return CacheOk;
 }
 
+#define CACHE_VERSION 1
 void cache_store(Cache *c, const char *filename) {
   FILE *fp = NULL;
   _heapsort_cache(c);
-  fp = fopen(filename, "w");
+  fp = fopen(filename, "wb");
   if (!fp) {
     return;
   }
+
+  fseek(fp, sizeof(uint8_t) + sizeof(uint32_t), SEEK_SET);
+  size_t max_entry_size = 0;
+  uint8_t *entry = NULL;
   for (uint32_t i = 0; i < c->count; i++) {
-    char *id = bx_any_to_str(&c->items[i].id);
-    fprintf(fp, "%lX:%s;", c->items[i].checksum, id);
+    const BXGeneric *value = bx_any_to_generic(&c->items[i].id);
+    if (value == NULL) {
+      continue;
+    }
+    uint8_t type = *(uint8_t *)value;
+    size_t len = 0;
+    void *v = NULL;
+    switch (*(uint8_t *)value) {
+    case BX_OBJECT_TYPE_INTEGER:
+      len = sizeof(int64_t);
+      v = &((BXInteger *)value)->value;
+      break;
+    case BX_OBJECT_TYPE_UINTEGER:
+      len = sizeof(uint64_t);
+      v = &((BXUInteger *)value)->value;
+      break;
+    case BX_OBJECT_TYPE_FLOAT:
+      len = sizeof(double);
+      v = &((BXFloat *)value)->value;
+      break;
+    case BX_OBJECT_TYPE_UUID:
+      len = sizeof(uint64_t) * 2;
+      v = &((BXUuid *)value)->value;
+      break;
+    case BX_OBJECT_TYPE_BOOL:
+      len = sizeof(bool);
+      v = &((BXBool *)value)->value;
+      break;
+    case BX_OBJECT_TYPE_STRING:
+      len = ((BXString *)value)->value_len;
+      v = ((BXString *)value)->value;
+      break;
+    case BX_OBJECT_TYPE_BYTES:
+      len = ((BXBytes *)value)->value_len;
+      v = ((BXBytes *)value)->value;
+      break;
+    }
+    if (v == NULL) {
+      fclose(fp);
+      return;
+    }
+    size_t entry_size =
+        sizeof(uint8_t) + sizeof(uint64_t) + sizeof(size_t) + len;
+    if (entry_size > max_entry_size) {
+      entry = realloc(entry, entry_size);
+      max_entry_size = entry_size;
+    }
+
+    if (entry == NULL) {
+      fclose(fp);
+      return;
+    }
+
+    uint8_t *ptr = entry;
+    *ptr = type;
+    ptr++;
+    memcpy(ptr, &c->items[i].checksum, sizeof(uint64_t));
+    ptr += sizeof(uint64_t);
+    memcpy(ptr, &len, sizeof(size_t));
+    ptr += sizeof(ptr);
+    memcpy(ptr, v, len);
+    fwrite(entry, entry_size, 1, fp);
   }
+  fseek(fp, 0, SEEK_SET);
+  uint8_t version = CACHE_VERSION;
+  fwrite(&version, sizeof(uint8_t), 1, fp);
+  fwrite(&c->count, sizeof(uint32_t), 1, fp);
+
+  free(entry);
   fclose(fp);
 }
 
-void cache_destroy(Cache *c) {
+void cache_load(Cache *c, const char *filename) {
+  FILE *fp = NULL;
+  fp = fopen(filename, "rb");
+  if (!fp) {
+    return;
+  }
+
+  uint8_t version = 0;
+  fread(&version, sizeof(uint8_t), 1, fp);
+  if (version != CACHE_VERSION) {
+    fclose(fp);
+    return;
+  }
+  uint32_t count = 0;
+  fread(&count, sizeof(uint32_t), 1, fp);
+  if (count == 0) {
+    fclose(fp);
+    return;
+  }
+
+  if (c->items != NULL) {
+    cache_empty(c);
+  }
+
+  size_t cache_mul_size = count / CACHE_CHUNK_SIZE;
+  cache_mul_size++;
+  CacheItem *new = calloc(sizeof(*new), cache_mul_size * CACHE_CHUNK_SIZE);
+  if (!new) {
+    return;
+  }
+  c->items = new;
+  c->size = cache_mul_size * CACHE_CHUNK_SIZE;
+  c->count = 0;
+
+  size_t max_entry_size = 0;
+  uint8_t *entry = NULL;
+  const size_t entry_head_len =
+      sizeof(uint8_t) + sizeof(uint64_t) + sizeof(size_t);
+  uint8_t entry_head[entry_head_len];
+  uint32_t i = 0;
+  bool fail_read = false;
+  do {
+    if (fread(entry_head, entry_head_len, 1, fp) == 0) {
+      break;
+    }
+    c->items[i].last_seen = 1;
+    memcpy(&c->items[i].checksum, &entry_head[1], sizeof(uint64_t));
+    size_t len = 0;
+    memcpy(&len, &entry_head[sizeof(uint8_t) + sizeof(uint64_t)],
+           sizeof(size_t));
+    if (len > max_entry_size) {
+      entry = realloc(entry, len);
+      max_entry_size = len;
+    }
+
+    switch (entry_head[0]) {
+    case BX_OBJECT_TYPE_INTEGER: {
+      if (fread(&c->items[i].id.__int.value, sizeof(int64_t), 1, fp) == 0) {
+        fail_read = true;
+        break;
+      }
+      c->items[i].id.__int.isset = true;
+      c->items[i].id.__int.type = entry_head[0];
+    } break;
+    case BX_OBJECT_TYPE_UINTEGER: {
+      if (fread(&c->items[i].id.__uint.value, sizeof(uint64_t), 1, fp) == 0) {
+        fail_read = true;
+        break;
+      }
+      c->items[i].id.__uint.isset = true;
+      c->items[i].id.__uint.type = entry_head[0];
+    } break;
+    case BX_OBJECT_TYPE_FLOAT: {
+      if (fread(&c->items[i].id.__float.value, sizeof(double), 1, fp) == 0) {
+        fail_read = true;
+        break;
+      }
+      c->items[i].id.__float.isset = true;
+      c->items[i].id.__float.type = entry_head[0];
+    } break;
+    case BX_OBJECT_TYPE_BOOL: {
+      if (fread(&c->items[i].id.__bool.value, sizeof(bool), 1, fp) == 0) {
+        fail_read = true;
+        break;
+      }
+      c->items[i].id.__bool.isset = true;
+      c->items[i].id.__bool.type = entry_head[0];
+    } break;
+    case BX_OBJECT_TYPE_UUID: {
+      if (fread(&c->items[i].id.__uuid.value, sizeof(uint64_t) * 2, 1, fp) ==
+          0) {
+        fail_read = true;
+        break;
+      }
+      ((BXUuid *)&c->items[i].id.__uuid)->isset = true;
+      ((BXUuid *)&c->items[i].id.__uuid)->type = entry_head[0];
+    } break;
+    case BX_OBJECT_TYPE_STRING: {
+      c->items[i].id.__string.value = calloc(1, len);
+      if (c->items[i].id.__string.value) {
+        if (fread(c->items[i].id.__string.value, len, 1, fp) == 0) {
+          fail_read = true;
+          break;
+        }
+        c->items[i].id.__string.isset = true;
+        c->items[i].id.__string.type = entry_head[0];
+        c->items[i].id.__string.value_len = len;
+      }
+    }
+    case BX_OBJECT_TYPE_BYTES: {
+      c->items[i].id.__bytes.value = calloc(1, len);
+      if (c->items[i].id.__bytes.value) {
+        if (fread(c->items[i].id.__bytes.value, len, 1, fp) == 0) {
+          fail_read = true;
+          break;
+        }
+        c->items[i].id.__bytes.isset = true;
+        c->items[i].id.__bytes.type = entry_head[0];
+        c->items[i].id.__bytes.value_len = len;
+      }
+    }
+    }
+
+    i++;
+    if (i >= count) {
+      break;
+    }
+  } while (!fail_read);
+  c->count = i;
+
+  free(entry);
+  fclose(fp);
+}
+void cache_empty(Cache *c) {
   if (c == NULL) {
     return;
   }
@@ -230,5 +534,11 @@ void cache_destroy(Cache *c) {
   c->items = NULL;
   c->count = 0;
   c->size = 0;
+}
+void cache_destroy(Cache *c) {
+  if (c == NULL) {
+    return;
+  }
+  cache_empty(c);
   free(c);
 }

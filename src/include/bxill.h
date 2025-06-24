@@ -6,6 +6,7 @@
 #include <mysql/mysql.h>
 
 #define BX_LIST_LIMIT 500
+#define BXILL_DEFAULT_DRIFT 10
 
 enum e_ObjectState { Error = 0, NeedUpdate, NeedCreate, NeedNothing };
 typedef enum e_ObjectState ObjectState;

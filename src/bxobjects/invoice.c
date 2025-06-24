@@ -414,3 +414,27 @@ void bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache) {
     offset.value += limit.value;
   } while (arr_len > 0);
 }
+
+#define DELETE_QUERY "DELETE FROM invoice WHERE id = :id;"
+void bx_invoice_prune_items(bXill *app, MYSQL *conn, Cache *cache) {
+  const BXGeneric *id = NULL;
+  CacheIter iter;
+
+  cache_iter_init(cache, &iter);
+  int drift = bx_conf_get_int(app->conf, "prune-drift");
+  if (drift == 0) {
+    drift = BXILL_DEFAULT_DRIFT;
+  }
+
+  while ((id = cache_iter_next_prunable_id(&iter, drift, true)) != NULL) {
+    BXDatabaseQuery *query = bx_database_new_query(conn, DELETE_QUERY);
+    if (query != NULL && bx_database_add_bxtype(query, ":id", id)) {
+      if (!bx_database_execute(query)) {
+        bx_log_debug("Query failed: %s", DELETE_QUERY);
+      }
+    }
+    bx_database_free_query(query);
+    query = NULL;
+  }
+  cache_prune(cache);
+}
