@@ -7,6 +7,7 @@
 #include "../include/bxill.h"
 #include <jansson.h>
 #include <stdint.h>
+#include <sys/types.h>
 #include <threads.h>
 
 #define GET_PROJECT_PATH "2.0/pr_project/$"
@@ -101,6 +102,32 @@ void bx_project_dump(BXObjectProject *project) {
   _bx_dump_any("pr_invoice_type_amount", &project->pr_invoice_type_amount, 0);
   _bx_dump_any("pr_budget_type_id", &project->pr_budget_type_id, 0);
   _bx_dump_any("pr_budget_type_amount", &project->pr_budget_type_amount, 0);
+}
+
+void bx_project_sync_cache_with_db(MYSQL *conn, Cache *c) {
+  BXDatabaseQuery *query = bx_database_new_query(
+      conn, "SELECT id, _checksum FROM pr_project ORDER BY id ASC;");
+  if (query == NULL) {
+    return;
+  }
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    bx_database_free_query(query);
+    return;
+  }
+
+  for (BXDatabaseRow *current = query->results; current != NULL;
+       current = current->next) {
+    if (current->column_count != 2) {
+      continue;
+    }
+    BXUInteger item = {.type = BX_OBJECT_TYPE_UINTEGER,
+                       .value = (uint64_t)current->columns[0].i_value,
+                       .isset = true};
+    cache_set_item(c, (BXGeneric *)&item,
+                   (uint64_t)current->columns[1].i_value);
+  }
+
+  bx_database_free_query(query);
 }
 
 ObjectState bx_project_check_database(MYSQL *conn, BXObjectProject *project) {

@@ -844,12 +844,30 @@ static void *_bx_net_loop_worker(void *l) {
   uint64_t reqCount = 0;
   time(&start);
 
+  bool standby = false;
   while (atomic_load(&list->run)) {
     request = bx_net_request_list_remove(list, false);
     if (request != NULL) {
       /* request is locked in search loop */
       // do request
       request->response = bx_fetch(net, request->path, request->params);
+      switch (request->response->http_code) {
+      case 429:
+      case 500:
+      case 503:
+        if (standby == false) {
+          bx_log_info("Server need a stanby %d", request->response->http_code);
+          atomic_store(&list->standby, true);
+          standby = true;
+        }
+        break;
+      default:
+        if (standby == true) {
+          atomic_store(&list->standby, false);
+          standby = false;
+        }
+        break;
+      }
       reqCount++;
       time(&stop);
       if (stop - start > 1) {
@@ -885,14 +903,18 @@ static void *_bx_net_loop_worker(void *l) {
       if (us_sleep <= 0 || us_sleep > DEFAULT_RATELIMIT_US * 100) {
         us_sleep = DEFAULT_RATELIMIT_US;
       }
-      /*bx_log_debug("US_SLEEP %d, LIMIT %d, REMAINING %d, RESET %d", us_sleep,
+      bx_log_debug("US_SLEEP %d, LIMIT %d, REMAINING %d, RESET %d", us_sleep,
                    net->limits.max_request, net->limits.remaining_request,
-                   net->limits.reset_time);*/
+                   net->limits.reset_time);
       bx_mutex_unlock(&net->mutex_limit);
     }
 
-    /* don't load server too much */
-    usleep(us_sleep);
+    if (standby) {
+      sleep(BXILL_STANDBY_SECONDS);
+    } else {
+      /* don't load server too much */
+      usleep(us_sleep);
+    }
   }
 
   bx_log_debug("Emptying undone request list as we go away");

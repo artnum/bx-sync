@@ -227,8 +227,12 @@ int bx_object_value_compare(BXAny *a, BXGeneric *b) {
       return 0;
     }
     retVal = strcmp(a_str, b_str);
-    free(a);
-    free(b);
+    if (a_str) {
+      free(a_str);
+    }
+    if (b_str) {
+      free(b_str);
+    }
     return retVal;
   }
 

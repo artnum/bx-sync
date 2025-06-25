@@ -1,6 +1,7 @@
 #ifndef BX_OBJECT_CONTACT_H__
 #define BX_OBJECT_CONTACT_H__
 
+#include "../bx_ids_cache.h"
 #include "../bx_object.h"
 #include "../bx_object_value.h"
 #include "contact_group.h"
@@ -49,8 +50,10 @@ void *bx_object_contact_decode(void *object);
 void bx_object_contact_free(void *data);
 void bx_object_contact_store(MYSQL *mysql, BXObjectContact *contact);
 bool bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
-                          BXBool show_archived);
-void bx_contact_walk_items(bXill *app, MYSQL *conn);
+                          BXBool show_archived, Cache *c);
+void bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c);
 bool bx_contact_is_in_database(MYSQL *conn, BXGeneric *item);
+void bx_contact_sync_cache_with_db(MYSQL *conn, Cache *c);
 
+void bx_contact_prune_items(bXill *app, MYSQL *conn, Cache *c);
 #endif /* BX_OBJECT_CONTACT_H__ */

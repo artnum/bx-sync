@@ -34,4 +34,5 @@ bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
                           Cache *cache);
 bool bx_project_is_in_database(MYSQL *conn, BXGeneric *item);
 
+void bx_project_sync_cache_with_db(MYSQL *conn, Cache *c);
 #endif /* PROJECT_H__ */

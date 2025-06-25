@@ -438,3 +438,27 @@ void bx_invoice_prune_items(bXill *app, MYSQL *conn, Cache *cache) {
   }
   cache_prune(cache);
 }
+
+void bx_invoice_sync_cache_with_db(MYSQL *conn, Cache *c) {
+  BXDatabaseQuery *query = bx_database_new_query(
+      conn, "SELECT id, _checksum FROM invoice ORDER BY id ASC");
+  if (!query) {
+    return;
+  }
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    bx_database_free_query(query);
+    return;
+  }
+  for (BXDatabaseRow *current = query->results; current != NULL;
+       current = current->next) {
+    if (current->column_count != 2) {
+      continue;
+    }
+    BXUInteger item = {.type = BX_OBJECT_TYPE_UINTEGER,
+                       .value = (uint64_t)current->columns[0].i_value,
+                       .isset = true};
+    cache_set_item(c, (BXGeneric *)&item,
+                   (uint64_t)current->columns[1].i_value);
+  }
+  bx_database_free_query(query);
+}

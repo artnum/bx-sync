@@ -58,6 +58,7 @@ struct s_BXNetRequest {
 typedef struct s_BXNetRequestList BXNetRequestList;
 struct s_BXNetRequestList {
   atomic_bool run;
+  atomic_bool standby; /* when server is down or we request too much */
   uint64_t next_id;
   BXNet *net;
   BXNetRequest *head;

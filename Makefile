@@ -1,9 +1,10 @@
 NAME=bxnet
-CLFAGS=`pkg-config --cflags libcurl jansson libxxhash mariadb ncurses` -Wall -fanalyzer -ggdb
-LIBS=`pkg-config --libs libcurl jansson libxxhash mariadb ncurses` -lpthread -ggdb
+CLFAGS=`pkg-config --cflags libcurl jansson libxxhash mariadb` -Wall -fanalyzer -ggdb
+LIBS=`pkg-config --libs libcurl jansson libxxhash mariadb` -lpthread -ggdb
 SRCFILES=$(wildcard src/*.c src/*/*.c)
 OBJFILES=$(addprefix build/, $(addsuffix .o,$(basename $(notdir $(SRCFILES)))))
 CC=gcc
+DB=gdb
 VG=valgrind --leak-check=full
 RM=rm
 
@@ -14,6 +15,9 @@ x:
 
 vg: clean all
 	$(VG) ./bxnet conf.json
+
+dbg: clean all
+	$(DB) -ex "r conf.json" ./bxnet
 
 run: clean all
 	./bxnet conf.json

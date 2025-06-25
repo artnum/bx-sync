@@ -318,7 +318,7 @@ bool bx_contact_is_in_database(MYSQL *conn, BXGeneric *item) {
 }
 
 bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
-                           BXBool is_archived) {
+                           BXBool is_archived, Cache *c) {
   assert(app != NULL);
   assert(item != NULL);
 
@@ -335,37 +335,29 @@ bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
     bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id);
   }
 
-  BXDatabaseQuery *query = bx_database_new_query(
-      conn, "SELECT _checksum FROM contact WHERE id = :id;");
-  if (query == NULL) {
+  CacheState state =
+      cache_check_item(c, (BXGeneric *)&contact->id, contact->checksum);
+  if (state == CacheOk) {
     bx_object_contact_free(contact);
-    return false;
+    return true;
   }
-  bx_database_add_param_int64(query, ":id", &contact->id.value);
-  bx_database_execute(query);
-  bx_database_results(query);
-
-  if (query->results == NULL || query->results->column_count == 0) {
-    bx_database_free_query(query);
-    query = NULL;
+  BXDatabaseQuery *query = NULL;
+  if (state == CacheNotSet) {
+    bx_log_debug("Insert contact");
     query = bx_database_new_query(conn, QUERY_INSERT);
-  } else {
-    if (query->results[0].columns[0].i_value == contact->checksum) {
-      bx_database_free_query(query);
-      contact_group_sync(app, conn, contact);
-      bx_object_contact_free(contact);
-      return true;
-    }
-    bx_database_free_query(query);
-    query = NULL;
+  } else if (state == CacheNotSync) {
+    bx_log_debug("Update contact");
     query = bx_database_new_query(conn, QUERY_UPDATE);
+  } else {
+    bx_object_contact_free(contact);
+    return false;
   }
   if (query == NULL) {
     bx_object_contact_free(contact);
     return false;
   }
-  uint64_t now = time(NULL);
 
+  uint64_t now = time(NULL);
   bx_database_add_bxtype(query, ":id", (BXGeneric *)&contact->id);
   bx_database_add_bxtype(query, ":contact_type_id",
                          (BXGeneric *)&contact->contact_type_id);
@@ -411,21 +403,23 @@ bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
       (void *)bx_country_list_get_code(contact->country_id.value), 2);
 
   if (!bx_database_execute(query) || !bx_database_results(query)) {
-    bx_object_contact_dump(contact);
     bx_database_free_query(query);
     return false;
   }
+  if (query->warning_rows == 0 && !query->has_failed) {
+    cache_set_item(c, (BXGeneric *)&contact->id, contact->checksum);
+  }
   bx_database_free_query(query);
   query = NULL;
+  /*
+    contact_group_sync(app, conn, contact);
 
-  contact_group_sync(app, conn, contact);
-
-  uint64_t *branch_ids = (uint64_t *)bx_int_string_array_to_int_array(
-      contact->contact_branch_ids.value);
-  if (branch_ids != NULL) {
-    free(branch_ids);
-  }
-
+    uint64_t *branch_ids = (uint64_t *)bx_int_string_array_to_int_array(
+        contact->contact_branch_ids.value);
+    if (branch_ids != NULL) {
+      free(branch_ids);
+    }
+  */
   bx_object_contact_free(contact);
 
   return true;
@@ -433,7 +427,7 @@ bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
 
 #define GET_CONTACT_PATH "2.0/contact/$?show_archived=$"
 bool bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
-                          BXBool show_archived) {
+                          BXBool show_archived, Cache *c) {
   BXNetRequest *request =
       bx_do_request(app->queue, NULL, GET_CONTACT_PATH, item, &show_archived);
   if (request == NULL) {
@@ -444,13 +438,13 @@ bool bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
     return false;
   }
   bool retVal =
-      _bx_contact_sync_item(app, conn, request->decoded, show_archived);
+      _bx_contact_sync_item(app, conn, request->decoded, show_archived, c);
   bx_net_request_free(request);
   return retVal;
 }
 
 #define WALK_CONTACT_PATH "2.0/contact?limit=$&offset=$&show_archived=$"
-void bx_contact_walk_items(bXill *app, MYSQL *conn) {
+void bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c) {
   bx_log_debug("BX Walk Contact Items");
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
@@ -476,7 +470,7 @@ void bx_contact_walk_items(bXill *app, MYSQL *conn) {
       arr_len = json_array_size(request->decoded);
       for (size_t j = 0; j < arr_len; j++) {
         _bx_contact_sync_item(app, conn, json_array_get(request->decoded, j),
-                              show_archived);
+                              show_archived, c);
       }
       bx_net_request_free(request);
       offset.value += limit.value;
@@ -486,4 +480,53 @@ void bx_contact_walk_items(bXill *app, MYSQL *conn) {
     show_archived.value = true;
     offset.value = 0;
   }
+}
+
+#define DELETE_QUERY "DELETE FROM contact WHERE id = :id"
+void bx_contact_prune_items(bXill *app, MYSQL *conn, Cache *c) {
+  const BXGeneric *id = NULL;
+  CacheIter iter;
+
+  cache_iter_init(c, &iter);
+  int drift = bx_conf_get_int(app->conf, "prune-drift");
+  if (drift == 0) {
+    drift = BXILL_DEFAULT_DRIFT;
+  }
+  while ((id = cache_iter_next_prunable_id(&iter, drift, true)) != NULL) {
+    BXDatabaseQuery *query = bx_database_new_query(conn, DELETE_QUERY);
+    if (query != NULL &&
+        bx_database_add_bxtype(query, ":id", (BXGeneric *)&id)) {
+      if (!bx_database_execute(query)) {
+        bx_log_debug("Query faile: %s", DELETE_QUERY);
+      }
+    }
+    bx_database_free_query(query);
+    query = NULL;
+  }
+  cache_prune(c);
+}
+
+void bx_contact_sync_cache_with_db(MYSQL *conn, Cache *c) {
+  BXDatabaseQuery *query = bx_database_new_query(
+      conn, "SELECT id, _checksum FROM contact ORDER BY id ASC");
+  if (query == NULL) {
+    return;
+  }
+
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    bx_database_free_query(query);
+    return;
+  }
+  for (BXDatabaseRow *current = query->results; current != NULL;
+       current = current->next) {
+    if (current->column_count != 2) {
+      continue;
+    }
+    BXUInteger item = {.type = BX_OBJECT_TYPE_UINTEGER,
+                       .value = (uint64_t)current->columns[0].i_value,
+                       .isset = true};
+    cache_set_item(c, (BXGeneric *)&item,
+                   (uint64_t)current->columns[1].i_value);
+  }
+  bx_database_free_query(query);
 }

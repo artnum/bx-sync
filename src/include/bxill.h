@@ -7,7 +7,9 @@
 
 #define BX_LIST_LIMIT 500
 #define BXILL_DEFAULT_DRIFT 10
-
+#define BXILL_DEFAULT_CACHE_CHECKPOINT 5
+#define BXILL_DEFAULT_CACHE_DIR "/tmp/"
+#define BXILL_STANDBY_SECONDS 600 /* 10 min standby */
 enum e_ObjectState { Error = 0, NeedUpdate, NeedCreate, NeedNothing };
 typedef enum e_ObjectState ObjectState;
 

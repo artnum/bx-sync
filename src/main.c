@@ -1,5 +1,4 @@
 #include "include/bx_conf.h"
-#include "include/bx_database.h"
 #include "include/bx_ids_cache.h"
 #include "include/bx_mutex.h"
 #include "include/bx_net.h"
@@ -16,17 +15,18 @@
 #include <jansson.h>
 #include <mariadb/ma_list.h>
 #include <mariadb/mysql.h>
-#include <ncurses.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
 #include <threads.h>
+#include <time.h>
 #include <unistd.h>
 
 #define MAX_COMMAND_LEN 100
 extern BXMutex io_mutex;
 extern BXMutex MTX_COUNTRY_LIST;
+const struct timespec THREAD_SLEEP_TIME = {.tv_nsec = 10000000, .tv_sec = 0};
 
 MYSQL *thread_setup_mysql(bXill *app) {
   MYSQL *conn = NULL;
@@ -57,6 +57,9 @@ void *random_item_thread(void *arg) {
   conn = thread_setup_mysql(app);
   bx_log_debug("Random items thread data thread %lx", pthread_self());
   while (atomic_load(&(app->queue->run))) {
+    while (atomic_load(&app->queue->standby)) {
+      sleep(BXILL_STANDBY_SECONDS);
+    }
     bx_taxes_walk_item(app, conn);
     usleep(500);
   }
@@ -71,6 +74,9 @@ void *contact_sector_thread(void *arg) {
   conn = thread_setup_mysql(app);
   bx_log_debug("Contact Sector data thread %lx", pthread_self());
   while (atomic_load(&(app->queue->run))) {
+    while (atomic_load(&app->queue->standby)) {
+      sleep(BXILL_STANDBY_SECONDS);
+    }
     bx_contact_sector_walk_items(app, conn);
     thrd_yield();
   }
@@ -78,18 +84,66 @@ void *contact_sector_thread(void *arg) {
   return 0;
 }
 
+#define CACHE_FILE_CONTACT "contact.bin"
 void *contact_thread(void *arg) {
   bXill *app = (bXill *)arg;
-  MYSQL *conn = NULL;
 
+  /* mysql init */
+  MYSQL *conn = NULL;
   conn = thread_setup_mysql(app);
+
+  /* filename for cache */
+  char *filename = bx_utils_cache_filename(app, CACHE_FILE_CONTACT);
+  if (!filename) {
+    bx_log_debug("Failed allocation of cache filename %s", CACHE_FILE_CONTACT);
+    return 0;
+  }
+
+  /* init cache */
+  Cache *my_cache;
+  my_cache = cache_create();
+  if (my_cache == NULL) {
+    bx_log_error("Cache init failed");
+    return 0;
+  }
+  if (!cache_load(my_cache, filename)) {
+    /* loading failed, empty just in case */
+    cache_empty(my_cache);
+  }
+
+  /* validate cache with database */
+  bx_contact_sync_cache_with_db(conn, my_cache);
+
+  /* remove items that are in file but not in database */
+  cache_invalidate(my_cache, 1);
+  cache_prune(my_cache);
+  int cache_checkpoint = bx_utils_cache_checkpoint(app);
+
+  /* load language */
   bx_language_load(app, conn);
+
   bx_log_debug("Contact data thread %lx", pthread_self());
+  time_t start = time(NULL);
   while (atomic_load(&(app->queue->run))) {
-    bx_contact_walk_items(app, conn);
-    thrd_yield();
+    while (atomic_load(&app->queue->standby)) {
+      sleep(BXILL_STANDBY_SECONDS);
+    }
+    bx_contact_walk_items(app, conn, my_cache);
+    bx_contact_prune_items(app, conn, my_cache);
+    time_t current = time(NULL);
+    if (current - start > cache_checkpoint) {
+      cache_stats(my_cache, "contact");
+      cache_store(my_cache, filename);
+      start = current;
+    }
+    cache_next_version(my_cache);
+
+    thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
   thread_teardown_mysql(conn);
+  cache_store(my_cache, filename);
+  free(filename);
+  cache_destroy(my_cache);
   return 0;
 }
 
@@ -102,13 +156,18 @@ void *project_thread(void *arg) {
   bx_log_debug("Project data thread %ld", pthread_self());
   time_t start;
   time(&start);
+
   Cache *my_cache;
   my_cache = cache_create();
   if (my_cache == NULL) {
     bx_log_error("Cache init failed");
     return 0;
   }
+
   conn = thread_setup_mysql(app);
+
+  bx_project_sync_cache_with_db(conn, my_cache);
+
   while (atomic_load(&app->queue->run)) {
     bx_project_walk_item(app, conn, my_cache);
     my_cache->version++;
@@ -123,44 +182,66 @@ void *project_thread(void *arg) {
   return 0;
 }
 
+#define CACHE_FILE_INVOICE "invoice.bin"
 void *invoice_thread(void *arg) {
   bXill *app = (bXill *)arg;
   MYSQL *conn = NULL;
-  bx_log_debug("Invoice data thread %ld", pthread_self());
+  /* mysql setup */
   conn = thread_setup_mysql(app);
+
+  /* filename for cache */
+  char *filename = bx_utils_cache_filename(app, CACHE_FILE_INVOICE);
+  if (!filename) {
+    bx_log_debug("Failed allocation of cache filename %s", CACHE_FILE_INVOICE);
+    return 0;
+  }
+
+  /* init cache */
   Cache *my_cache;
-  time_t start;
-  time(&start);
   my_cache = cache_create();
-  cache_load(my_cache, "./invoices.dat");
-  cache_stats(my_cache, "invoices");
   if (my_cache == NULL) {
     bx_log_error("Cache init failed");
   }
+  if (!cache_load(my_cache, filename)) {
+    cache_empty(my_cache);
+  }
+  bx_contact_sync_cache_with_db(conn, my_cache);
+  cache_invalidate(my_cache, 1);
+  cache_prune(my_cache);
+  int cache_checkpoint = bx_utils_cache_checkpoint(app);
+
+  bx_log_debug("Invoice data thread %ld", pthread_self());
+  time_t start = time(NULL);
   while (atomic_load(&app->queue->run)) {
+    while (atomic_load(&app->queue->standby)) {
+      sleep(BXILL_STANDBY_SECONDS);
+    }
     bx_invoice_walk_items(app, conn, my_cache);
     bx_invoice_prune_items(app, conn, my_cache);
-    my_cache->version++;
-    thrd_yield();
-    if (time(NULL) - start > 5) {
-      time(&start);
-      cache_stats(my_cache, "invoices");
+    time_t current = time(NULL);
+    if (current - start > cache_checkpoint) {
+      cache_stats(my_cache, "invoice");
+      cache_store(my_cache, filename);
     }
+    cache_next_version(my_cache);
+
+    thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
-  cache_store(my_cache, "./invoices.dat");
+  cache_store(my_cache, filename);
   cache_destroy(my_cache);
   thread_teardown_mysql(conn);
   return 0;
 }
 
+/* ENTRY POINT */
 int main(int argc, char **argv) {
   BXConf *conf = NULL;
   bXill app;
 
   bx_mutex_init(&MTX_COUNTRY_LIST);
   enum e_ThreadList {
-    CONTACT_THREAD,
     PROJECT_THREAD,
+    CONTACT_THREAD,
     INVOICE_THREAD,
     CONTACT_SECTOR_THREAD,
     RANDOM_ITEM_THREAD,

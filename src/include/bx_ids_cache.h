@@ -26,18 +26,47 @@ typedef struct {
 
 typedef enum { CacheOk = 0, CacheNotSet, CacheNotSync } CacheState;
 
+/**
+ * Allocate memory for cache object.
+ *
+ * @return A cache object
+ */
 Cache *cache_create();
 void cache_print(Cache *c);
 bool cache_set_item(Cache *c, BXGeneric *item_id, uint64_t checksum);
 void cache_destroy(Cache *c);
 CacheState cache_check_item(Cache *c, BXGeneric *item_id, uint64_t checksum);
-void cache_store(Cache *c, const char *filename);
-void cache_load(Cache *c, const char *filename);
-void cache_stats(Cache *c, const char *name);
 
+void cache_stats(Cache *c, const char *name);
 /**
- * Init a cache iterator. The cache iterator is set at the cache version on init
- * so any operation involving versionning will be at a stable value.
+ * Store the cache into a file.
+ *
+ * @param[in] c        Cache to store.
+ * @param[in] filename Filename of the cache file. The directory is set in the
+ *                     configuration file.
+ */
+void cache_store(Cache *c, const char *filename);
+/**
+ * Load cache from a file.
+ *
+ * @param[in] c        Cache to load.
+ * @param[in] filename Filename of the cache file. The directory is set in the
+ *                     configuration file.
+ *
+ * @return True if success false otherwise.
+ */
+bool cache_load(Cache *c, const char *filename);
+/**
+ * Invalidate (last seen to 0) all item that have drifted
+ *
+ * @param[in] c     Cache to Invalidate.
+ * @param[in] drift Minimal drift to Invalidate.
+ */
+void cache_invalidate(Cache *c, uint64_t drift);
+/**
+ * Init a cache iterator. The cache iterator is set at the cache version
+ * on init so any operation involving versionning will be at a stable
+ * value.
  *
  * @param[in]  c    The cache pointer
  * @param[out] iter Iterator to init, it is not allocated.
@@ -71,5 +100,19 @@ const BXGeneric *cache_iter_next_prunable_id(CacheIter *iter, uint64_t drift,
  * @param[in] c The cache object to prunable
  */
 void cache_prune(Cache *c);
+
+/**
+ * Empty the cache, freeing item memory
+ *
+ * @param[in] c Cache to empty
+ */
 void cache_empty(Cache *c);
+
+#define cache_next_version(c)                                                  \
+  do {                                                                         \
+    if (c) {                                                                   \
+      c->version++;                                                            \
+    }                                                                          \
+  } while (0)
+
 #endif /* BX_IDS_CACHE */

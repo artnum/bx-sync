@@ -7,7 +7,6 @@
 #include <assert.h>
 #include <fcntl.h>
 #include <jansson.h>
-#include <ncurses.h>
 #include <stdarg.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -256,7 +255,6 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
   return request;
 }
 
-extern WINDOW *LOG_WINDOW;
 struct s_BXLog LOG;
 
 bool bx_log_init(const char *path, int level) {
@@ -382,4 +380,28 @@ bool bx_string_compare(const char *str1, const char *str2, size_t max) {
     str2++;
   }
   return true;
+}
+
+char *bx_utils_cache_filename(bXill *app, const char *filename) {
+  const char *cdir = bx_conf_get_string(app->conf, "cache-directory");
+  if (cdir == NULL) {
+    cdir = BXILL_DEFAULT_CACHE_DIR;
+  }
+
+  size_t len = strlen(cdir) + strlen(filename) + 1;
+  char *f = calloc(len, sizeof(*filename));
+  if (!f) {
+    return NULL;
+  }
+  snprintf(f, len, "%s/%s", cdir, filename);
+  bx_conf_release(app->conf, "cache-directory");
+  return f;
+}
+
+int bx_utils_cache_checkpoint(bXill *app) {
+  int cache_checkpoint = bx_conf_get_int(app->conf, "cache-checkpoint");
+  if (cache_checkpoint == 0) {
+    cache_checkpoint = BXILL_DEFAULT_CACHE_CHECKPOINT;
+  }
+  return cache_checkpoint;
 }

@@ -3,6 +3,7 @@
 
 #include "bx_mutex.h"
 #include "bx_net.h"
+#include "bxill.h"
 #include <stdio.h>
 
 typedef struct {
@@ -60,4 +61,6 @@ void bx_log_end();
 bool bx_string_compare(const char *str1, const char *str2, size_t max);
 void *bx_log_out_thread(void *arg);
 
+char *bx_utils_cache_filename(bXill *app, const char *filename);
+int bx_utils_cache_checkpoint(bXill *app);
 #endif /* BX_UTILS_H__ */

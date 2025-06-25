@@ -95,6 +95,9 @@ void _heapify(Cache *c, uint32_t n, uint32_t i) {
 }
 
 void _heapsort_cache(Cache *c) {
+  if (c->count < 2) {
+    return;
+  }
   for (int32_t i = c->count / 2 - 1; i >= 0; i--) {
     _heapify(c, c->count, i);
   }
@@ -110,29 +113,13 @@ Cache *cache_create() {
   if (!c) {
     return NULL;
   }
-  if (!_grow_cache(c)) {
-    free(c);
-    return NULL;
-  }
   c->version = 1;
   return c;
 }
 
 void cache_stats(Cache *c, const char *name) {
-
-  char *min = NULL;
-  char *max = NULL;
-  uint64_t cs = c->count * sizeof(CacheItem) / 1024;
-  if (c->count > 0) {
-    min = bx_any_to_str(&c->items[0].id);
-    max = bx_any_to_str(&c->items[c->count - 1].id);
-    bx_log_info("Cache %s : %lu size [kb], %lu items, %lu total, %lu version, "
-                "[%s:%s] range",
-                name, cs, c->count, c->size, c->version, min, max);
-    return;
-  }
-  bx_log_info("Cache %s : %lu size [kb], %lu items, %lu total, %lu version, "
-              "[0:0] range",
+  float cs = (float)c->count * sizeof(CacheItem) / 1024;
+  bx_log_info("Cache %s : %.2f size [kb], %lu items, %lu total, %lu version",
               name, cs, c->count, c->size, c->version);
 }
 
@@ -239,6 +226,20 @@ const BXGeneric *cache_iter_next_prunable_id(CacheIter *iter, uint64_t drift,
   return NULL;
 }
 
+void cache_invalidate(Cache *c, uint64_t drift) {
+  CacheItem *item = NULL;
+  if (c->version <= drift) {
+    return;
+  }
+  uint32_t i = 0;
+  while ((item = cache_get(c, i)) != NULL) {
+    if (item->last_seen > 0 && item->last_seen <= c->version - drift) {
+      i++;
+      item->last_seen = 0;
+    }
+  }
+}
+
 void cache_prune(Cache *c) {
   uint32_t j = 0;
   for (uint32_t i = 0; i < c->count; i++) {
@@ -263,6 +264,7 @@ void cache_delete_idx(Cache *c, uint32_t idx) {
 
 bool cache_set_item(Cache *c, BXGeneric *item_id, uint64_t checksum) {
   CacheItem *current = _find_item(c, item_id);
+  bool need_sort = true;
   if (item_id == NULL || c == NULL) {
     return false;
   }
@@ -279,17 +281,19 @@ bool cache_set_item(Cache *c, BXGeneric *item_id, uint64_t checksum) {
     bx_object_value_copy(&c->items[c->count].id, item_id);
     c->items[c->count].checksum = checksum;
     c->items[c->count].last_seen = c->version;
+    if (c->count > 1 &&
+        _cmp(&c->items[c->count - 1].id, &c->items[c->count].id) <= 0) {
+      need_sort = false;
+    }
     c->count++;
-    _heapsort_cache(c);
+    if (need_sort) {
+      _heapsort_cache(c);
+    }
     return true;
   }
 
-  bx_object_free_value(current);
-  bx_object_value_copy(&current->id, item_id);
   current->checksum = checksum;
   current->last_seen = c->version;
-
-  _heapsort_cache(c);
   return true;
 }
 
@@ -305,7 +309,8 @@ CacheState cache_check_item(Cache *c, BXGeneric *item_id, uint64_t checksum) {
   return CacheOk;
 }
 
-#define CACHE_VERSION 1
+enum CACHE_VERSION { v1 = 1 };
+
 void cache_store(Cache *c, const char *filename) {
   FILE *fp = NULL;
   _heapsort_cache(c);
@@ -362,7 +367,13 @@ void cache_store(Cache *c, const char *filename) {
     size_t entry_size =
         sizeof(uint8_t) + sizeof(uint64_t) + sizeof(size_t) + len;
     if (entry_size > max_entry_size) {
-      entry = realloc(entry, entry_size);
+      void *tmp = realloc(entry, entry_size);
+      if (tmp == NULL) {
+        free(entry);
+        fclose(fp);
+        return;
+      }
+      entry = tmp;
       max_entry_size = entry_size;
     }
 
@@ -382,7 +393,7 @@ void cache_store(Cache *c, const char *filename) {
     fwrite(entry, entry_size, 1, fp);
   }
   fseek(fp, 0, SEEK_SET);
-  uint8_t version = CACHE_VERSION;
+  uint8_t version = v1;
   fwrite(&version, sizeof(uint8_t), 1, fp);
   fwrite(&c->count, sizeof(uint32_t), 1, fp);
 
@@ -390,24 +401,26 @@ void cache_store(Cache *c, const char *filename) {
   fclose(fp);
 }
 
-void cache_load(Cache *c, const char *filename) {
+bool cache_load(Cache *c, const char *filename) {
+  assert(c != NULL);
+  assert(filename != NULL);
   FILE *fp = NULL;
   fp = fopen(filename, "rb");
   if (!fp) {
-    return;
+    return false;
   }
 
   uint8_t version = 0;
   fread(&version, sizeof(uint8_t), 1, fp);
-  if (version != CACHE_VERSION) {
+  if (version != v1) {
     fclose(fp);
-    return;
+    return false;
   }
   uint32_t count = 0;
   fread(&count, sizeof(uint32_t), 1, fp);
   if (count == 0) {
     fclose(fp);
-    return;
+    return false;
   }
 
   if (c->items != NULL) {
@@ -418,7 +431,8 @@ void cache_load(Cache *c, const char *filename) {
   cache_mul_size++;
   CacheItem *new = calloc(sizeof(*new), cache_mul_size * CACHE_CHUNK_SIZE);
   if (!new) {
-    return;
+    fclose(fp);
+    return false;
   }
   c->items = new;
   c->size = cache_mul_size * CACHE_CHUNK_SIZE;
@@ -431,8 +445,10 @@ void cache_load(Cache *c, const char *filename) {
   uint8_t entry_head[entry_head_len];
   uint32_t i = 0;
   bool fail_read = false;
+  bool first = true;
   do {
     if (fread(entry_head, entry_head_len, 1, fp) == 0) {
+      fail_read = true;
       break;
     }
     c->items[i].last_seen = 1;
@@ -441,87 +457,101 @@ void cache_load(Cache *c, const char *filename) {
     memcpy(&len, &entry_head[sizeof(uint8_t) + sizeof(uint64_t)],
            sizeof(size_t));
     if (len > max_entry_size) {
-      entry = realloc(entry, len);
+      void *tmp = realloc(entry, len);
+      if (!tmp) {
+        fail_read = true;
+        break;
+      }
+      entry = tmp;
       max_entry_size = len;
+    }
+    if (fread(entry, len, 1, fp) == 0) {
+      fail_read = true;
+      break;
     }
 
     switch (entry_head[0]) {
     case BX_OBJECT_TYPE_INTEGER: {
-      if (fread(&c->items[i].id.__int.value, sizeof(int64_t), 1, fp) == 0) {
-        fail_read = true;
-        break;
-      }
+      memcpy(&c->items[i].id.__int.value, entry, sizeof(int64_t));
       c->items[i].id.__int.isset = true;
       c->items[i].id.__int.type = entry_head[0];
     } break;
     case BX_OBJECT_TYPE_UINTEGER: {
-      if (fread(&c->items[i].id.__uint.value, sizeof(uint64_t), 1, fp) == 0) {
-        fail_read = true;
-        break;
-      }
+      memcpy(&c->items[i].id.__uint.value, entry, sizeof(uint64_t));
       c->items[i].id.__uint.isset = true;
       c->items[i].id.__uint.type = entry_head[0];
     } break;
     case BX_OBJECT_TYPE_FLOAT: {
-      if (fread(&c->items[i].id.__float.value, sizeof(double), 1, fp) == 0) {
-        fail_read = true;
-        break;
-      }
+      memcpy(&c->items[i].id.__float.value, entry, sizeof(double));
       c->items[i].id.__float.isset = true;
       c->items[i].id.__float.type = entry_head[0];
     } break;
     case BX_OBJECT_TYPE_BOOL: {
-      if (fread(&c->items[i].id.__bool.value, sizeof(bool), 1, fp) == 0) {
-        fail_read = true;
-        break;
-      }
+      memcpy(&c->items[i].id.__bool.value, entry, sizeof(bool));
       c->items[i].id.__bool.isset = true;
       c->items[i].id.__bool.type = entry_head[0];
     } break;
     case BX_OBJECT_TYPE_UUID: {
-      if (fread(&c->items[i].id.__uuid.value, sizeof(uint64_t) * 2, 1, fp) ==
-          0) {
-        fail_read = true;
-        break;
-      }
+      memcpy(&c->items[i].id.__uuid.value, entry, sizeof(uint64_t) * 2);
       ((BXUuid *)&c->items[i].id.__uuid)->isset = true;
       ((BXUuid *)&c->items[i].id.__uuid)->type = entry_head[0];
     } break;
     case BX_OBJECT_TYPE_STRING: {
       c->items[i].id.__string.value = calloc(1, len);
       if (c->items[i].id.__string.value) {
-        if (fread(c->items[i].id.__string.value, len, 1, fp) == 0) {
-          fail_read = true;
-          break;
-        }
+        memcpy(c->items[i].id.__string.value, entry, len);
         c->items[i].id.__string.isset = true;
         c->items[i].id.__string.type = entry_head[0];
         c->items[i].id.__string.value_len = len;
+      } else {
+        fail_read = true;
       }
-    }
+    } break;
     case BX_OBJECT_TYPE_BYTES: {
       c->items[i].id.__bytes.value = calloc(1, len);
       if (c->items[i].id.__bytes.value) {
-        if (fread(c->items[i].id.__bytes.value, len, 1, fp) == 0) {
-          fail_read = true;
-          break;
-        }
+        memcpy(c->items[i].id.__bytes.value, entry, len);
         c->items[i].id.__bytes.isset = true;
         c->items[i].id.__bytes.type = entry_head[0];
         c->items[i].id.__bytes.value_len = len;
+      } else {
+        fail_read = true;
       }
+      break;
     }
     }
 
     i++;
+    first = false;
     if (i >= count) {
       break;
     }
   } while (!fail_read);
+
+  if (fail_read && !first) {
+    for (uint32_t j = 0; j < i; j++) {
+      switch (*(uint8_t *)&c->items[j].id) {
+      case BX_OBJECT_TYPE_BYTES:
+        if (c->items[j].id.__bytes.value) {
+          free(c->items[j].id.__bytes.value);
+        }
+      case BX_OBJECT_TYPE_STRING:
+        if (c->items[j].id.__string.value) {
+          free(c->items[j].id.__string.value);
+        }
+      }
+    }
+    if (c->items) {
+      free(c->items);
+    }
+    c->size = 0;
+    c->count = 0;
+  }
   c->count = i;
 
   free(entry);
   fclose(fp);
+  return true;
 }
 void cache_empty(Cache *c) {
   if (c == NULL) {
