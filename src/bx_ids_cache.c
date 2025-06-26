@@ -456,6 +456,10 @@ bool cache_load(Cache *c, const char *filename) {
     size_t len = 0;
     memcpy(&len, &entry_head[sizeof(uint8_t) + sizeof(uint64_t)],
            sizeof(size_t));
+    if (len <= 0) {
+      fail_read = true;
+      break;
+    }
     if (len > max_entry_size) {
       void *tmp = realloc(entry, len);
       if (!tmp) {
@@ -519,6 +523,10 @@ bool cache_load(Cache *c, const char *filename) {
       }
       break;
     }
+    default: {
+      fail_read = true;
+      break;
+    }
     }
 
     i++;
@@ -534,20 +542,24 @@ bool cache_load(Cache *c, const char *filename) {
       case BX_OBJECT_TYPE_BYTES:
         if (c->items[j].id.__bytes.value) {
           free(c->items[j].id.__bytes.value);
+          c->items[j].id.__bytes.value = NULL;
         }
       case BX_OBJECT_TYPE_STRING:
         if (c->items[j].id.__string.value) {
           free(c->items[j].id.__string.value);
+          c->items[j].id.__string.value = NULL;
         }
       }
     }
     if (c->items) {
       free(c->items);
+      c->items = NULL;
     }
     c->size = 0;
     c->count = 0;
+  } else {
+    c->count = i;
   }
-  c->count = i;
 
   free(entry);
   fclose(fp);

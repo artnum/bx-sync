@@ -388,7 +388,7 @@ char *bx_utils_cache_filename(bXill *app, const char *filename) {
     cdir = BXILL_DEFAULT_CACHE_DIR;
   }
 
-  size_t len = strlen(cdir) + strlen(filename) + 1;
+  size_t len = strlen(cdir) + strlen(filename) + 2;
   char *f = calloc(len, sizeof(*filename));
   if (!f) {
     return NULL;

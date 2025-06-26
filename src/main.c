@@ -1,7 +1,10 @@
 #include "include/bx_conf.h"
+#include "include/bx_database.h"
 #include "include/bx_ids_cache.h"
 #include "include/bx_mutex.h"
 #include "include/bx_net.h"
+#include "include/bx_object_value.h"
+#include "include/bx_prune.h"
 #include "include/bx_utils.h"
 #include "include/bxill.h"
 #include "include/bxobjects/contact.h"
@@ -252,6 +255,7 @@ void *invoice_thread(void *arg) {
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
   cache_store(my_cache, filename);
+  free(filename);
   cache_destroy(my_cache);
   thread_teardown_mysql(conn);
   return 0;
