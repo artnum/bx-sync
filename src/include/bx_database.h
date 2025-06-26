@@ -58,6 +58,7 @@ struct s_BXDatabaseQuery {
   uint64_t affected_rows;
   uint64_t warning_rows;
   MYSQL_RES *result_metadata;
+  MYSQL_BIND *binds;
 
   BXDatabaseParameter *parameters;
   int param_count;
