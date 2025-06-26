@@ -107,11 +107,15 @@ void cache_prune(Cache *c);
  * @param[in] c Cache to empty
  */
 void cache_empty(Cache *c);
+void cache_reset_version(Cache *c);
 
 #define cache_next_version(c)                                                  \
   do {                                                                         \
     if (c) {                                                                   \
       c->version++;                                                            \
+      if (c->version == UINT64_MAX) {                                          \
+        cache_reset_version(c);                                                \
+      }                                                                        \
     }                                                                          \
   } while (0)
 

@@ -96,7 +96,12 @@ bool bx_database_results(BXDatabaseQuery *query);
  * @param[in] query The query to free. Passing NULL does nothing.
  */
 void bx_database_free_query(BXDatabaseQuery *query);
-
+/**
+ * Free a result set.
+ *
+ * @param[in] query The query object.
+ */
+void bx_database_free_result(BXDatabaseQuery *query);
 const char *bx_database_get_column_name(BXDatabaseQuery *query,
                                         BXDatabaseColumn *column);
 

@@ -234,9 +234,9 @@ void cache_invalidate(Cache *c, uint64_t drift) {
   uint32_t i = 0;
   while ((item = cache_get(c, i)) != NULL) {
     if (item->last_seen > 0 && item->last_seen <= c->version - drift) {
-      i++;
       item->last_seen = 0;
     }
+    i++;
   }
 }
 
@@ -557,8 +557,11 @@ bool cache_load(Cache *c, const char *filename) {
     }
     c->size = 0;
     c->count = 0;
+    bx_log_error("Cache file seems corrupted");
   } else {
     c->count = i;
+    /* just in case someone modified manually the file */
+    _heapsort_cache(c);
   }
 
   free(entry);
@@ -583,4 +586,12 @@ void cache_destroy(Cache *c) {
   }
   cache_empty(c);
   free(c);
+}
+
+void cache_reset_version(Cache *c) {
+  for (uint32_t i = 0; i < c->count; i++) {
+    CacheItem *item = cache_get(c, i);
+    item->last_seen = 1;
+  }
+  c->version = 1;
 }

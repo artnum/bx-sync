@@ -50,7 +50,7 @@ static inline void _bx_database_free_row(BXDatabaseRow *row) {
   free(row);
 }
 
-static inline void _bx_database_free_result(BXDatabaseQuery *query) {
+void bx_database_free_result(BXDatabaseQuery *query) {
   if (query->results != NULL) {
     BXDatabaseRow *current = query->results;
     BXDatabaseRow *next = NULL;
@@ -86,7 +86,7 @@ void bx_database_free_query(BXDatabaseQuery *query) {
   if (query == NULL) {
     return;
   }
-  _bx_database_free_result(query);
+  bx_database_free_result(query);
   free_query_metadata(query);
   if (query->parameters) {
     free(query->parameters);
@@ -453,7 +453,7 @@ bool bx_database_execute(BXDatabaseQuery *query) {
   assert(query != NULL);
   if (query->exectued) {
     mysql_stmt_reset(query->stmt);
-    _bx_database_free_result(query);
+    bx_database_free_result(query);
     memset(query->binds, 0, query->param_count * sizeof(*query->binds));
   } else {
     query->binds = calloc(query->param_count, sizeof(*query->binds));

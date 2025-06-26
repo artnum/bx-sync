@@ -3,7 +3,6 @@
 #include "include/bx_ids_cache.h"
 #include "include/bx_mutex.h"
 #include "include/bx_net.h"
-#include "include/bx_object_value.h"
 #include "include/bx_prune.h"
 #include "include/bx_utils.h"
 #include "include/bxill.h"
@@ -107,24 +106,31 @@ void *contact_thread(void *arg) {
   my_cache = cache_create();
   if (my_cache == NULL) {
     bx_log_error("Cache init failed");
+
     return 0;
   }
   if (!cache_load(my_cache, filename)) {
     /* loading failed, empty just in case */
     cache_empty(my_cache);
   }
-
   /* validate cache with database */
-  bx_contact_sync_cache_with_db(conn, my_cache);
+  PruningParameters prune_one_source_of_truth = {
+      .cache = my_cache,
+      .query =
+          bx_database_new_query(conn, "SELECT id, _checksum FROM contact")};
+  /* sync */
+  bx_prune_from_db(app, &prune_one_source_of_truth);
+  bx_database_free_query(prune_one_source_of_truth.query);
 
-  /* remove items that are in file but not in database */
-  cache_invalidate(my_cache, 1);
-  cache_prune(my_cache);
   int cache_checkpoint = bx_utils_cache_checkpoint(app);
 
   /* load language */
   bx_language_load(app, conn);
 
+  PruningParameters contact_prune = {
+      .query =
+          bx_database_new_query(conn, "DELETE FROM contact WHERE id = :id"),
+      .cache = my_cache};
   bx_log_debug("Contact data thread %lx", pthread_self());
   time_t start = time(NULL);
   while (atomic_load(&(app->queue->run))) {
@@ -132,7 +138,7 @@ void *contact_thread(void *arg) {
       sleep(BXILL_STANDBY_SECONDS);
     }
     bx_contact_walk_items(app, conn, my_cache);
-    bx_contact_prune_items(app, conn, my_cache);
+    bx_prune_items(app, &contact_prune);
     time_t current = time(NULL);
     if (current - start > cache_checkpoint) {
       cache_stats(my_cache, "contact");
@@ -143,6 +149,7 @@ void *contact_thread(void *arg) {
 
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
+  bx_database_free_query(contact_prune.query);
   thread_teardown_mysql(conn);
   cache_store(my_cache, filename);
   free(filename);
@@ -179,19 +186,26 @@ void *project_thread(void *arg) {
     cache_empty(my_cache);
   }
 
+  PruningParameters prune_one_source_of_truth = {
+      .cache = my_cache,
+      .query =
+          bx_database_new_query(conn, "SELECT id, _checksum FROM pr_project")};
   /* sync */
-  bx_project_sync_cache_with_db(conn, my_cache);
+  bx_prune_from_db(app, &prune_one_source_of_truth);
+  bx_database_free_query(prune_one_source_of_truth.query);
 
-  /* one source of truth, prune cache */
-  cache_invalidate(my_cache, 1);
-  cache_prune(my_cache);
   int cache_checkpoint = bx_utils_cache_checkpoint(app);
+
+  PruningParameters project_prune = {
+      .query =
+          bx_database_new_query(conn, "DELETE FROM contact WHERE id = :id"),
+      .cache = my_cache};
 
   bx_log_debug("Project data thread %ld", pthread_self());
   time_t start = time(NULL);
   while (atomic_load(&app->queue->run)) {
     bx_project_walk_item(app, conn, my_cache);
-
+    bx_prune_items(app, &project_prune);
     time_t current = time(NULL);
     if (current - start > cache_checkpoint) {
       cache_stats(my_cache, "projects");
@@ -202,6 +216,7 @@ void *project_thread(void *arg) {
 
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
+  bx_database_free_query(project_prune.query);
   thread_teardown_mysql(conn);
   cache_store(my_cache, filename);
   free(filename);
@@ -232,10 +247,20 @@ void *invoice_thread(void *arg) {
   if (!cache_load(my_cache, filename)) {
     cache_empty(my_cache);
   }
-  bx_contact_sync_cache_with_db(conn, my_cache);
-  cache_invalidate(my_cache, 1);
-  cache_prune(my_cache);
+
+  PruningParameters prune_one_source_of_truth = {
+      .cache = my_cache,
+      .query =
+          bx_database_new_query(conn, "SELECT id, _checksum FROM invoice")};
+  /* sync */
+  bx_prune_from_db(app, &prune_one_source_of_truth);
+  bx_database_free_query(prune_one_source_of_truth.query);
+
   int cache_checkpoint = bx_utils_cache_checkpoint(app);
+  PruningParameters invoice_prune = {
+      .query =
+          bx_database_new_query(conn, "DELETE FROM invoice WHERE id = :id"),
+      .cache = my_cache};
 
   bx_log_debug("Invoice data thread %ld", pthread_self());
   time_t start = time(NULL);
@@ -243,8 +268,10 @@ void *invoice_thread(void *arg) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
+
     bx_invoice_walk_items(app, conn, my_cache);
-    bx_invoice_prune_items(app, conn, my_cache);
+    bx_prune_items(app, &invoice_prune);
+
     time_t current = time(NULL);
     if (current - start > cache_checkpoint) {
       cache_stats(my_cache, "invoice");
@@ -254,6 +281,7 @@ void *invoice_thread(void *arg) {
 
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
+  bx_database_free_query(invoice_prune.query);
   cache_store(my_cache, filename);
   free(filename);
   cache_destroy(my_cache);

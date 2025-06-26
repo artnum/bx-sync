@@ -53,7 +53,4 @@ bool bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
                           BXBool show_archived, Cache *c);
 void bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c);
 bool bx_contact_is_in_database(MYSQL *conn, BXGeneric *item);
-void bx_contact_sync_cache_with_db(MYSQL *conn, Cache *c);
-
-void bx_contact_prune_items(bXill *app, MYSQL *conn, Cache *c);
 #endif /* BX_OBJECT_CONTACT_H__ */
