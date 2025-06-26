@@ -393,7 +393,7 @@ char *bx_utils_cache_filename(bXill *app, const char *filename) {
   if (!f) {
     return NULL;
   }
-  snprintf(f, len, "%s/%s", cdir, filename);
+  snprintf(f, len + 1, "%s/%s", cdir, filename);
   bx_conf_release(app->conf, "cache-directory");
   return f;
 }

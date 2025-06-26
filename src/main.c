@@ -150,35 +150,59 @@ void *contact_thread(void *arg) {
 /**
  * Thread to synchronize pr_project endpoint
  */
+#define CACHE_FILE_PROJECT "project.bin"
 void *project_thread(void *arg) {
   bXill *app = (bXill *)arg;
-  MYSQL *conn = NULL;
-  bx_log_debug("Project data thread %ld", pthread_self());
-  time_t start;
-  time(&start);
 
-  Cache *my_cache;
-  my_cache = cache_create();
-  if (my_cache == NULL) {
-    bx_log_error("Cache init failed");
+  /* mysql setup */
+  MYSQL *conn = NULL;
+  conn = thread_setup_mysql(app);
+
+  /* cache filename */
+  char *filename = bx_utils_cache_filename(app, CACHE_FILE_PROJECT);
+  if (!filename) {
+    bx_log_error("Failed allocation of cache filename %s", CACHE_FILE_PROJECT);
     return 0;
   }
 
-  conn = thread_setup_mysql(app);
+  /* init cache */
+  Cache *my_cache = cache_create();
+  if (!my_cache) {
+    bx_log_error("Cache init failed");
+    free(filename);
+    return 0;
+  }
+  if (!cache_load(my_cache, filename)) {
+    cache_empty(my_cache);
+  }
 
+  /* sync */
   bx_project_sync_cache_with_db(conn, my_cache);
 
+  /* one source of truth, prune cache */
+  cache_invalidate(my_cache, 1);
+  cache_prune(my_cache);
+  int cache_checkpoint = bx_utils_cache_checkpoint(app);
+
+  bx_log_debug("Project data thread %ld", pthread_self());
+  time_t start = time(NULL);
   while (atomic_load(&app->queue->run)) {
     bx_project_walk_item(app, conn, my_cache);
-    my_cache->version++;
-    thrd_yield();
-    if (time(NULL) - start > 5) {
-      time(&start);
+
+    time_t current = time(NULL);
+    if (current - start > cache_checkpoint) {
       cache_stats(my_cache, "projects");
+      cache_store(my_cache, filename);
+      start = current;
     }
+    cache_next_version(my_cache);
+
+    thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
-  cache_destroy(my_cache);
   thread_teardown_mysql(conn);
+  cache_store(my_cache, filename);
+  free(filename);
+  cache_destroy(my_cache);
   return 0;
 }
 
@@ -192,7 +216,7 @@ void *invoice_thread(void *arg) {
   /* filename for cache */
   char *filename = bx_utils_cache_filename(app, CACHE_FILE_INVOICE);
   if (!filename) {
-    bx_log_debug("Failed allocation of cache filename %s", CACHE_FILE_INVOICE);
+    bx_log_error("Failed allocation of cache filename %s", CACHE_FILE_INVOICE);
     return 0;
   }
 
