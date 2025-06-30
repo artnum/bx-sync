@@ -23,12 +23,14 @@ struct s_BXLogMsg {
 
 struct s_BXLog {
   FILE *fp;
+  bXill *app;
+  char *path;
   uint8_t level;
   BXMutex mutex;
   struct s_BXLogMsg *head;
 };
 
-bool bx_log_init(const char *path, int level);
+bool bx_log_init(bXill *app, const char *path, int level);
 void bx_utils_init(void);
 bool bx_utils_gen_id(uint64_t *id);
 /**
@@ -46,6 +48,7 @@ int64_t *bx_int_string_array_to_int_array(const char *str);
 char *bx_item_to_path(const char *fmt, ...);
 BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
                             char *path_fmt, ...);
+void bx_log_reopen();
 
 /* Logging functions */
 void _bx_log_error(char *file, int line, const char *fmt, ...);

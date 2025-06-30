@@ -255,15 +255,35 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
 
 struct s_BXLog LOG;
 
-bool bx_log_init(const char *path, int level) {
+bool bx_log_init(bXill *app, const char *path, int level) {
+  assert(app != NULL);
+  assert(path != NULL);
+
   LOG.head = NULL;
   LOG.level = level;
+  LOG.path = strdup(path);
+  LOG.app = app;
   bx_mutex_init(&LOG.mutex);
   LOG.fp = fopen(path, "a");
   if (!LOG.fp) {
     return false;
   }
   return true;
+}
+
+void bx_log_reopen() {
+  bx_log_info("Reloading log file, closing current");
+  pthread_mutex_lock(&LOG.mutex);
+  if (LOG.fp) {
+    fflush(LOG.fp);
+    fclose(LOG.fp);
+  }
+  LOG.fp = fopen(LOG.path, "a");
+  if (!LOG.fp) {
+    atomic_store(&LOG.app->logthread, false);
+  }
+  pthread_mutex_unlock(&LOG.mutex);
+  bx_log_info("Reloading log file, opening new one");
 }
 
 void *bx_log_out_thread(void *arg) {
@@ -273,7 +293,6 @@ void *bx_log_out_thread(void *arg) {
     bx_mutex_lock(&LOG.mutex);
     current = LOG.head;
     LOG.head = NULL;
-    bx_mutex_unlock(&LOG.mutex);
 
     struct s_BXLogMsg *reversed = NULL;
     while (current) {
@@ -286,11 +305,14 @@ void *bx_log_out_thread(void *arg) {
     current = reversed;
     while (current) {
       struct s_BXLogMsg *next = (struct s_BXLogMsg *)current->next;
-      fprintf(LOG.fp, "%s\n", current->msg);
+      if (LOG.fp) {
+        fprintf(LOG.fp, "%s\n", current->msg);
+      }
       free(current);
       current = next;
     }
     fflush(LOG.fp);
+    bx_mutex_unlock(&LOG.mutex);
     current = NULL;
     thrd_sleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 1000000}, NULL);
   }

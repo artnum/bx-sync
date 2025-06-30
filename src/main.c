@@ -14,13 +14,18 @@
 #include "include/bxobjects/project.h"
 #include "include/bxobjects/taxes.h"
 
+#include <errno.h>
+#include <fcntl.h>
 #include <jansson.h>
 #include <mariadb/ma_list.h>
 #include <mariadb/mysql.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <threads.h>
 #include <time.h>
 #include <unistd.h>
@@ -291,10 +296,85 @@ void *invoice_thread(void *arg) {
   return 0;
 }
 
+/* signal handler */
+bool kill_signal = 0;
+void signal_hander(int sig) {
+  switch (sig) {
+  case SIGINT:
+  case SIGTERM:
+    kill_signal = true;
+    bx_log_info("Kill signal received");
+    break;
+  case SIGHUP:
+    bx_log_reopen();
+    break;
+  default:
+    break;
+  }
+}
+
+/* deamonizer */
+int deamon() {
+  pid_t pid;
+  pid = fork();
+  if (pid < 0) {
+    fprintf(stderr, "Failed fork: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+  if (pid > 0) {
+    exit(EXIT_SUCCESS);
+  }
+  if (setsid() < 0) {
+    fprintf(stderr, "Failed new session: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
+  /* double forking because we must */
+  pid = fork();
+  if (pid < 0) {
+    fprintf(stderr, "Second fork failed: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+  if (pid > 0) {
+    exit(EXIT_SUCCESS);
+  }
+  if (chdir("/") < 0) {
+    fprintf(stderr, "Failed change dir: %s\n", strerror(errno));
+  }
+  umask(0);
+
+  /* doing close open for stdin, stdout, stderr */
+  close(STDIN_FILENO);
+  close(STDOUT_FILENO);
+  close(STDERR_FILENO);
+  int fd = open("/dev/null", O_RDWR);
+  if (fd < 0) {
+    exit(EXIT_FAILURE);
+  }
+  dup2(fd, STDIN_FILENO);
+  dup2(fd, STDERR_FILENO);
+  dup2(fd, STDOUT_FILENO);
+  if (fd > 2) {
+    close(fd);
+  }
+
+  return 0;
+}
+
 /* ENTRY POINT */
 int main(int argc, char **argv) {
   BXConf *conf = NULL;
   bXill app;
+
+  conf = bx_conf_init();
+  if (!bx_conf_loadfile(conf, "conf.json")) {
+    bx_conf_destroy(&conf);
+    return -1;
+  }
+
+  if (deamon() != 0) {
+    exit(EXIT_FAILURE);
+  }
 
   bx_mutex_init(&MTX_COUNTRY_LIST);
   enum e_ThreadList {
@@ -308,14 +388,25 @@ int main(int argc, char **argv) {
   };
   pthread_t threads[MAX__THREAD_LIST];
 
+  struct sigaction sa = {.sa_handler = signal_hander, .sa_flags = 0};
+  sigemptyset(&sa.sa_mask);
+
+  if (sigaction(SIGINT, &sa, NULL) == -1) {
+    printf("Failed setup signal handler\n");
+    return 1;
+  }
+  if (sigaction(SIGTERM, &sa, NULL) == -1) {
+    printf("Failed setup signal handler\n");
+    return 1;
+  }
+  if (sigaction(SIGHUP, &sa, NULL) == -1) {
+    printf("Failed setup signal handler\n");
+    return 1;
+  }
+
   mysql_library_init(argc, argv, NULL);
 
-  conf = bx_conf_init();
-  if (!bx_conf_loadfile(conf, "conf.json")) {
-    bx_conf_destroy(&conf);
-    return -1;
-  }
-  bx_log_init(bx_conf_get_string(conf, "log-file"),
+  bx_log_init(&app, bx_conf_get_string(conf, "log-file"),
               bx_conf_get_int(conf, "log-level"));
   bx_conf_release(conf, "log-file");
   bx_utils_init();
@@ -348,15 +439,12 @@ int main(int argc, char **argv) {
   pthread_create(&threads[RANDOM_ITEM_THREAD], NULL, random_item_thread,
                  (void *)&app);
 
-  bool exit = false;
-
-  do {
-    getc(stdin);
-    exit = true;
-  } while (!exit);
-
+  while (kill_signal == 0) {
+    pause();
+  }
   atomic_store(&queue->run, 0);
-  sleep(1);
+  sleep(5);
+
   pthread_cond_signal(&queue->in_cond);
   bx_log_debug("Waiting for request thread");
   pthread_join(request_thread, NULL);

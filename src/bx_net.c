@@ -860,7 +860,7 @@ static void *_bx_net_loop_worker(void *l) {
     time(&stop);
     if (stop - start > 1) {
       float reqSec = reqCount / (float)(stop - start);
-      printf("SPEED : %0.2f req/sec\n", reqSec);
+      bx_log_info("SPEED : %0.2f req/sec\n", reqSec);
       start = stop;
       reqCount = 0;
     }
