@@ -226,9 +226,9 @@ void *bx_object_invoice_decode(void *object) {
   return invoice;
 }
 
-bool _bx_invoice_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
+BXillError _bx_invoice_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
   assert(item != NULL);
-
+  BXillError RetVal = NoError;
   BXDatabaseQuery *query = NULL;
   BXObjectInvoice *invoice = NULL;
 
@@ -242,7 +242,7 @@ bool _bx_invoice_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
   /* 0 means in database with same hash */
   if (cacheItemState == CacheOk) {
     bx_object_invoice_free(invoice);
-    return true;
+    return RetVal;
   }
 
   if (!bx_contact_is_in_database(conn, (BXGeneric *)&invoice->contact_id)) {
@@ -339,6 +339,11 @@ bool _bx_invoice_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
   bx_database_add_param_uint64(query, ":_last_updated", &now);
 
   if (!bx_database_execute(query) || !bx_database_results(query)) {
+    if (query->need_reconnect) {
+      RetVal = ErrorSQLReconnect;
+    } else {
+      RetVal = ErrorGeneric;
+    }
     goto fail_and_return;
   }
 
@@ -349,7 +354,7 @@ bool _bx_invoice_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
   bx_object_invoice_free(invoice);
   query = NULL;
 
-  return true;
+  return NoError;
 
 fail_and_return:
   if (query != NULL) {
@@ -359,7 +364,7 @@ fail_and_return:
     bx_object_invoice_free(invoice);
   }
 
-  return false;
+  return RetVal;
 }
 
 #define GET_INVOICE_PATH "2.0/kb_invoice/$"
@@ -388,7 +393,7 @@ bool bx_invoice_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
 }
 
 #define WALK_INVOICE_PATH "2.0/kb_invoice?limit=$&offset=$"
-void bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache) {
+BXillError bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache) {
   bx_log_debug("BX Walk Invoice Items");
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
@@ -400,18 +405,24 @@ void bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache) {
     BXNetRequest *request =
         bx_do_request(app->queue, NULL, WALK_INVOICE_PATH, &limit, &offset);
     if (request == NULL) {
-      return;
+      return ErrorNet;
     }
     if (!json_is_array(request->decoded)) {
       bx_net_request_free(request);
-      return;
+      return ErrorJSON;
     }
     arr_len = json_array_size(request->decoded);
     for (size_t i = 0; i < arr_len; i++) {
-      _bx_invoice_sync_item(conn, json_array_get(request->decoded, i), cache);
+      BXillError e = _bx_invoice_sync_item(
+          conn, json_array_get(request->decoded, i), cache);
+      if (e != NoError) {
+        bx_net_request_free(request);
+        return e;
+      }
     }
     bx_net_request_free(request);
     offset.value += limit.value;
     thrd_yield();
   } while (arr_len > 0);
+  return NoError;
 }

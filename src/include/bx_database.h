@@ -55,6 +55,7 @@ struct s_BXDatabaseQuery {
   size_t query_length;
   bool has_dataset;
   bool has_failed;
+  bool need_reconnect;
   uint64_t affected_rows;
   uint64_t warning_rows;
   MYSQL_RES *result_metadata;

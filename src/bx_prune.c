@@ -7,7 +7,7 @@
 #include "include/bxill.h"
 #include <mysql/mysql.h>
 
-void bx_prune_items(bXill *app, PruningParameters *param) {
+BXillError bx_prune_items(bXill *app, PruningParameters *param) {
   CacheIter iter;
 
   cache_iter_init(param->cache, &iter);
@@ -17,28 +17,32 @@ void bx_prune_items(bXill *app, PruningParameters *param) {
   }
 
   if (param->query == NULL) {
-    return;
+    return ErrorGeneric;
   }
   const BXGeneric *id;
   while ((id = cache_iter_next_prunable_id(&iter, drift, true)) != NULL) {
     bx_log_debug("Prunning %lu\n", ((const BXUInteger *)id)->value);
     if (bx_database_add_bxtype(param->query, ":id", id)) {
-      if (!bx_database_execute(param->query)) {
+      BXillError e = bx_database_execute(param->query);
+      if (e != NoError) {
         bx_log_debug("Query failed %s", param->query);
+        bx_database_free_result(param->query);
+        return e;
       }
     }
   }
   bx_database_free_result(param->query);
   cache_prune(param->cache);
+  return NoError;
 }
 
-void bx_prune_from_db(bXill *app, PruningParameters *param) {
+BXillError bx_prune_from_db(bXill *app, PruningParameters *param) {
   if (param->query == NULL) {
-    return;
+    return NoError;
   }
   cache_next_version(param->cache);
-
-  if (bx_database_execute(param->query) && bx_database_results(param->query)) {
+  BXillError e = bx_database_execute(param->query);
+  if (e == NoError && bx_database_results(param->query)) {
     for (BXDatabaseRow *current = param->query->results; current;
          current = current->next) {
       if (current->column_count != 2) {
@@ -50,9 +54,10 @@ void bx_prune_from_db(bXill *app, PruningParameters *param) {
       cache_set_item(param->cache, (BXGeneric *)&item,
                      (uint64_t)current->columns[1].i_value);
     }
+    cache_invalidate(param->cache, 1);
+    cache_prune(param->cache);
   }
   bx_database_free_result(param->query);
 
-  cache_invalidate(param->cache, 1);
-  cache_prune(param->cache);
+  return e;
 }

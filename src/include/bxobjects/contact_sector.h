@@ -13,6 +13,6 @@ struct s_BXObjectContactSector {
   BXUInteger remote_id;
   BXString remote_name;
 };
-bool bx_contact_sector_walk_items(bXill *app, MYSQL *conn);
+BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn);
 
 #endif /* BX_OBJECT_CONTACT_SECTOR_H__ */

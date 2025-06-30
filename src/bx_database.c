@@ -3,6 +3,7 @@
 #include "include/bx_utils.h"
 #include <assert.h>
 #include <mariadb/mariadb_com.h>
+#include <mysql/errmsg.h>
 #include <mysql/mysql.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -464,6 +465,13 @@ bool bx_database_execute(BXDatabaseQuery *query) {
     if (mysql_stmt_prepare(query->stmt, query->query, strlen(query->query)) !=
         0) {
       bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(query->stmt));
+      switch (mysql_stmt_errno(query->stmt)) {
+      case CR_SERVER_GONE_ERROR:
+      case CR_SERVER_LOST:
+      case CR_CONN_HOST_ERROR:
+        query->need_reconnect = true;
+        break;
+      }
       return false;
     }
   }
@@ -485,6 +493,7 @@ bool bx_database_execute(BXDatabaseQuery *query) {
                  query->query);
     return false;
   }
+
   query->affected_rows = mysql_stmt_affected_rows(query->stmt);
   query->warning_rows = mysql_stmt_warning_count(query->stmt);
   if (query->warning_rows > 0) {

@@ -93,6 +93,6 @@ void bx_object_invoice_dump(void *data);
  * @param[in] conn  MYSQL connection handle
  * @param[in] cache Cache object for this endpoint.
  */
-void bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache);
+BXillError bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache);
 
 #endif /* BX_OBJECT_INVOICE_H__ */

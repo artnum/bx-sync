@@ -250,6 +250,7 @@ void bx_object_contact_dump(void *data) {
   _bx_dump_any("profile_image", &contact->profile_image, 1);
 }
 
+#if 0 /* Silence compiler, not used yet but will be */
 static void contact_group_sync(bXill *app, MYSQL *conn,
                                BXObjectContact *contact) {
   BXDatabaseQuery *query = NULL;
@@ -295,6 +296,7 @@ static void contact_group_sync(bXill *app, MYSQL *conn,
 
   free(group_ids);
 }
+#endif
 
 bool bx_contact_is_in_database(MYSQL *conn, BXGeneric *item) {
   BXDatabaseQuery *query =
@@ -317,14 +319,14 @@ bool bx_contact_is_in_database(MYSQL *conn, BXGeneric *item) {
   return true;
 }
 
-bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
-                           BXBool is_archived, Cache *c) {
+BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
+                                 BXBool is_archived, Cache *c) {
   assert(app != NULL);
   assert(item != NULL);
 
   BXObjectContact *contact = bx_object_contact_decode(item);
   if (contact == NULL) {
-    return false;
+    return ErrorGeneric;
   }
 
   if (!bx_user_is_in_database(conn, (BXGeneric *)&contact->user_id)) {
@@ -339,22 +341,21 @@ bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
       cache_check_item(c, (BXGeneric *)&contact->id, contact->checksum);
   if (state == CacheOk) {
     bx_object_contact_free(contact);
-    return true;
+    return NoError;
   }
   BXDatabaseQuery *query = NULL;
   if (state == CacheNotSet) {
-    bx_log_debug("Insert contact");
     query = bx_database_new_query(conn, QUERY_INSERT);
   } else if (state == CacheNotSync) {
     bx_log_debug("Update contact");
     query = bx_database_new_query(conn, QUERY_UPDATE);
   } else {
     bx_object_contact_free(contact);
-    return false;
+    return ErrorGeneric;
   }
   if (query == NULL) {
     bx_object_contact_free(contact);
-    return false;
+    return ErrorGeneric;
   }
 
   uint64_t now = time(NULL);
@@ -403,8 +404,9 @@ bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
       (void *)bx_country_list_get_code(contact->country_id.value), 2);
 
   if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = query->need_reconnect ? ErrorSQLReconnect : ErrorGeneric;
     bx_database_free_query(query);
-    return false;
+    return e;
   }
   if (query->warning_rows == 0 && !query->has_failed) {
     cache_set_item(c, (BXGeneric *)&contact->id, contact->checksum);
@@ -422,12 +424,12 @@ bool _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
   */
   bx_object_contact_free(contact);
 
-  return true;
+  return NoError;
 }
 
 #define GET_CONTACT_PATH "2.0/contact/$?show_archived=$"
-bool bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
-                          BXBool show_archived, Cache *c) {
+BXillError bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
+                                BXBool show_archived, Cache *c) {
   BXNetRequest *request =
       bx_do_request(app->queue, NULL, GET_CONTACT_PATH, item, &show_archived);
   if (request == NULL) {
@@ -444,7 +446,7 @@ bool bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
 }
 
 #define WALK_CONTACT_PATH "2.0/contact?limit=$&offset=$&show_archived=$"
-void bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c) {
+BXillError bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c) {
   bx_log_debug("BX Walk Contact Items");
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
@@ -460,17 +462,21 @@ void bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c) {
       BXNetRequest *request = bx_do_request(app->queue, NULL, WALK_CONTACT_PATH,
                                             &limit, &offset, &show_archived);
       if (request == NULL) {
-        return;
+        return ErrorGeneric;
       }
       if (!json_is_array(request->decoded)) {
         bx_net_request_free(request);
-        return;
+        return ErrorGeneric;
       }
 
       arr_len = json_array_size(request->decoded);
       for (size_t j = 0; j < arr_len; j++) {
-        _bx_contact_sync_item(app, conn, json_array_get(request->decoded, j),
-                              show_archived, c);
+        BXillError e = _bx_contact_sync_item(
+            app, conn, json_array_get(request->decoded, j), show_archived, c);
+        if (e == ErrorSQLReconnect) {
+          bx_net_request_free(request);
+          return e;
+        }
       }
       bx_net_request_free(request);
       offset.value += limit.value;
@@ -480,4 +486,5 @@ void bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c) {
     show_archived.value = true;
     offset.value = 0;
   }
+  return NoError;
 }

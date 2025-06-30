@@ -11,7 +11,7 @@ typedef struct {
   BXDatabaseQuery *query;
 } PruningParameters;
 
-void bx_prune_items(bXill *app, PruningParameters *param);
-void bx_prune_from_db(bXill *app, PruningParameters *param);
+BXillError bx_prune_items(bXill *app, PruningParameters *param);
+BXillError bx_prune_from_db(bXill *app, PruningParameters *param);
 
 #endif /* BX_PRUNE_H__ */

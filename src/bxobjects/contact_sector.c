@@ -44,12 +44,12 @@ struct s_ItemMustBeDeleted {
 };
 
 #define WALK_CONTACT_SECTOR_PATH "2.0/contact_branch"
-bool bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
+BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
   BXNetRequest *request =
       bx_do_request(app->queue, NULL, WALK_CONTACT_SECTOR_PATH);
   if (request == NULL || request->response == NULL ||
       request->response->http_code != 200) {
-    return false;
+    return ErrorGeneric;
   }
 
   struct s_ItemMustBeDeleted *items = NULL;
@@ -128,9 +128,14 @@ bool bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
       bx_database_add_param_uint64(query, ":id",
                                    &contact_sector->remote_id.value);
       bx_database_add_param_uint64(query, ":_last_updated", &now);
-      bx_database_execute(query);
+      BXillError e = bx_database_execute(query);
       bx_database_free_query(query);
       free_object(contact_sector);
+      if (e != NoError) {
+        json_decref(contact_sector_array);
+        free(items);
+        return e;
+      }
       continue;
     }
     if (query->results[0].columns[0].i_value == contact_sector->checksum) {
@@ -151,9 +156,14 @@ bool bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
                                  &contact_sector->checksum);
     bx_database_add_param_uint64(query, ":_last_updated", &now);
     bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
-    bx_database_execute(query);
+    BXillError e = bx_database_execute(query);
     bx_database_free_query(query);
     free_object(contact_sector);
+    if (e != NoError) {
+      json_decref(contact_sector_array);
+      free(items);
+      return e;
+    }
   }
   json_decref(contact_sector_array);
 
@@ -169,7 +179,11 @@ bool bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
     for (int i = 0; i < items_count; i++) {
       if (items[i].deleted) {
         *to_delete = items[i].item;
-        bx_database_execute(query);
+        BXillError e = bx_database_execute(query);
+        if (e != NoError) {
+          free(items);
+          return e;
+        }
       }
     }
     bx_database_free_query(query);
@@ -178,5 +192,5 @@ bool bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
     free(items);
   }
 
-  return true;
+  return NoError;
 }

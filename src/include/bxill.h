@@ -14,6 +14,17 @@
 enum e_ObjectState { Error = 0, NeedUpdate, NeedCreate, NeedNothing };
 typedef enum e_ObjectState ObjectState;
 
+typedef enum e_BXillError {
+  NoError = 0,
+  ErrorGeneric,
+  ErrorSQLReconnect,
+  ErrorNet,
+  ErrorJSON,
+  ErrorDuplicateEntry,
+
+  Error_MAX__
+} BXillError;
+
 typedef struct s_bXill bXill;
 struct s_bXill {
   atomic_bool logthread;

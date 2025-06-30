@@ -49,8 +49,8 @@ void bx_object_contact_dump(void *data);
 void *bx_object_contact_decode(void *object);
 void bx_object_contact_free(void *data);
 void bx_object_contact_store(MYSQL *mysql, BXObjectContact *contact);
-bool bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
-                          BXBool show_archived, Cache *c);
-void bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c);
+BXillError bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
+                                BXBool show_archived, Cache *c);
+BXillError bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c);
 bool bx_contact_is_in_database(MYSQL *conn, BXGeneric *item);
 #endif /* BX_OBJECT_CONTACT_H__ */

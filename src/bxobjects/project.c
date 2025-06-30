@@ -168,34 +168,43 @@ static bool bind_params(BXDatabaseQuery *query, BXObjectProject *project) {
   return true;
 }
 
-bool execute_request(MYSQL *conn, BXObjectProject *project,
-                     const char *request) {
+BXillError execute_request(MYSQL *conn, BXObjectProject *project,
+                           const char *request) {
   BXDatabaseQuery *query = bx_database_new_query(conn, request);
   if (query == NULL) {
-    return false;
+    return ErrorGeneric;
   }
-  bool success = true;
-  if (!bind_params(query, project) || !bx_database_execute(query) ||
-      !bx_database_results(query)) {
-    success = false;
+  BXillError retval = NoError;
+  if (!bind_params(query, project)) {
+    retval = ErrorGeneric;
+    goto exit_point;
   }
-  if (query->warning_rows > 0) {
-    success = false;
+  BXillError e = bx_database_execute(query);
+  if (e != NoError) {
+    retval = e;
+    goto exit_point;
   }
+  if (bx_database_results(query)) {
+    if (query->warning_rows > 0) {
+      retval = ErrorGeneric;
+    }
+  }
+
+exit_point:
   bx_database_free_query(query);
-  return success;
+  return retval;
 }
 
-bool bx_project_update_db(MYSQL *conn, BXObjectProject *project) {
+BXillError bx_project_update_db(MYSQL *conn, BXObjectProject *project) {
   return execute_request(conn, project, QUERY_UPDATE);
 }
 
-bool bx_project_insert_db(MYSQL *conn, BXObjectProject *project) {
+BXillError bx_project_insert_db(MYSQL *conn, BXObjectProject *project) {
   return execute_request(conn, project, QUERY_INSERT);
 }
 
-bool _bx_project_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
-
+BXillError _bx_project_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
+  BXillError RetVal = NoError;
   BXObjectProject *project = decode_object(item);
   if (project == NULL) {
     return false;
@@ -208,27 +217,31 @@ bool _bx_project_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
   }
 
   if (ProjectState == CacheNotSet) {
-    if (!bx_project_insert_db(conn, project)) {
+    BXillError e = bx_project_insert_db(conn, project);
+    if (e != NoError) {
       bx_log_error("Failed insert project %ld", project->id.value);
+      RetVal = e;
       goto fail_and_return;
     }
   } else if (ProjectState == CacheNotSync) {
-    if (!bx_project_update_db(conn, project)) {
+    BXillError e = bx_project_update_db(conn, project);
+    if (e != NoError) {
       bx_log_error("Failed insert language %d", project->id.value);
+      RetVal = e;
       goto fail_and_return;
     }
   }
   cache_set_item(cache, (BXGeneric *)&project->id, project->checksum);
   bx_project_free(project);
-  return true;
+  return NoError;
 
 fail_and_return:
   bx_project_free(project);
-  return false;
+  return RetVal;
 }
 
-bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
-                          Cache *cache) {
+BXillError bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
+                                Cache *cache) {
   bx_log_debug("Sync Project Id %ld", ((BXUInteger *)item)->value);
   BXNetRequest *request =
       bx_do_request(app->queue, NULL, GET_PROJECT_PATH, item);
@@ -245,7 +258,7 @@ bool bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
 }
 
 #define WALK_PROJECT_PATH "2.0/pr_project?limit=$&offset=$"
-void bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
+BXillError bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
   bx_log_debug("BX Walk Project Items");
   int len0hit_count = 0;
   BXInteger offset = {
@@ -258,11 +271,11 @@ void bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
     BXNetRequest *request =
         bx_do_request(app->queue, NULL, WALK_PROJECT_PATH, &limit, &offset);
     if (request == NULL) {
-      return;
+      return ErrorNet;
     }
     if (!json_is_array(request->decoded)) {
       bx_net_request_free(request);
-      return;
+      return ErrorJSON;
     }
 
     arr_len = json_array_size(request->decoded);
@@ -272,10 +285,15 @@ void bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
       len0hit_count = 0;
     }
     for (size_t i = 0; i < arr_len; i++) {
-      _bx_project_sync_item(conn, json_array_get(request->decoded, i), cache);
+      BXillError e = _bx_project_sync_item(
+          conn, json_array_get(request->decoded, i), cache);
+      if (e != NoError) {
+        bx_net_request_free(request);
+        return e;
+      }
     }
     bx_net_request_free(request);
     offset.value += limit.value;
-    thrd_yield();
   } while (arr_len > 0);
+  return NoError;
 }
