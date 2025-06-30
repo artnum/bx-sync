@@ -10,6 +10,7 @@
 #define BXILL_DEFAULT_CACHE_CHECKPOINT 5
 #define BXILL_DEFAULT_CACHE_DIR "/tmp/"
 #define BXILL_STANDBY_SECONDS 600 /* 10 min standby */
+#define BXILL_THREAD_SLEEP_MS 250
 enum e_ObjectState { Error = 0, NeedUpdate, NeedCreate, NeedNothing };
 typedef enum e_ObjectState ObjectState;
 

@@ -26,9 +26,11 @@
 #include <unistd.h>
 
 #define MAX_COMMAND_LEN 100
+#define MS_TO_NS 100000
 extern BXMutex io_mutex;
 extern BXMutex MTX_COUNTRY_LIST;
-const struct timespec THREAD_SLEEP_TIME = {.tv_nsec = 10000000, .tv_sec = 0};
+const struct timespec THREAD_SLEEP_TIME = {
+    .tv_nsec = BXILL_THREAD_SLEEP_MS * MS_TO_NS, .tv_sec = 0};
 
 MYSQL *thread_setup_mysql(bXill *app) {
   MYSQL *conn = NULL;
