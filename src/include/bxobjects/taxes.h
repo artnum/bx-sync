@@ -31,6 +31,6 @@ struct s_BXObjectTax {
 
 void *bx_object_tax_decode(void *jroot);
 void bx_object_tax_free(void *data);
-void bx_taxes_walk_item(bXill *app, MYSQL *conn);
+BXillError bx_taxes_walk_item(bXill *app, MYSQL *conn);
 
 #endif /* BX_OBJECT_TAX_H__ */

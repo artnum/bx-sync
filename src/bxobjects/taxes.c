@@ -99,7 +99,7 @@ void bx_dump(BXObjectTax *tax) {
   _bx_dump_any("end_month", &tax->end_month, 0);
 }
 
-bool _bx_insert_tax(MYSQL *conn, BXObjectTax *tax) {
+BXillError _bx_insert_tax(MYSQL *conn, BXObjectTax *tax) {
   BXDatabaseQuery *query = bx_database_new_query(conn, QUERY_INSERT);
   if (!query) {
     return false;
@@ -117,15 +117,19 @@ bool _bx_insert_tax(MYSQL *conn, BXObjectTax *tax) {
       !bx_database_add_param_uint64(query, ":_checksum", &tax->checksum) ||
       !bx_database_add_param_uint64(query, ":_last_updated", &now)) {
     bx_database_free_query(query);
-    return false;
+    return ErrorGeneric;
   }
 
-  bool success = true;
   if (!bx_database_execute(query) || !bx_database_results(query)) {
-    success = false;
+    BXillError e = ErrorGeneric;
+    if (query->need_reconnect) {
+      e = ErrorSQLReconnect;
+    }
+    bx_database_free_query(query);
+    return e;
   }
   bx_database_free_query(query);
-  return success;
+  return NoError;
 }
 
 ObjectState bx_taxes_check_database(MYSQL *conn, BXObjectTax *tax) {
@@ -151,34 +155,32 @@ ObjectState bx_taxes_check_database(MYSQL *conn, BXObjectTax *tax) {
   return NeedNothing;
 }
 
-bool _bx_sync_item(MYSQL *conn, json_t *item) {
+BXillError _bx_sync_item(MYSQL *conn, json_t *item) {
   BXObjectTax *tax = NULL;
   tax = bx_object_tax_decode(item);
   if (!tax) {
     return false;
   }
-  bool retval = false;
+  BXillError RetVal = NoError;
   switch (bx_taxes_check_database(conn, tax)) {
   case Error:
     bx_log_error("SQL Failed check tax %ld", tax->id.value);
     break;
   case NeedCreate:
-    retval = _bx_insert_tax(conn, tax);
+    RetVal = _bx_insert_tax(conn, tax);
     break;
   case NeedUpdate:
     bx_log_info("UPDATE not yet implemented for %ld", tax->id.value);
-    retval = true;
     break;
   case NeedNothing:
-    retval = true;
     break;
   }
   bx_object_tax_free(tax);
-  return retval;
+  return RetVal;
 }
 
 #define WALK_TAXES_PATH "3.0/taxes?limit=$&offset=$&scope=$"
-void bx_taxes_walk_item(bXill *app, MYSQL *conn) {
+BXillError bx_taxes_walk_item(bXill *app, MYSQL *conn) {
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
   const BXInteger limit = {
@@ -196,16 +198,20 @@ void bx_taxes_walk_item(bXill *app, MYSQL *conn) {
                                             &limit, &offset, &scope);
       if (request == NULL) {
         bx_log_debug("Failed request allocation");
-        return;
+        return ErrorNet;
       }
       bx_log_debug("WALK TAXES %s", request->response->data);
       if (!json_is_array(request->decoded)) {
         bx_net_request_free(request);
-        return;
+        return ErrorJSON;
       }
       arr_len = json_array_size(request->decoded);
       for (size_t j = 0; j < arr_len; j++) {
-        _bx_sync_item(conn, json_array_get(request->decoded, j));
+        BXillError e = _bx_sync_item(conn, json_array_get(request->decoded, j));
+        if (e != NoError) {
+          bx_net_request_free(request);
+          return e;
+        }
       }
       bx_net_request_free(request);
       offset.value += limit.value;
@@ -214,4 +220,5 @@ void bx_taxes_walk_item(bXill *app, MYSQL *conn) {
     scope.value = "inactive";
     scope.value_len = sizeof("inactive");
   }
+  return NoError;
 }

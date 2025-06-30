@@ -422,7 +422,6 @@ BXillError bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache) {
     }
     bx_net_request_free(request);
     offset.value += limit.value;
-    thrd_yield();
   } while (arr_len > 0);
   return NoError;
 }

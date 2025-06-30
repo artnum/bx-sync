@@ -469,6 +469,7 @@ bool bx_database_execute(BXDatabaseQuery *query) {
       case CR_SERVER_GONE_ERROR:
       case CR_SERVER_LOST:
       case CR_CONN_HOST_ERROR:
+        bx_log_debug("Need reconnect");
         query->need_reconnect = true;
         break;
       }
@@ -491,16 +492,18 @@ bool bx_database_execute(BXDatabaseQuery *query) {
     query->has_failed = true;
     bx_log_error("[MYSQL ERROR] %s %s", mysql_stmt_error(query->stmt),
                  query->query);
+    switch (mysql_stmt_errno(query->stmt)) {
+    case CR_SERVER_GONE_ERROR:
+    case CR_SERVER_LOST:
+    case CR_CONN_HOST_ERROR:
+      bx_log_debug("Need reconnect");
+      query->need_reconnect = true;
+      break;
+    }
     return false;
   }
 
   query->affected_rows = mysql_stmt_affected_rows(query->stmt);
-  query->warning_rows = mysql_stmt_warning_count(query->stmt);
-  if (query->warning_rows > 0) {
-    bx_log_debug("MYSQL Warning %d, query %s", query->warning_rows,
-                 query->query);
-    bx_database_print_warnings(query->stmt->mysql);
-  }
   /* mysql_stmt_result_metadata returns NULL if the query doesn't produce
    * a dataset (INSERT, UPDATE, ...) with no error set.
    * So we can differentiate between SELECT, ... here so in result we can
@@ -516,6 +519,13 @@ bool bx_database_execute(BXDatabaseQuery *query) {
     query->has_dataset = false;
   }
   query->exectued = true;
+
+  query->warning_rows = mysql_stmt_warning_count(query->stmt);
+  if (query->warning_rows > 0) {
+    bx_log_debug("MYSQL Warning %d, query %s", query->warning_rows,
+                 query->query);
+    bx_database_print_warnings(query->stmt->mysql);
+  }
 
   return true;
 }

@@ -179,15 +179,16 @@ BXillError execute_request(MYSQL *conn, BXObjectProject *project,
     retval = ErrorGeneric;
     goto exit_point;
   }
-  BXillError e = bx_database_execute(query);
-  if (e != NoError) {
-    retval = e;
-    goto exit_point;
-  }
-  if (bx_database_results(query)) {
-    if (query->warning_rows > 0) {
+  if (!bx_database_execute(query)) {
+    if (query->need_reconnect) {
+      retval = ErrorSQLReconnect;
+    } else {
       retval = ErrorGeneric;
     }
+    goto exit_point;
+  }
+  if (!bx_database_results(query)) {
+    retval = ErrorGeneric;
   }
 
 exit_point:
@@ -207,13 +208,13 @@ BXillError _bx_project_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
   BXillError RetVal = NoError;
   BXObjectProject *project = decode_object(item);
   if (project == NULL) {
-    return false;
+    return ErrorGeneric;
   }
   CacheState ProjectState =
       cache_check_item(cache, (BXGeneric *)&project->id, project->checksum);
   if (ProjectState == CacheOk) {
     bx_project_free(project);
-    return true;
+    return NoError;
   }
 
   if (ProjectState == CacheNotSet) {

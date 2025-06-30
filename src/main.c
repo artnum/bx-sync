@@ -62,11 +62,11 @@ MYSQL *thread_reconnect(MYSQL *conn, bXill *app) {
   if (conn) {
     mysql_close(conn);
   }
-  if (mysql_real_connect(conn, bx_conf_get_string(app->conf, "mysql-host"),
-                         bx_conf_get_string(app->conf, "mysql-user"),
-                         bx_conf_get_string(app->conf, "mysql-password"),
-                         bx_conf_get_string(app->conf, "mysql-database"), 0,
-                         NULL, 0)) {
+  if (!mysql_real_connect(conn, bx_conf_get_string(app->conf, "mysql-host"),
+                          bx_conf_get_string(app->conf, "mysql-user"),
+                          bx_conf_get_string(app->conf, "mysql-password"),
+                          bx_conf_get_string(app->conf, "mysql-database"), 0,
+                          NULL, 0)) {
     return NULL;
   }
   mysql_set_character_set(conn, "utf8mb4");
@@ -81,18 +81,44 @@ void thread_teardown_mysql(MYSQL *conn) {
 void *random_item_thread(void *arg) {
   bXill *app = (bXill *)arg;
   MYSQL *conn = NULL;
-
+  int error_counter = 0;
+  BXillError RetVal = NoError;
   conn = thread_setup_mysql(app);
   bx_log_debug("Random items thread data thread %lx", pthread_self());
   while (atomic_load(&(app->queue->run))) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
-    bx_taxes_walk_item(app, conn);
-    usleep(500);
+    BXillError e = bx_taxes_walk_item(app, conn);
+    if (e != NoError) {
+      if (e == ErrorSQLReconnect) {
+        conn = thread_reconnect(conn, app);
+        if (!conn) {
+          bx_log_error("Reconnect to MySQL failed");
+          RetVal = EXIT_FAILURE;
+          goto exit_point;
+        }
+      } else {
+        if (error_counter++ > 10) {
+          bx_log_error("Too much error, exiting");
+          RetVal = EXIT_FAILURE;
+          goto exit_point;
+        }
+
+        bx_log_error("Unknown error, sleeping a bit");
+        thrd_sleep(&THREAD_ERROR_SLEEP_TIME, NULL);
+        continue;
+      }
+    } else {
+      error_counter = 0;
+    }
+
+    thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
+
+exit_point:
   thread_teardown_mysql(conn);
-  return 0;
+  return (void *)(intptr_t)RetVal;
 }
 
 void *contact_sector_thread(void *arg) {
@@ -549,8 +575,8 @@ int main(int argc, char **argv) {
 
   bx_mutex_init(&MTX_COUNTRY_LIST);
   enum e_ThreadList {
-    PROJECT_THREAD,
     CONTACT_THREAD,
+    PROJECT_THREAD,
     INVOICE_THREAD,
     CONTACT_SECTOR_THREAD,
     RANDOM_ITEM_THREAD,
@@ -609,7 +635,6 @@ int main(int argc, char **argv) {
                  (void *)&app);
   pthread_create(&threads[RANDOM_ITEM_THREAD], NULL, random_item_thread,
                  (void *)&app);
-
   while (kill_signal == 0) {
     pause();
   }
