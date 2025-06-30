@@ -354,20 +354,24 @@ int main(int argc, char **argv) {
   } while (!exit);
 
   atomic_store(&queue->run, 0);
+  sleep(1);
+  pthread_cond_signal(&queue->in_cond);
+  bx_log_debug("Waiting for request thread");
+  pthread_join(request_thread, NULL);
+
+  pthread_cond_broadcast(&queue->out_cond);
   for (int i = 0; i < MAX__THREAD_LIST; i++) {
     bx_log_debug("Waiting for data thread %d", i);
     pthread_join(threads[i], NULL);
   }
-  bx_log_debug("Waiting for request thread");
-  pthread_join(request_thread, NULL);
   bx_country_list_free();
   bx_net_request_list_destroy(queue);
   bx_net_destroy(&net);
+  atomic_store(&app.logthread, 0);
+  pthread_join(log_thread, NULL);
   bx_conf_destroy(&conf);
   mysql_library_end();
 
-  atomic_store(&app.logthread, false);
-  pthread_join(log_thread, NULL);
   bx_log_end();
   return 0;
 }

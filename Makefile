@@ -1,4 +1,4 @@
-NAME=bxnet
+NAME=bxsync
 CLFAGS=`pkg-config --cflags libcurl jansson libxxhash mariadb` -Wall -fanalyzer -ggdb
 LIBS=`pkg-config --libs libcurl jansson libxxhash mariadb` -lpthread -ggdb
 SRCFILES=$(wildcard src/*.c src/*/*.c)
@@ -14,13 +14,13 @@ x:
 	@echo $(OBJFILES)
 
 vg: clean all
-	$(VG) ./bxnet conf.json
+	$(VG) ./$(NAME) conf.json
 
 dbg: clean all
-	$(DB) -ex "r conf.json" ./bxnet
+	$(DB) -ex "r conf.json" $(NAME)
 
 run: clean all
-	./bxnet conf.json
+	./$(NAME) conf.json
 
 $(NAME): $(OBJFILES)
 	$(CC) $^ -o $(NAME) $(LIBS)

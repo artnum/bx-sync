@@ -80,7 +80,6 @@ BXConf *bx_conf_init() {
     return NULL;
   }
 
-  bx_mutex_init(&conf->mutex);
   conf->head = NULL;
   return conf;
 }
@@ -89,7 +88,6 @@ void bx_conf_dump(BXConf *conf) {
   assert(conf != NULL);
 
   printf("=== BXCONF ===\n");
-  bx_mutex_lock(&conf->mutex);
   BXConfValue *current = conf->head;
   while (current) {
     printf("\t0x%lx -> ", current->key);
@@ -113,7 +111,6 @@ void bx_conf_dump(BXConf *conf) {
     printf("\n");
     current = current->next;
   }
-  bx_mutex_unlock(&conf->mutex);
 }
 
 void bx_conf_destroy(BXConf **conf) {
@@ -121,13 +118,8 @@ void bx_conf_destroy(BXConf **conf) {
   assert(*conf != NULL);
 
   BXConf *c = *conf;
-  bx_mutex_lock(&c->mutex);
   BXConfValue *current = c->head;
   while (current != NULL) {
-    bx_mutex_lock(&current->hold);
-    if (current->next != NULL) {
-      bx_mutex_lock(&current->next->hold);
-    }
     BXConfValue *next = current->next;
 
     if (current->s_value != NULL) {
@@ -135,9 +127,6 @@ void bx_conf_destroy(BXConf **conf) {
     }
     free(current);
     current = next;
-    if (next != NULL) {
-      bx_mutex_unlock(&next->hold);
-    }
   }
   free(c);
   *conf = NULL;
@@ -163,7 +152,6 @@ bool bx_conf_set(BXConf *conf, const char *key, void *value,
   v->next = NULL;
   v->key = XXH3_64bits(key, slen);
   v->type = type;
-  bx_mutex_init(&v->hold);
   slen = 0;
   switch (type) {
   case BoolType:
@@ -193,7 +181,6 @@ bool bx_conf_set(BXConf *conf, const char *key, void *value,
     break;
   }
 
-  bx_mutex_lock(&conf->mutex);
   if (conf->head == NULL) {
     conf->head = v;
   } else {
@@ -204,35 +191,20 @@ bool bx_conf_set(BXConf *conf, const char *key, void *value,
     }
     current->next = v;
   }
-  bx_mutex_unlock(&conf->mutex);
   return true;
 }
 
-void bx_conf_release(BXConf *conf, const char *key) {
-  assert(conf != NULL);
-  assert(key != NULL);
-  BXConfValue *v = NULL;
-  bx_mutex_lock(&conf->mutex);
-  v = _bx_conf_get(conf, key);
-  if (v != NULL) {
-    bx_mutex_unlock(&v->hold);
-  }
-  bx_mutex_unlock(&conf->mutex);
-}
+void bx_conf_release(BXConf *conf, const char *key) { return; }
 
 const char *bx_conf_get_string(BXConf *conf, const char *key) {
   assert(conf != NULL);
   assert(key != NULL);
 
   BXConfValue *v = NULL;
-  bx_mutex_lock(&conf->mutex);
   v = _bx_conf_get(conf, key);
   if (v == NULL || v->type != StringType) {
-    bx_mutex_unlock(&conf->mutex);
     return NULL;
   }
-  bx_mutex_lock(&v->hold);
-  bx_mutex_unlock(&conf->mutex);
 
   return v->s_value;
 }
@@ -242,11 +214,9 @@ int bx_conf_get_int(BXConf *conf, const char *key) {
   assert(key != NULL);
 
   BXConfValue *v = NULL;
-  bx_mutex_lock(&conf->mutex);
   v = _bx_conf_get(conf, key);
   if (v == NULL || v->type != IntegerType) {
     return 0;
   }
-  bx_mutex_unlock(&conf->mutex);
   return v->i_value;
 }

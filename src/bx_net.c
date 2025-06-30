@@ -3,6 +3,7 @@
 #include "include/bx_mutex.h"
 #include "include/bx_utils.h"
 
+#include <bits/time.h>
 #include <curl/curl.h>
 #include <curl/easy.h>
 #include <curl/urlapi.h>
@@ -372,103 +373,76 @@ failUnlockFreeAndReturn:
   return NULL;
 }
 
-static inline bool _bx_net_request_list_add(BXNetRequestList *list,
-                                            BXNetRequest *request) {
-  BXNetRequest *current = NULL;
-
-  if (list->head == NULL) {
-    list->head = request;
-  } else {
-    current = list->head;
-    while (current->next != NULL) {
-      current = current->next;
-    }
-    current->next = request;
-  }
-  return true;
-}
-
 uint64_t bx_net_request_list_add(BXNetRequestList *list,
                                  BXNetRequest *request) {
   assert(list != NULL);
   assert(request != NULL);
   uint64_t retval = 0;
-  if (!bx_mutex_lock(&list->mutex)) {
-    return retval;
-  }
-  if (request->id == 0) {
-    request->id = ++list->next_id;
-  }
-  if (_bx_net_request_list_add(list, request)) {
-    retval = request->id;
-  }
-  bx_mutex_unlock(&list->mutex);
+  pthread_mutex_lock(&list->in_mutex);
+  request->id = ++list->next_id;
+  retval = request->id;
+  request->next = list->in;
+  list->in = request;
+  pthread_cond_signal(&list->in_cond);
+  pthread_mutex_unlock(&list->in_mutex);
   return retval;
 }
 
 BXNetRequest *bx_net_request_list_get_finished(BXNetRequestList *list,
                                                uint64_t request_id) {
   assert(list != NULL);
-  BXNetRequest *retval = NULL;
-  BXNetRequest *current = NULL;
-  BXNetRequest *previous = NULL;
-
-  if (!bx_mutex_lock(&list->mutex)) {
-    return NULL;
-  }
-  for (current = list->head; current != NULL; current = current->next) {
-    if (current->id == request_id) {
-      if (atomic_load(&current->done) == false) {
-        break;
+  do {
+    pthread_mutex_lock(&list->out_mutex);
+    while (list->out == NULL) {
+      pthread_cond_wait(&list->out_cond, &list->out_mutex);
+      if (atomic_load(&list->run) == 0) {
+        pthread_mutex_unlock(&list->out_mutex);
+        return NULL;
       }
-      if (previous == NULL) {
-        list->head = current->next;
-      } else {
-        previous->next = current->next;
-      }
-      current->next = NULL;
-      retval = current;
-      break;
     }
-    previous = current;
-  }
-  bx_mutex_unlock(&list->mutex);
-  return retval;
-}
 
-BXNetRequest *_bx_next_request_list_remove(BXNetRequestList *list, bool done) {
-  BXNetRequest *current = NULL;
-  BXNetRequest *previous = NULL;
-
-  for (current = list->head; current != NULL; current = current->next) {
-    if (atomic_load(&current->done) == done) {
-      if (previous == NULL) {
-        list->head = current->next;
-      } else {
-        previous->next = current->next;
-      }
-      current->next = NULL;
+    BXNetRequest *current = list->out;
+    BXNetRequest *previous = NULL;
+    while (current->next != NULL) {
+      previous = current;
+      current = current->next;
+    }
+    if (current->id == request_id) {
+      list->out = previous;
+      pthread_mutex_unlock(&list->out_mutex);
       return current;
     }
-  }
+
+    pthread_mutex_unlock(&list->out_mutex);
+  } while (atomic_load(&list->run));
   return NULL;
 }
 
 void bx_net_request_list_cancel(BXNetRequestList *list) {
   assert(list != NULL);
-  for (BXNetRequest *current = list->head; current != NULL;
-       current = current->next) {
-    atomic_store(&current->cancel, true);
-  }
-}
 
-BXNetRequest *bx_net_request_list_remove(BXNetRequestList *list, bool done) {
-  assert(list != NULL);
-  BXNetRequest *retval = NULL;
-  assert(bx_mutex_lock(&list->mutex) != false);
-  retval = _bx_next_request_list_remove(list, done);
-  bx_mutex_unlock(&list->mutex);
-  return retval;
+  BXNetRequest *l = NULL;
+  pthread_mutex_lock(&list->in_mutex);
+  l = list->in;
+  list->in = NULL;
+
+  for (BXNetRequest *current = l; current != NULL; current = current->next) {
+    current->cancel = true;
+  }
+
+  pthread_cond_broadcast(&list->out_cond);
+  pthread_mutex_lock(&list->out_mutex);
+  if (list->out == NULL) {
+    list->out = l;
+  } else {
+    BXNetRequest *current = list->out;
+    while (current->next != NULL) {
+      current = current->next;
+    }
+    current->next = l;
+  }
+  pthread_cond_broadcast(&list->out_cond);
+  pthread_mutex_unlock(&list->out_mutex);
 }
 
 BXNetRequestList *bx_net_request_list_init(BXNet *net) {
@@ -477,17 +451,31 @@ BXNetRequestList *bx_net_request_list_init(BXNet *net) {
     return NULL;
   }
   atomic_store(&list->run, true);
-  list->head = NULL;
+  list->in = NULL;
+  list->out = NULL;
   list->net = net;
-  bx_mutex_init(&list->mutex);
+  pthread_mutex_init(&list->in_mutex, NULL);
+  pthread_mutex_init(&list->out_mutex, NULL);
+  pthread_cond_init(&list->in_cond, NULL);
+  pthread_cond_init(&list->out_cond, NULL);
   return list;
 }
 
 void bx_net_request_list_destroy(BXNetRequestList *list) {
   BXNetRequest *current = NULL;
   BXNetRequest *next = NULL;
-  assert(bx_mutex_lock(&list->mutex) != false);
-  current = list->head;
+  /* join both list together */
+  if (list->out == NULL) {
+    list->out = list->in;
+  } else {
+    current = list->out;
+    while (current->next != NULL) {
+      current = current->next;
+    }
+    current->next = list->in;
+  }
+
+  current = list->out;
   while (current != NULL) {
     next = current->next;
     if (current->path != NULL) {
@@ -502,19 +490,9 @@ void bx_net_request_list_destroy(BXNetRequestList *list) {
     free(current);
     current = next;
   }
+  pthread_mutex_destroy(&list->in_mutex);
+  pthread_mutex_destroy(&list->out_mutex);
   free(list);
-}
-
-int bx_net_request_list_count(BXNetRequestList *list) {
-  assert(list != NULL);
-  BXNetRequest *current;
-  int i = 0;
-  assert(bx_mutex_lock(&list->mutex) != false);
-  for (current = list->head; current; current = current->next) {
-    i++;
-  }
-  bx_mutex_unlock(&list->mutex);
-  return i;
 }
 
 BXNetRequest *bx_net_request_new(const char *path, json_t *body) {
@@ -526,8 +504,8 @@ BXNetRequest *bx_net_request_new(const char *path, json_t *body) {
     return NULL;
   }
   new->decoded = NULL;
-  atomic_store(&new->done, false);
-  atomic_store(&new->cancel, false);
+  new->done = false;
+  new->cancel = false;
   new->next = NULL;
   new->params = NULL;
   new->response = NULL;
@@ -829,16 +807,10 @@ void bx_net_request_free(BXNetRequest *request) {
 
 static void *_bx_net_loop_worker(void *l) {
   BXNetRequestList *list = (BXNetRequestList *)l;
-  BXNet *net;
-
-  assert(bx_mutex_lock(&list->mutex) != false);
-  net = list->net;
-  bx_mutex_unlock(&list->mutex);
 
   int us_sleep = DEFAULT_RATELIMIT_US;
   uint64_t request_count = 0;
   const float max_request_share = 1;
-  BXNetRequest *request = NULL;
   time_t start = 0;
   time_t stop = 0;
   uint64_t reqCount = 0;
@@ -846,69 +818,92 @@ static void *_bx_net_loop_worker(void *l) {
 
   bool standby = false;
   while (atomic_load(&list->run)) {
-    request = bx_net_request_list_remove(list, false);
-    if (request != NULL) {
-      /* request is locked in search loop */
-      // do request
-      request->response = bx_fetch(net, request->path, request->params);
-      switch (request->response->http_code) {
-      case 429:
-      case 500:
-      case 503:
-        if (standby == false) {
-          bx_log_info("Server need a stanby %d", request->response->http_code);
-          atomic_store(&list->standby, true);
-          standby = true;
-        }
-        break;
-      default:
-        if (standby == true) {
-          atomic_store(&list->standby, false);
-          standby = false;
-        }
-        break;
+    pthread_mutex_lock(&list->in_mutex);
+    while (list->in == NULL) {
+      pthread_cond_wait(&list->in_cond, &list->in_mutex);
+      if (atomic_load(&list->run) == 0) {
+        goto quit_task;
       }
-      reqCount++;
-      time(&stop);
-      if (stop - start > 1) {
-        float reqSec = reqCount / (float)(stop - start);
-        printf("SPEED : %0.2f req/sec\n", reqSec);
-        start = stop;
-        reqCount = 0;
-      }
-      /* readd in list so it can be processed */
-      bx_net_request_list_add(list, request);
-      atomic_store(&request->done, true);
-      request = NULL;
-
-      assert(bx_mutex_lock(&net->mutex_limit) != false);
-      /*
-       * Cumulative average of time slice. Trying to use as much bandwith
-       * as allowed without using too much. As, with each request, we get
-       * remaining requests for a given time, we can speed up or reduce
-       * our request timing. So if it's already in heavy use, the request
-       * rate will drop and go back up when bandwith is available.
-       * It might not please people at bexio, as this is designed to run
-       * 24/7, but we pay for this bandwith we use it.
-       */
-      float us_sleep_1 =
-          (((float)net->limits.reset_time * 1000000) /
-           (max_request_share * (float)net->limits.remaining_request));
-
-      float average_us_sleep =
-          (us_sleep_1 + (us_sleep * (net->request_count - 1))) /
-          net->request_count;
-      us_sleep = (int)average_us_sleep;
-      request_count++;
-      if (us_sleep <= 0 || us_sleep > DEFAULT_RATELIMIT_US * 100) {
-        us_sleep = DEFAULT_RATELIMIT_US;
-      }
-      bx_log_debug("US_SLEEP %d, LIMIT %d, REMAINING %d, RESET %d", us_sleep,
-                   net->limits.max_request, net->limits.remaining_request,
-                   net->limits.reset_time);
-      bx_mutex_unlock(&net->mutex_limit);
     }
+    BXNetRequest *request = list->in;
+    BXNetRequest *previous = NULL;
+    while (request->next) {
+      previous = request;
+      request = request->next;
+    }
+    if (previous) {
+      previous->next = NULL;
+    } else {
+      list->in = NULL;
+    }
+    pthread_mutex_unlock(&list->in_mutex);
 
+    request->response = bx_fetch(list->net, request->path, request->params);
+    switch (request->response->http_code) {
+    case 429:
+    case 500:
+    case 503:
+      if (standby == false) {
+        bx_log_info("Server need a stanby %d", request->response->http_code);
+        atomic_store(&list->standby, true);
+        standby = true;
+      }
+      break;
+    default:
+      if (standby == true) {
+        atomic_store(&list->standby, false);
+        standby = false;
+      }
+      break;
+    }
+    reqCount++;
+    time(&stop);
+    if (stop - start > 1) {
+      float reqSec = reqCount / (float)(stop - start);
+      printf("SPEED : %0.2f req/sec\n", reqSec);
+      start = stop;
+      reqCount = 0;
+    }
+    request->cancel = false;
+    request->done = true;
+
+    pthread_mutex_lock(&list->out_mutex);
+    if (list->out == NULL) {
+      list->out = request;
+    } else {
+      request->next = list->out;
+      list->out = request;
+    }
+    pthread_cond_broadcast(&list->out_cond);
+    pthread_mutex_unlock(&list->out_mutex);
+
+    assert(bx_mutex_lock(&list->net->mutex_limit) != false);
+    /*
+     * Cumulative average of time slice. Trying to use as much bandwith
+     * as allowed without using too much. As, with each request, we get
+     * remaining requests for a given time, we can speed up or reduce
+     * our request timing. So if it's already in heavy use, the request
+     * rate will drop and go back up when bandwith is available.
+     * It might not please people at bexio, as this is designed to run
+     * 24/7, but we pay for this bandwith we use it.
+     */
+    float us_sleep_1 =
+        (((float)list->net->limits.reset_time * 1000000) /
+         (max_request_share * (float)list->net->limits.remaining_request));
+
+    float average_us_sleep =
+        (us_sleep_1 + (us_sleep * (list->net->request_count - 1))) /
+        list->net->request_count;
+    us_sleep = (int)average_us_sleep;
+    request_count++;
+    if (us_sleep <= 0 || us_sleep > DEFAULT_RATELIMIT_US * 100) {
+      us_sleep = DEFAULT_RATELIMIT_US;
+    }
+    bx_log_debug("US_SLEEP %d, LIMIT %d, REMAINING %d, RESET %d", us_sleep,
+                 list->net->limits.max_request,
+                 list->net->limits.remaining_request,
+                 list->net->limits.reset_time);
+    bx_mutex_unlock(&list->net->mutex_limit);
     if (standby) {
       sleep(BXILL_STANDBY_SECONDS);
     } else {
@@ -916,17 +911,12 @@ static void *_bx_net_loop_worker(void *l) {
       usleep(us_sleep);
     }
   }
-
+quit_task:
   bx_log_debug("Emptying undone request list as we go away");
-  assert(bx_mutex_lock(&list->mutex) != false);
-  bx_net_request_list_cancel(list);
+  // bx_net_request_list_cancel(list);
   sleep(3);
-  bx_mutex_unlock(&list->mutex);
-  while ((request = bx_net_request_list_remove(list, false)) != NULL) {
-    bx_net_request_free(request);
-    request = NULL;
-  }
-
+  /* list_cancel keeps in mutex locked */
+  pthread_mutex_unlock(&list->in_mutex);
   return 0;
 }
 

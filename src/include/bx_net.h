@@ -44,8 +44,8 @@ struct s_BXNetURLParams {
 
 typedef struct s_BXNetRequest BXNetRequest;
 struct s_BXNetRequest {
-  atomic_bool done;
-  atomic_bool cancel;
+  bool done;
+  bool cancel;
   uint64_t id;
   char *path;
   json_t *decoded;
@@ -61,8 +61,12 @@ struct s_BXNetRequestList {
   atomic_bool standby; /* when server is down or we request too much */
   uint64_t next_id;
   BXNet *net;
-  BXNetRequest *head;
-  BXMutex mutex;
+  BXNetRequest *in;
+  BXNetRequest *out;
+  pthread_mutex_t in_mutex;
+  pthread_cond_t in_cond;
+  pthread_mutex_t out_mutex;
+  pthread_cond_t out_cond;
 };
 
 BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params);
@@ -72,8 +76,6 @@ pthread_t bx_net_loop(BXNetRequestList *list);
 
 BXNetRequestList *bx_net_request_list_init(BXNet *net);
 uint64_t bx_net_request_list_add(BXNetRequestList *list, BXNetRequest *request);
-BXNetRequest *bx_net_request_list_remove(BXNetRequestList *list, bool done);
-int bx_net_request_list_count(BXNetRequestList *list);
 void bx_net_request_list_destroy(BXNetRequestList *list);
 bool bx_net_request_add_param(BXNetRequest *request, const char *name,
                               const char *value);

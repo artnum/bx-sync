@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <jansson.h>
 #include <stdlib.h>
+#include <threads.h>
 #include <time.h>
 
 #define QUERY_INSERT                                                           \
@@ -208,6 +209,7 @@ void bx_taxes_walk_item(bXill *app, MYSQL *conn) {
       }
       bx_net_request_free(request);
       offset.value += limit.value;
+      thrd_yield();
     } while (arr_len > 0);
     scope.value = "inactive";
     scope.value_len = sizeof("inactive");

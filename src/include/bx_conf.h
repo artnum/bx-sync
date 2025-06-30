@@ -22,11 +22,9 @@ struct s_BXConfValue {
   int i_value;
   double f_value;
   BXConfValue *next;
-  BXMutex hold;
 };
 
 struct s_BXConf {
-  BXMutex mutex;
   BXConfValue *head;
 };
 

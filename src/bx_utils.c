@@ -235,15 +235,13 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
     bx_net_request_free(request);
     return NULL;
   }
-  while (atomic_load(&request->done) == false) {
-    if (atomic_load(&request->cancel) == true) {
-      return NULL;
-    }
-    usleep(100);
-  }
-
   request = bx_net_request_list_get_finished(queue, request_id);
   if (request == NULL) {
+    return NULL;
+  }
+  thrd_yield();
+  if (request->cancel || request->response == NULL) {
+    bx_net_request_free(request);
     return NULL;
   }
   json_t *json = bx_decode_net(request);
