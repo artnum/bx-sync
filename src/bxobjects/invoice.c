@@ -246,10 +246,12 @@ BXillError _bx_invoice_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
   }
 
   if (!bx_contact_is_in_database(conn, (BXGeneric *)&invoice->contact_id)) {
+    RetVal = ErrorGeneric;
     goto fail_and_return;
   }
   if (!bx_project_is_in_database(conn, (BXGeneric *)&invoice->project_id) &&
       invoice->project_id.value > 0) {
+    RetVal = ErrorGeneric;
     goto fail_and_return;
   } else if (invoice->project_id.value == 0) {
     invoice->project_id.isset = false;

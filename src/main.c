@@ -17,6 +17,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <jansson.h>
+#include <mariadb/errmsg.h>
 #include <mariadb/ma_list.h>
 #include <mariadb/mysql.h>
 #include <pthread.h>
@@ -25,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <threads.h>
@@ -54,21 +56,7 @@ MYSQL *thread_setup_mysql(bXill *app) {
                           NULL, 0)) {
     return NULL;
   }
-  mysql_set_character_set(conn, "utf8mb4");
-  return conn;
-}
-
-MYSQL *thread_reconnect(MYSQL *conn, bXill *app) {
-  if (conn) {
-    mysql_close(conn);
-  }
-  if (!mysql_real_connect(conn, bx_conf_get_string(app->conf, "mysql-host"),
-                          bx_conf_get_string(app->conf, "mysql-user"),
-                          bx_conf_get_string(app->conf, "mysql-password"),
-                          bx_conf_get_string(app->conf, "mysql-database"), 0,
-                          NULL, 0)) {
-    return NULL;
-  }
+  bx_log_debug("New MYSQL Thread : %lu", mysql_thread_id(conn));
   mysql_set_character_set(conn, "utf8mb4");
   return conn;
 }
@@ -76,6 +64,35 @@ MYSQL *thread_reconnect(MYSQL *conn, bXill *app) {
 void thread_teardown_mysql(MYSQL *conn) {
   mysql_close(conn);
   mysql_thread_end();
+}
+MYSQL *thread_reconnect(MYSQL *conn, bXill *app) {
+  bx_log_info("Reconnect MYSQL previous thread : %lu", mysql_thread_id(conn));
+  thread_teardown_mysql(conn);
+  return thread_setup_mysql(app);
+}
+
+bool thread_handle_error(BXillError error, bXill *app, MYSQL **conn) {
+  if (error == NoError) {
+    return true;
+  }
+  int ping = mysql_ping(*conn);
+  if (ping == 0) {
+    return true;
+  }
+  switch (mysql_errno(*conn)) {
+  case CR_SERVER_GONE_ERROR:
+    *conn = thread_reconnect(*conn, app);
+    if (*conn == NULL) {
+      bx_log_error("Reconnect to MySQL failed");
+      return false;
+    }
+    break;
+  default:
+    bx_log_error("Unknown error, sleeping a bit");
+    thrd_sleep(&THREAD_ERROR_SLEEP_TIME, NULL);
+    return false;
+  }
+  return true;
 }
 
 void *random_item_thread(void *arg) {
@@ -90,33 +107,19 @@ void *random_item_thread(void *arg) {
       sleep(BXILL_STANDBY_SECONDS);
     }
     BXillError e = bx_taxes_walk_item(app, conn);
-    if (e != NoError) {
-      if (e == ErrorSQLReconnect) {
-        conn = thread_reconnect(conn, app);
-        if (!conn) {
-          bx_log_error("Reconnect to MySQL failed");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-      } else {
-        if (error_counter++ > 10) {
-          bx_log_error("Too much error, exiting");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-
-        bx_log_error("Unknown error, sleeping a bit");
-        thrd_sleep(&THREAD_ERROR_SLEEP_TIME, NULL);
-        continue;
-      }
-    } else {
+    if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
+    } else {
+      if (error_counter++ > BXILL_THREAD_EXIT_MAX_COUNT) {
+        bx_log_error("Too much error, exiting");
+        RetVal = EXIT_FAILURE;
+        break;
+      }
     }
 
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
 
-exit_point:
   thread_teardown_mysql(conn);
   return (void *)(intptr_t)RetVal;
 }
@@ -124,6 +127,8 @@ exit_point:
 void *contact_sector_thread(void *arg) {
   bXill *app = (bXill *)arg;
   MYSQL *conn = NULL;
+  int error_counter = 0;
+  int RetVal = EXIT_SUCCESS;
 
   conn = thread_setup_mysql(app);
   if (!conn) {
@@ -135,14 +140,17 @@ void *contact_sector_thread(void *arg) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
-    if (bx_contact_sector_walk_items(app, conn) == ErrorSQLReconnect) {
-      conn = thread_reconnect(conn, app);
-      if (!conn) {
-        thread_teardown_mysql(conn);
-        bx_log_error("Error reconnecting MySQL");
-        return (void *)EXIT_FAILURE;
+    BXillError e = bx_contact_sector_walk_items(app, conn);
+    if (thread_handle_error(e, app, &conn)) {
+      error_counter = 0;
+    } else {
+      if (error_counter++ > BXILL_THREAD_EXIT_MAX_COUNT) {
+        bx_log_error("Too much error, exiting");
+        RetVal = EXIT_FAILURE;
+        break;
       }
     }
+
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
   thread_teardown_mysql(conn);
@@ -216,51 +224,17 @@ void *contact_thread(void *arg) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
-    BXillError e = bx_contact_walk_items(app, conn, my_cache);
-    if (e != NoError) {
-      if (e == ErrorSQLReconnect) {
-        conn = thread_reconnect(conn, app);
-        if (!conn) {
-          bx_log_error("Reconnect to MySQL failed");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-      } else {
-        if (error_counter++ > 10) {
-          bx_log_error("Too much error, exiting");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-
-        bx_log_error("Unknown error, sleeping a bit");
-        thrd_sleep(&THREAD_ERROR_SLEEP_TIME, NULL);
-        continue;
-      }
-    } else {
+    BXillError e = NoError;
+    (void)((e = bx_contact_walk_items(app, conn, my_cache)) == NoError &&
+           (e = bx_prune_items(app, &contact_prune)) == NoError);
+    if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
-    }
-
-    e = bx_prune_items(app, &contact_prune);
-    if (e != NoError) {
-      if (e == ErrorSQLReconnect) {
-        conn = thread_reconnect(conn, app);
-        if (!conn) {
-          bx_log_error("Reconnect to MySQL failed");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-      } else {
-        if (error_counter++ > 10) {
-          bx_log_error("Too much error, exiting");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-        bx_log_error("Unknown error, sleeping a bit");
-        thrd_sleep(&THREAD_ERROR_SLEEP_TIME, NULL);
-        continue;
-      }
     } else {
-      error_counter = 0;
+      if (error_counter++ > BXILL_THREAD_EXIT_MAX_COUNT) {
+        bx_log_error("Too much error, exiting");
+        RetVal = EXIT_FAILURE;
+        break;
+      }
     }
 
     time_t current = time(NULL);
@@ -273,7 +247,6 @@ void *contact_thread(void *arg) {
 
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
-exit_point:
   bx_database_free_query(contact_prune.query);
   thread_teardown_mysql(conn);
   cache_store(my_cache, filename);
@@ -330,31 +303,19 @@ void *project_thread(void *arg) {
   bx_log_debug("Project data thread %ld", pthread_self());
   time_t start = time(NULL);
   while (atomic_load(&app->queue->run)) {
-    BXillError e = bx_project_walk_item(app, conn, my_cache);
-    if (e != NoError) {
-      if (e != ErrorSQLReconnect) {
-        if (error_counter++ > 10) {
-          bx_log_error("Too much error, exiting");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-
-        bx_log_error("Unknown error, sleeping a bit");
-        thrd_sleep(&THREAD_ERROR_SLEEP_TIME, NULL);
-        continue;
-      } else {
-        conn = thread_reconnect(conn, app);
-        if (!conn) {
-          bx_log_error("Reconnect to MySQL failed");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-      }
-    } else {
+    BXillError e = NoError;
+    (void)((e = bx_project_walk_item(app, conn, my_cache)) == NoError &&
+           (e = bx_prune_items(app, &project_prune)) == NoError);
+    if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
+    } else {
+      if (error_counter++ > BXILL_THREAD_EXIT_MAX_COUNT) {
+        bx_log_error("Too much error, exiting");
+        RetVal = EXIT_FAILURE;
+        break;
+      }
     }
 
-    bx_prune_items(app, &project_prune);
     time_t current = time(NULL);
     if (current - start > cache_checkpoint) {
       cache_stats(my_cache, "projects");
@@ -365,8 +326,6 @@ void *project_thread(void *arg) {
 
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
-
-exit_point:
   bx_database_free_query(project_prune.query);
   thread_teardown_mysql(conn);
   cache_store(my_cache, filename);
@@ -421,53 +380,18 @@ void *invoice_thread(void *arg) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
+    BXillError e = NoError;
+    (void)((e = bx_invoice_walk_items(app, conn, my_cache)) == NoError &&
+           (e = bx_prune_items(app, &invoice_prune)) == NoError);
 
-    BXillError e = bx_invoice_walk_items(app, conn, my_cache);
-    if (e != NoError) {
-      if (e != ErrorSQLReconnect) {
-        if (error_counter++ > 10) {
-          bx_log_error("Too much error, exiting");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-
-        bx_log_error("Unknown error, sleeping a bit");
-        thrd_sleep(&THREAD_ERROR_SLEEP_TIME, NULL);
-        continue;
-      } else {
-        conn = thread_reconnect(conn, app);
-        if (!conn) {
-          bx_log_error("Reconnect to MySQL failed");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-      }
-    } else {
+    if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
-    }
-
-    e = bx_prune_items(app, &invoice_prune);
-    if (e != NoError) {
-      if (e != ErrorSQLReconnect) {
-        if (error_counter++ > 10) {
-          bx_log_error("Too much error, exiting");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-
-        bx_log_error("Unknown error, sleeping a bit");
-        thrd_sleep(&THREAD_ERROR_SLEEP_TIME, NULL);
-        continue;
-      } else {
-        conn = thread_reconnect(conn, app);
-        if (!conn) {
-          bx_log_error("Reconnect to MySQL failed");
-          RetVal = EXIT_FAILURE;
-          goto exit_point;
-        }
-      }
     } else {
-      error_counter = 0;
+      if (error_counter++ > BXILL_THREAD_EXIT_MAX_COUNT) {
+        bx_log_error("Too much error, exiting");
+        RetVal = EXIT_FAILURE;
+        break;
+      }
     }
 
     time_t current = time(NULL);
@@ -479,7 +403,6 @@ void *invoice_thread(void *arg) {
 
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
-exit_point:
   bx_database_free_query(invoice_prune.query);
   cache_store(my_cache, filename);
   free(filename);
@@ -553,6 +476,35 @@ int deamon() {
   return 0;
 }
 
+#define PID_FILE "/run/bxsync.pid"
+int write_pid(const char *pid_file) {
+  char pidcontent[32];
+  int fd = -1;
+  if (pid_file == NULL) {
+    fd = open(PID_FILE, O_WRONLY | O_CREAT, 0644);
+  } else {
+    fd = open(pid_file, O_WRONLY | O_CREAT, 0644);
+  }
+  if (fd < 0) {
+    return -1;
+  }
+
+  if (flock(fd, LOCK_EX | LOCK_NB) == -1) {
+    close(fd);
+    return -1;
+  }
+
+  memset(pidcontent, 0, 32);
+  snprintf(pidcontent, 32, "%d\n", getpid());
+  size_t len = strlen(pidcontent);
+  if (write(fd, pidcontent, len) < len) {
+    close(fd);
+    return -1;
+  }
+  fsync(fd);
+  return fd;
+}
+
 /* ENTRY POINT */
 int main(int argc, char **argv) {
   BXConf *conf = NULL;
@@ -566,10 +518,17 @@ int main(int argc, char **argv) {
   conf = bx_conf_init();
   if (!bx_conf_loadfile(conf, argv[1])) {
     bx_conf_destroy(&conf);
-    return -1;
+    exit(EXIT_FAILURE);
   }
 
   if (deamon() != 0) {
+    bx_conf_destroy(&conf);
+    exit(EXIT_FAILURE);
+  }
+  int pid_file_fd = -1;
+  pid_file_fd = write_pid(bx_conf_get_string(conf, "pid-file"));
+  if (pid_file_fd < 0) {
+    bx_conf_destroy(&conf);
     exit(EXIT_FAILURE);
   }
 
@@ -578,7 +537,6 @@ int main(int argc, char **argv) {
     CONTACT_THREAD,
     PROJECT_THREAD,
     INVOICE_THREAD,
-    CONTACT_SECTOR_THREAD,
     RANDOM_ITEM_THREAD,
 
     MAX__THREAD_LIST
@@ -631,8 +589,6 @@ int main(int argc, char **argv) {
 
   pthread_create(&threads[PROJECT_THREAD], NULL, project_thread, (void *)&app);
   pthread_create(&threads[INVOICE_THREAD], NULL, invoice_thread, (void *)&app);
-  pthread_create(&threads[CONTACT_SECTOR_THREAD], NULL, contact_sector_thread,
-                 (void *)&app);
   pthread_create(&threads[RANDOM_ITEM_THREAD], NULL, random_item_thread,
                  (void *)&app);
   while (kill_signal == 0) {
@@ -659,5 +615,6 @@ int main(int argc, char **argv) {
   mysql_library_end();
 
   bx_log_end();
+  close(pid_file_fd);
   return 0;
 }

@@ -329,14 +329,6 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
     return ErrorGeneric;
   }
 
-  if (!bx_user_is_in_database(conn, (BXGeneric *)&contact->user_id)) {
-    bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id);
-  }
-  if (contact->user_id.value != contact->owner_id.value &&
-      !bx_user_is_in_database(conn, (BXGeneric *)&contact->owner_id)) {
-    bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id);
-  }
-
   CacheState state =
       cache_check_item(c, (BXGeneric *)&contact->id, contact->checksum);
   if (state == CacheOk) {
@@ -356,6 +348,14 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
   if (query == NULL) {
     bx_object_contact_free(contact);
     return ErrorGeneric;
+  }
+
+  if (!bx_user_is_in_database(conn, (BXGeneric *)&contact->user_id)) {
+    bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id);
+  }
+  if (contact->user_id.value != contact->owner_id.value &&
+      !bx_user_is_in_database(conn, (BXGeneric *)&contact->owner_id)) {
+    bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id);
   }
 
   uint64_t now = time(NULL);

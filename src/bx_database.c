@@ -469,7 +469,6 @@ bool bx_database_execute(BXDatabaseQuery *query) {
       case CR_SERVER_GONE_ERROR:
       case CR_SERVER_LOST:
       case CR_CONN_HOST_ERROR:
-        bx_log_debug("Need reconnect");
         query->need_reconnect = true;
         break;
       }
@@ -496,7 +495,6 @@ bool bx_database_execute(BXDatabaseQuery *query) {
     case CR_SERVER_GONE_ERROR:
     case CR_SERVER_LOST:
     case CR_CONN_HOST_ERROR:
-      bx_log_debug("Need reconnect");
       query->need_reconnect = true;
       break;
     }

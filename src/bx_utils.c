@@ -332,7 +332,8 @@ void *bx_log_out_thread(void *arg) {
   return 0;
 }
 
-void _bx_log_queue(char *msg, const char *err, char *file, int line) {
+void _bx_log_queue(char *msg, const char *err, char *file, int line,
+                   pthread_t thid) {
   struct s_BXLogMsg *new = NULL;
   new = malloc(sizeof(*new));
   if (new == NULL) {
@@ -341,8 +342,8 @@ void _bx_log_queue(char *msg, const char *err, char *file, int line) {
   if (err == NULL) {
     snprintf(new->msg, LOG_MSG_BUFFER_MAX, "%s", msg);
   } else {
-    snprintf(new->msg, LOG_MSG_BUFFER_MAX, "%s [%s:%d] %s", err, file, line,
-             msg);
+    snprintf(new->msg, LOG_MSG_BUFFER_MAX, "%s (%lX) [%s:%d] %s", err, thid,
+             file, line, msg);
   }
   if (bx_mutex_lock(&LOG.mutex) != false) {
     new->next = LOG.head;
@@ -353,7 +354,7 @@ void _bx_log_queue(char *msg, const char *err, char *file, int line) {
   }
 }
 
-void _bx_log_debug(char *file, int line, const char *fmt, ...) {
+void _bx_log_debug(char *file, int line, pthread_t thid, const char *fmt, ...) {
   if (LOG.level < LOG_LEVEL_DEBUG) {
     return;
   }
@@ -362,10 +363,10 @@ void _bx_log_debug(char *file, int line, const char *fmt, ...) {
   va_start(ap, fmt);
   vsnprintf(x, LOG_MSG_BUFFER_MAX, fmt, ap);
   va_end(ap);
-  _bx_log_queue(x, "DEBUG", file, line);
+  _bx_log_queue(x, "DEBUG", file, line, thid);
 }
 
-void _bx_log_info(char *file, int line, const char *fmt, ...) {
+void _bx_log_info(char *file, int line, pthread_t thid, const char *fmt, ...) {
   if (LOG.level < LOG_LEVEL_INFO) {
     return;
   }
@@ -374,10 +375,10 @@ void _bx_log_info(char *file, int line, const char *fmt, ...) {
   va_start(ap, fmt);
   vsnprintf(x, LOG_MSG_BUFFER_MAX, fmt, ap);
   va_end(ap);
-  _bx_log_queue(x, "INFO", file, line);
+  _bx_log_queue(x, "INFO", file, line, thid);
 }
 
-void _bx_log_error(char *file, int line, const char *fmt, ...) {
+void _bx_log_error(char *file, int line, pthread_t thid, const char *fmt, ...) {
   if (LOG.level < LOG_LEVEL_ERROR) {
     return;
   }
@@ -386,7 +387,7 @@ void _bx_log_error(char *file, int line, const char *fmt, ...) {
   va_start(ap, fmt);
   vsnprintf(x, LOG_MSG_BUFFER_MAX, fmt, ap);
   va_end(ap);
-  _bx_log_queue(x, "ERROR", file, line);
+  _bx_log_queue(x, "ERROR", file, line, thid);
 }
 
 void bx_log_end() { fclose(LOG.fp); }

@@ -227,7 +227,7 @@ BXillError _bx_project_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
   } else if (ProjectState == CacheNotSync) {
     BXillError e = bx_project_update_db(conn, project);
     if (e != NoError) {
-      bx_log_error("Failed insert language %d", project->id.value);
+      bx_log_error("Failed insert project %d", project->id.value);
       RetVal = e;
       goto fail_and_return;
     }

@@ -4,6 +4,7 @@
 #include "bx_mutex.h"
 #include "bx_net.h"
 #include "bxill.h"
+#include <pthread.h>
 #include <stdio.h>
 
 typedef struct {
@@ -51,15 +52,18 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
 void bx_log_reopen();
 
 /* Logging functions */
-void _bx_log_error(char *file, int line, const char *fmt, ...);
-void _bx_log_info(char *file, int line, const char *fmt, ...);
-void _bx_log_debug(char *file, int line, const char *fmt, ...);
+void _bx_log_error(char *file, int line, pthread_t thid, const char *fmt, ...);
+void _bx_log_info(char *file, int line, pthread_t thid, const char *fmt, ...);
+void _bx_log_debug(char *file, int line, pthread_t thid, const char *fmt, ...);
 #define bx_log_error(fmt, ...)                                                 \
-  _bx_log_error(__FILE__, __LINE__, (fmt)__VA_OPT__(, ) __VA_ARGS__)
+  _bx_log_error(__FILE__, __LINE__, pthread_self(),                            \
+                (fmt)__VA_OPT__(, ) __VA_ARGS__)
 #define bx_log_info(fmt, ...)                                                  \
-  _bx_log_info(__FILE__, __LINE__, (fmt)__VA_OPT__(, ) __VA_ARGS__)
+  _bx_log_info(__FILE__, __LINE__, pthread_self(),                             \
+               (fmt)__VA_OPT__(, ) __VA_ARGS__)
 #define bx_log_debug(fmt, ...)                                                 \
-  _bx_log_debug(__FILE__, __LINE__, (fmt)__VA_OPT__(, ) __VA_ARGS__)
+  _bx_log_debug(__FILE__, __LINE__, pthread_self(),                            \
+                (fmt)__VA_OPT__(, ) __VA_ARGS__)
 void bx_log_end();
 bool bx_string_compare(const char *str1, const char *str2, size_t max);
 void *bx_log_out_thread(void *arg);

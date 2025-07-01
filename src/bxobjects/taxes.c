@@ -165,6 +165,7 @@ BXillError _bx_sync_item(MYSQL *conn, json_t *item) {
   switch (bx_taxes_check_database(conn, tax)) {
   case Error:
     bx_log_error("SQL Failed check tax %ld", tax->id.value);
+    RetVal = ErrorGeneric;
     break;
   case NeedCreate:
     RetVal = _bx_insert_tax(conn, tax);
@@ -179,6 +180,7 @@ BXillError _bx_sync_item(MYSQL *conn, json_t *item) {
   return RetVal;
 }
 
+const struct timespec TAXES_SLEEP = {.tv_nsec = 0, .tv_sec = 5};
 #define WALK_TAXES_PATH "3.0/taxes?limit=$&offset=$&scope=$"
 BXillError bx_taxes_walk_item(bXill *app, MYSQL *conn) {
   BXInteger offset = {
@@ -215,7 +217,7 @@ BXillError bx_taxes_walk_item(bXill *app, MYSQL *conn) {
       }
       bx_net_request_free(request);
       offset.value += limit.value;
-      thrd_yield();
+      thrd_sleep(&TAXES_SLEEP, NULL);
     } while (arr_len > 0);
     scope.value = "inactive";
     scope.value_len = sizeof("inactive");
