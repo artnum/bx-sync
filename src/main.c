@@ -42,6 +42,15 @@ const struct timespec THREAD_SLEEP_TIME = {
 const struct timespec THREAD_ERROR_SLEEP_TIME = {
     .tv_nsec = 3 * BXILL_THREAD_SLEEP_MS * MS_TO_NS, .tv_sec = 0};
 
+void thread_blocks_signals() {
+  sigset_t set;
+  sigaddset(&set, SIGALRM);
+  sigaddset(&set, SIGHUP);
+  sigaddset(&set, SIGINT);
+  sigaddset(&set, SIGTERM);
+  pthread_sigmask(SIG_BLOCK, &set, NULL);
+}
+
 MYSQL *thread_setup_mysql(bXill *app) {
   MYSQL *conn = NULL;
   conn = mysql_init(NULL);
@@ -100,6 +109,7 @@ void *random_item_thread(void *arg) {
   MYSQL *conn = NULL;
   int error_counter = 0;
   BXillError RetVal = NoError;
+  thread_blocks_signals();
   conn = thread_setup_mysql(app);
   bx_log_debug("Random items thread data thread %lx", pthread_self());
   while (atomic_load(&(app->queue->run))) {
@@ -130,6 +140,7 @@ void *contact_sector_thread(void *arg) {
   int error_counter = 0;
   int RetVal = EXIT_SUCCESS;
 
+  thread_blocks_signals();
   conn = thread_setup_mysql(app);
   if (!conn) {
     thread_teardown_mysql(conn);
@@ -154,7 +165,7 @@ void *contact_sector_thread(void *arg) {
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
   thread_teardown_mysql(conn);
-  return (void *)EXIT_SUCCESS;
+  return (void *)(intptr_t)RetVal;
 }
 
 #define CACHE_FILE_CONTACT "contact.bin"
@@ -163,6 +174,7 @@ void *contact_thread(void *arg) {
   int RetVal = EXIT_SUCCESS;
   int error_counter = 0;
 
+  thread_blocks_signals();
   /* mysql init */
   MYSQL *conn = NULL;
   conn = thread_setup_mysql(app);
@@ -263,6 +275,7 @@ void *project_thread(void *arg) {
   bXill *app = (bXill *)arg;
   int RetVal = EXIT_SUCCESS;
   int error_counter = 0;
+  thread_blocks_signals();
   /* mysql setup */
   MYSQL *conn = NULL;
   conn = thread_setup_mysql(app);
@@ -340,6 +353,7 @@ void *invoice_thread(void *arg) {
   MYSQL *conn = NULL;
   BXillError RetVal = NoError;
   int error_counter = 0;
+  thread_blocks_signals();
   /* mysql setup */
   conn = thread_setup_mysql(app);
 
@@ -433,28 +447,28 @@ int deamon() {
   pid_t pid;
   pid = fork();
   if (pid < 0) {
-    fprintf(stderr, "Failed fork: %s\n", strerror(errno));
+    bx_log_write("Cannot fork");
     exit(EXIT_FAILURE);
   }
   if (pid > 0) {
     exit(EXIT_SUCCESS);
   }
   if (setsid() < 0) {
-    fprintf(stderr, "Failed new session: %s\n", strerror(errno));
+    bx_log_write("Cannot set session id");
     exit(EXIT_FAILURE);
   }
 
   /* double forking because we must */
   pid = fork();
   if (pid < 0) {
-    fprintf(stderr, "Second fork failed: %s\n", strerror(errno));
+    bx_log_write("Cannot fork again");
     exit(EXIT_FAILURE);
   }
   if (pid > 0) {
     exit(EXIT_SUCCESS);
   }
   if (chdir("/") < 0) {
-    fprintf(stderr, "Failed change dir: %s\n", strerror(errno));
+    bx_log_write("Cannot change directory");
   }
   umask(0);
 
@@ -464,6 +478,7 @@ int deamon() {
   close(STDERR_FILENO);
   int fd = open("/dev/null", O_RDWR);
   if (fd < 0) {
+    bx_log_write("Cannot open /dev/null");
     exit(EXIT_FAILURE);
   }
   dup2(fd, STDIN_FILENO);
@@ -486,10 +501,12 @@ int write_pid(const char *pid_file) {
     fd = open(pid_file, O_WRONLY | O_CREAT, 0644);
   }
   if (fd < 0) {
+    bx_log_write("Log file could not be opened");
     return -1;
   }
 
   if (flock(fd, LOCK_EX | LOCK_NB) == -1) {
+    bx_log_write("Log file could not be locked");
     close(fd);
     return -1;
   }
@@ -498,6 +515,7 @@ int write_pid(const char *pid_file) {
   snprintf(pidcontent, 32, "%d\n", getpid());
   size_t len = strlen(pidcontent);
   if (write(fd, pidcontent, len) < len) {
+    bx_log_write("Log file could not be written");
     close(fd);
     return -1;
   }
@@ -521,16 +539,25 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
+  bx_log_init(&app, bx_conf_get_string(conf, "log-file"),
+              bx_conf_get_int(conf, "log-level"));
   if (deamon() != 0) {
+    bx_log_write("Error going deamon");
     bx_conf_destroy(&conf);
+    bx_log_close();
     exit(EXIT_FAILURE);
   }
   int pid_file_fd = -1;
   pid_file_fd = write_pid(bx_conf_get_string(conf, "pid-file"));
   if (pid_file_fd < 0) {
+    bx_log_write("Error writing pid");
     bx_conf_destroy(&conf);
+    bx_log_close();
     exit(EXIT_FAILURE);
   }
+
+  setuid(bx_conf_get_int(conf, "uid"));
+  setgid(bx_conf_get_int(conf, "gid"));
 
   bx_mutex_init(&MTX_COUNTRY_LIST);
   enum e_ThreadList {
@@ -561,8 +588,6 @@ int main(int argc, char **argv) {
 
   mysql_library_init(argc, argv, NULL);
 
-  bx_log_init(&app, bx_conf_get_string(conf, "log-file"),
-              bx_conf_get_int(conf, "log-level"));
   bx_conf_release(conf, "log-file");
   bx_utils_init();
   app.conf = conf;

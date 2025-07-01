@@ -255,22 +255,30 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
 
 struct s_BXLog LOG;
 
+#define LOG_FILE "/var/log/bxsync.log"
 bool bx_log_init(bXill *app, const char *path, int level) {
   assert(app != NULL);
-  assert(path != NULL);
 
   LOG.head = NULL;
   LOG.level = level;
-  LOG.path = strdup(path);
+  if (path == NULL) {
+    LOG.path = strdup(LOG_FILE);
+  } else {
+    LOG.path = strdup(path);
+  }
   LOG.app = app;
   bx_mutex_init(&LOG.mutex);
-  LOG.fp = fopen(path, "a");
+  LOG.fp = fopen(LOG.path, "a");
   if (!LOG.fp) {
     return false;
   }
   return true;
 }
 
+/* direct write to log file, only in init phase */
+void bx_log_write(const char *msg) { fprintf(LOG.fp, "%s\n", msg); }
+/* direct close, only in init phase */
+void bx_log_close() { fclose(LOG.fp); }
 void bx_log_reopen() {
   bx_log_info("Reloading log file, closing current");
   pthread_mutex_lock(&LOG.mutex);

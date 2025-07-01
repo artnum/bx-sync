@@ -34,6 +34,8 @@ struct s_BXLog {
 bool bx_log_init(bXill *app, const char *path, int level);
 void bx_utils_init(void);
 bool bx_utils_gen_id(uint64_t *id);
+void bx_log_write(const char *msg);
+void bx_log_close();
 /**
  * \brief Convert a serie of int into an int array.
  * A serie of int would be something like "1,2,3,4", "1/2/3/4", ...,
