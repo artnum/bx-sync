@@ -443,7 +443,7 @@ void signal_hander(int sig) {
 }
 
 /* deamonizer */
-int deamon(int fork_single) {
+int deamon(int fork_once) {
   pid_t pid;
   pid = fork();
   if (pid < 0) {
@@ -459,7 +459,7 @@ int deamon(int fork_single) {
   }
 
   /* double forking if not configured otherwise */
-  if (fork_single != 0) {
+  if (fork_once == 0) {
     pid = fork();
     if (pid < 0) {
       bx_log_write("Cannot fork again");
@@ -543,7 +543,7 @@ int main(int argc, char **argv) {
 
   bx_log_init(&app, bx_conf_get_string(conf, "log-file"),
               bx_conf_get_int(conf, "log-level"));
-  if (deamon(bx_conf_get_int(conf, "fork-single")) != 0) {
+  if (deamon(bx_conf_get_int(conf, "fork-once")) != 0) {
     bx_log_write("Error going deamon");
     bx_conf_destroy(&conf);
     bx_log_close();
