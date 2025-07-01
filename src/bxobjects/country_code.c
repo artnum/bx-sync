@@ -1,10 +1,8 @@
 #include "../include/bxobjects/country_code.h"
-#include "../include/bx_database.h"
 #include "../include/bx_mutex.h"
 #include "../include/bx_object.h"
 #include "../include/bx_object_value.h"
 #include "../include/bx_utils.h"
-#include <curses.h>
 #include <jansson.h>
 
 Country *COUNTRY_LIST = NULL;
