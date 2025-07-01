@@ -26,7 +26,7 @@ int main(int argc, char **argv) {
   CacheItem *item = NULL;
   for (uint32_t i = 0; (item = cache_get(c, i)) != NULL; i++) {
     char *value = bx_object_value_to_string((BXGeneric *)&item->id);
-    printf("Cache item #%05u: %s [%lX]\n", i, value, item->checksum);
+    printf("Cache item #%05u\t%s\t[%016lX]\n", i, value, item->checksum);
     free(value);
   }
 
