@@ -1,0 +1,18 @@
+[Unit]
+Description=BEXIO Sync
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/local/bin/bxsync /usr/local/etc/bxsync.json
+Restart=on-failure
+KillSignal=SIGTERM
+KillMode=process
+StandardOutput=journal
+StandardError=journal
+TimeoutStopSec=10
+TimeoutStartSec=5
+PIDFile=/run/bxsync.pid
+
+[Install]
+WantedBy=multi-user.target
