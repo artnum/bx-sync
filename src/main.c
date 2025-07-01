@@ -443,7 +443,7 @@ void signal_hander(int sig) {
 }
 
 /* deamonizer */
-int deamon() {
+int deamon(int fork_single) {
   pid_t pid;
   pid = fork();
   if (pid < 0) {
@@ -458,14 +458,16 @@ int deamon() {
     exit(EXIT_FAILURE);
   }
 
-  /* double forking because we must */
-  pid = fork();
-  if (pid < 0) {
-    bx_log_write("Cannot fork again");
-    exit(EXIT_FAILURE);
-  }
-  if (pid > 0) {
-    exit(EXIT_SUCCESS);
+  /* double forking if not configured otherwise */
+  if (fork_single != 0) {
+    pid = fork();
+    if (pid < 0) {
+      bx_log_write("Cannot fork again");
+      exit(EXIT_FAILURE);
+    }
+    if (pid > 0) {
+      exit(EXIT_SUCCESS);
+    }
   }
   if (chdir("/") < 0) {
     bx_log_write("Cannot change directory");
@@ -541,7 +543,7 @@ int main(int argc, char **argv) {
 
   bx_log_init(&app, bx_conf_get_string(conf, "log-file"),
               bx_conf_get_int(conf, "log-level"));
-  if (deamon() != 0) {
+  if (deamon(bx_conf_get_int(conf, "fork-single")) != 0) {
     bx_log_write("Error going deamon");
     bx_conf_destroy(&conf);
     bx_log_close();
