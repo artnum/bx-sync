@@ -37,6 +37,7 @@ bool cache_set_item(Cache *c, BXGeneric *item_id, uint64_t checksum);
 void cache_destroy(Cache *c);
 CacheState cache_check_item(Cache *c, BXGeneric *item_id, uint64_t checksum);
 
+CacheItem *cache_get(Cache *c, uint32_t id);
 void cache_stats(Cache *c, const char *name);
 /**
  * Store the cache into a file.

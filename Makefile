@@ -1,5 +1,5 @@
 NAME=bxsync
-CLFAGS=`pkg-config --cflags libcurl jansson libxxhash mariadb` -Wall -fanalyzer -ggdb
+CFLAGS=`pkg-config --cflags libcurl jansson libxxhash mariadb` -Wall -fanalyzer -ggdb
 LIBS=`pkg-config --libs libcurl jansson libxxhash mariadb` -lpthread -ggdb
 SRCFILES=$(wildcard src/*.c src/*/*.c)
 OBJFILES=$(addprefix build/, $(addsuffix .o,$(basename $(notdir $(SRCFILES)))))
@@ -26,10 +26,10 @@ $(NAME): $(OBJFILES)
 	$(CC) $^ -o $(NAME) $(LIBS)
 
 build/%.o: src/%.c
-	$(CC) $(CLFAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 build/%.o: src/*/%.c
-	$(CC) $(CLFAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 
 clean:

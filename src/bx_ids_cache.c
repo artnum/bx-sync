@@ -118,9 +118,11 @@ Cache *cache_create() {
 }
 
 void cache_stats(Cache *c, const char *name) {
+#ifndef NO_LOG
   float cs = (float)c->count * sizeof(CacheItem) / 1024;
   bx_log_info("Cache %s : %.2f size [kb], %lu items, %lu total, %lu version",
               name, cs, c->count, c->size, c->version);
+#endif
 }
 
 BXGeneric *_item_to_id(CacheItem *item) {
@@ -557,7 +559,9 @@ bool cache_load(Cache *c, const char *filename) {
     }
     c->size = 0;
     c->count = 0;
+#ifndef NO_LOG
     bx_log_error("Cache file seems corrupted");
+#endif
   } else {
     c->count = i;
     /* just in case someone modified manually the file */
