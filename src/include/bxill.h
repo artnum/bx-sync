@@ -15,6 +15,15 @@
 enum e_ObjectState { Error = 0, NeedUpdate, NeedCreate, NeedNothing };
 typedef enum e_ObjectState ObjectState;
 
+enum e_ThreadList {
+  CONTACT_THREAD,
+  PROJECT_THREAD,
+  INVOICE_THREAD,
+  RANDOM_ITEM_THREAD,
+
+  MAX__THREAD_LIST
+};
+
 typedef enum e_BXillError {
   NoError = 0,
   ErrorGeneric,

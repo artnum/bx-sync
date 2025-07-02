@@ -17,10 +17,10 @@
   "pr_state_id = :pr_state_id, pr_project_type_id = :pr_project_type_id,"      \
   "contact_id = :contact_id, contact_sub_id = :contact_sub_id,"                \
   "pr_invoice_type_id = :pr_invoice_type_id, pr_invoice_type_amount = "        \
-  ":pr_invoice_type_amount"                                                    \
+  ":pr_invoice_type_amount, "                                                  \
   "pr_budget_type_id = :pr_budget_type_id, pr_budget_type_amount = "           \
-  ":pr_budget_type_amount"                                                     \
-  "_checksum := :_checkum, _last_updated = :_last_updated WHERE id = :id;"
+  ":pr_budget_type_amount, "                                                   \
+  "_checksum := :_checksum, _last_updated = :_last_updated WHERE id = :id;"
 #define QUERY_INSERT                                                           \
   "INSERT IGNORE INTO pr_project (id, uuid, nr, name, start_date,"             \
   "end_date, comment, pr_state_id, pr_project_type_id, contact_id,"            \
@@ -227,7 +227,7 @@ BXillError _bx_project_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
   } else if (ProjectState == CacheNotSync) {
     BXillError e = bx_project_update_db(conn, project);
     if (e != NoError) {
-      bx_log_error("Failed insert project %d", project->id.value);
+      bx_log_error("Failed update project %d", project->id.value);
       RetVal = e;
       goto fail_and_return;
     }

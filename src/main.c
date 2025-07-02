@@ -14,7 +14,6 @@
 #include "include/bxobjects/project.h"
 #include "include/bxobjects/taxes.h"
 
-#include <errno.h>
 #include <fcntl.h>
 #include <jansson.h>
 #include <mariadb/errmsg.h>
@@ -543,33 +542,28 @@ int main(int argc, char **argv) {
 
   bx_log_init(&app, bx_conf_get_string(conf, "log-file"),
               bx_conf_get_int(conf, "log-level"));
-  if (deamon(bx_conf_get_int(conf, "fork-once")) != 0) {
-    bx_log_write("Error going deamon");
-    bx_conf_destroy(&conf);
-    bx_log_close();
-    exit(EXIT_FAILURE);
-  }
-  int pid_file_fd = -1;
-  pid_file_fd = write_pid(bx_conf_get_string(conf, "pid-file"));
-  if (pid_file_fd < 0) {
-    bx_log_write("Error writing pid");
-    bx_conf_destroy(&conf);
-    bx_log_close();
-    exit(EXIT_FAILURE);
-  }
 
-  setuid(bx_conf_get_int(conf, "uid"));
-  setgid(bx_conf_get_int(conf, "gid"));
+  int pid_file_fd = -1;
+  if (bx_conf_get_int(conf, "no-deamon") == 0) {
+    if (deamon(bx_conf_get_int(conf, "fork-once")) != 0) {
+      bx_log_write("Error going deamon");
+      bx_conf_destroy(&conf);
+      bx_log_close();
+      exit(EXIT_FAILURE);
+    }
+    pid_file_fd = write_pid(bx_conf_get_string(conf, "pid-file"));
+    if (pid_file_fd < 0) {
+      bx_log_write("Error writing pid");
+      bx_conf_destroy(&conf);
+      bx_log_close();
+      exit(EXIT_FAILURE);
+    }
+
+    setuid(bx_conf_get_int(conf, "uid"));
+    setgid(bx_conf_get_int(conf, "gid"));
+  }
 
   bx_mutex_init(&MTX_COUNTRY_LIST);
-  enum e_ThreadList {
-    CONTACT_THREAD,
-    PROJECT_THREAD,
-    INVOICE_THREAD,
-    RANDOM_ITEM_THREAD,
-
-    MAX__THREAD_LIST
-  };
   pthread_t threads[MAX__THREAD_LIST];
 
   struct sigaction sa = {.sa_handler = signal_hander, .sa_flags = 0};
@@ -642,6 +636,8 @@ int main(int argc, char **argv) {
   mysql_library_end();
 
   bx_log_end();
-  close(pid_file_fd);
+  if (pid_file_fd != -1) {
+    close(pid_file_fd);
+  }
   return 0;
 }
