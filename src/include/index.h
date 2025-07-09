@@ -1,26 +1,23 @@
 #ifndef INDEX_H__
 #define INDEX_H__
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
 enum RBColor { BLACK, RED };
 struct Index {
-  struct Index *parent;
-  union {
-    struct {
-      struct Index *left;
-      struct Index *right;
-    };
-    struct Index *child[2];
-  };
-  enum RBColor color;
+  _Atomic uintptr_t parent;
+  _Atomic uintptr_t child[2];
+  _Atomic enum RBColor color;
   uint64_t key[2]; /* we store indexes that can be uuid */
   void *data;
 };
 
 struct RBTree {
-  struct Index *root;
+  _Atomic uintptr_t root;
+  pthread_mutex_t write;
 };
 
 struct RBTree *rbtree_create();
