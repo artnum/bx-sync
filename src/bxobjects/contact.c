@@ -41,7 +41,7 @@
   "_checksum, _last_updated, _archived"                                        \
   ") VALUES (:id, :contact_type_id, :salutation_id, :country, :user_id, "      \
   ":owner_id,"                                                                 \
-  ":title_id, :salutation_form, :postcode, :nr, :name_1, name_2, :birthday, "  \
+  ":title_id, :salutation_form, :postcode, :nr, :name_1, :name_2, :birthday, " \
   ":address,"                                                                  \
   ":city, :mail, :mail_second, :phone_fixed, :phone_fixed_second, "            \
   ":phone_mobile,"                                                             \
@@ -349,13 +349,20 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
     bx_object_contact_free(contact);
     return ErrorGeneric;
   }
+  uint64_t cache_id[2] = {
+      bx_object_value_to_index((BXGeneric *)&contact->user_id), 0};
 
-  if (!bx_user_is_in_database(conn, (BXGeneric *)&contact->user_id)) {
-    bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id);
+  if (!index_has(&app->indexes, BXILL_USER_CACHE, cache_id)) {
+    if (bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id)) {
+      index_set(&app->indexes, BXILL_USER_CACHE, cache_id);
+    }
   }
+  cache_id[0] = bx_object_value_to_index((BXGeneric *)&contact->owner_id);
   if (contact->user_id.value != contact->owner_id.value &&
-      !bx_user_is_in_database(conn, (BXGeneric *)&contact->owner_id)) {
-    bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id);
+      !index_has(&app->indexes, BXILL_USER_CACHE, cache_id)) {
+    if (bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id)) {
+      index_set(&app->indexes, BXILL_USER_CACHE, cache_id);
+    }
   }
 
   uint64_t now = time(NULL);
@@ -410,6 +417,8 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
   }
   if (query->warning_rows == 0 && !query->has_failed) {
     cache_set_item(c, (BXGeneric *)&contact->id, contact->checksum);
+    cache_id[0] = bx_object_value_to_index((BXGeneric *)&contact->id);
+    index_set(&app->indexes, BXILL_CONTACT_CACHE, cache_id);
   }
   bx_database_free_query(query);
   query = NULL;

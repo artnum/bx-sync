@@ -827,9 +827,11 @@ static void *_bx_net_loop_worker(void *l) {
     }
     BXNetRequest *request = list->in;
     BXNetRequest *previous = NULL;
+    int i = 0;
     while (request->next) {
       previous = request;
       request = request->next;
+      i++;
     }
     if (previous) {
       previous->next = NULL;

@@ -6,6 +6,7 @@
 #include "../include/bxill.h"
 
 #define GET_USER_PATH "3.0/users/$"
+#define GET_FICTIONAL_USER_PATH "3.0/fictional_users/$"
 #define QUERY_INSERT                                                           \
   "INSERT INTO user (_checksum, _last_updated, "                               \
   "id, firstname, lastname, email, salutation_type, is_superadmin, "           \
@@ -87,14 +88,22 @@ bool bx_user_is_in_database(MYSQL *conn, BXGeneric *item) {
 }
 
 bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
-  bx_log_debug("BX Use Sync Item");
+  bx_log_debug("BX Use Sync Item %lu", bx_object_value_to_index(item));
   BXNetRequest *request = bx_do_request(app->queue, NULL, GET_USER_PATH, item);
-  if (request == NULL) {
-    return false;
-  }
   if (request == NULL || request->response == NULL ||
       request->response->http_code != 200) {
-    return false;
+    if (request) {
+      bx_net_request_free(request);
+    }
+    request = NULL;
+    request = bx_do_request(app->queue, NULL, GET_FICTIONAL_USER_PATH, item);
+    if (request == NULL || request->response == NULL ||
+        request->response->http_code != 200) {
+      if (request) {
+        bx_net_request_free(request);
+      }
+      return false;
+    }
   }
   BXObjectUser *user = decode_object(request->decoded);
   bx_net_request_free(request);
@@ -129,7 +138,11 @@ bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
     bx_database_add_param_uint64(query, ":_checksum", &user->checksum);
     bx_database_add_param_uint64(query, ":_last_updated", &now);
 
-    bx_database_execute(query);
+    bx_log_error("Adding user %s ", user->remote_firstname.value);
+    if (!bx_database_execute(query)) {
+      bx_log_error("Adding user %s failed", user->remote_firstname.value);
+    }
+    index_dump(&app->indexes, BXILL_USER_CACHE);
     bx_database_free_query(query);
     free_object(user);
     return true;

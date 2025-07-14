@@ -588,6 +588,9 @@ int main(int argc, char **argv) {
   bx_utils_init();
   app.conf = conf;
   atomic_store(&app.logthread, true);
+  index_init(&app.indexes);
+  index_new(&app.indexes, "User");
+  index_new(&app.indexes, "Contact");
   pthread_t log_thread;
   pthread_create(&log_thread, NULL, bx_log_out_thread, (void *)&app);
 

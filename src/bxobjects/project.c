@@ -204,7 +204,8 @@ BXillError bx_project_insert_db(MYSQL *conn, BXObjectProject *project) {
   return execute_request(conn, project, QUERY_INSERT);
 }
 
-BXillError _bx_project_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
+BXillError _bx_project_sync_item(bXill *app, MYSQL *conn, json_t *item,
+                                 Cache *cache) {
   BXillError RetVal = NoError;
   BXObjectProject *project = decode_object(item);
   if (project == NULL) {
@@ -214,6 +215,13 @@ BXillError _bx_project_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
       cache_check_item(cache, (BXGeneric *)&project->id, project->checksum);
   if (ProjectState == CacheOk) {
     bx_project_free(project);
+    return NoError;
+  }
+
+  uint64_t cache_id[2] = {
+      bx_object_value_to_index((BXGeneric *)&project->contact_id), 0};
+  if (!index_has(&app->indexes, BXILL_CONTACT_CACHE, cache_id)) {
+    bx_log_debug("Not yet in cache %lu", cache_id[0]);
     return NoError;
   }
 
@@ -255,7 +263,7 @@ BXillError bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
   }
 
   bx_net_request_free(request);
-  return _bx_project_sync_item(conn, request->decoded, cache);
+  return _bx_project_sync_item(app, conn, request->decoded, cache);
 }
 
 #define WALK_PROJECT_PATH "2.0/pr_project?limit=$&offset=$"
@@ -287,7 +295,7 @@ BXillError bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
     }
     for (size_t i = 0; i < arr_len; i++) {
       BXillError e = _bx_project_sync_item(
-          conn, json_array_get(request->decoded, i), cache);
+          app, conn, json_array_get(request->decoded, i), cache);
       if (e != NoError) {
         bx_net_request_free(request);
         return e;
