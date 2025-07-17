@@ -7,16 +7,23 @@
 #include <string.h>
 
 enum RBColor { BLACK, RED };
+struct IntrusiveList {
+  void *next;
+  void *previous;
+};
 struct RBNode {
+  struct IntrusiveList list;
   _Atomic uintptr_t parent;
   _Atomic uintptr_t child[2];
   _Atomic enum RBColor color;
   uint64_t key[2]; /* we store indexes that can be uuid */
-  uintptr_t data;
+  _Atomic uintptr_t data;
 };
 
 struct RBTree {
   _Atomic uintptr_t root;
+  void *front;
+  void *back;
   pthread_mutex_t write;
 };
 
@@ -28,6 +35,7 @@ typedef struct {
 
 typedef struct {
   Index *idxs;
+  int *item_count;
   int count;
   int length;
   pthread_mutex_t mutex;
@@ -39,6 +47,9 @@ bool index_has(Indexes *indexes, int id, uint64_t *key);
 bool index_set(Indexes *indexes, int id, uint64_t *key);
 void index_delete(Indexes *indexes, int id, uint64_t *key);
 void index_dump(Indexes *indexes, int id);
+void index_traverse(Indexes *indexes, int id,
+                    void (*cb)(void *userdata, struct RBNode *node),
+                    void *userdata);
 
 struct RBTree *rbtree_create();
 void rbtree_insert(struct RBTree *tree, struct RBNode *idx, uintptr_t *oldata);

@@ -13,6 +13,7 @@
 #include "include/bxobjects/language.h"
 #include "include/bxobjects/project.h"
 #include "include/bxobjects/taxes.h"
+#include "include/index.h"
 
 #include <fcntl.h>
 #include <jansson.h>
@@ -616,7 +617,20 @@ int main(int argc, char **argv) {
   pthread_create(&threads[RANDOM_ITEM_THREAD], NULL, random_item_thread,
                  (void *)&app);
   while (kill_signal == 0) {
-    pause();
+    sleep(1);
+    pthread_mutex_lock(&app.indexes.mutex);
+    pthread_mutex_lock(&app.indexes.idxs[1].tree->write);
+    printf("Node by list ID :\n");
+    int Count = 0;
+    for (struct IntrusiveList *node = app.indexes.idxs[1].tree->front; node;
+         node = node->next) {
+      printf("%lu -> ", ((struct RBNode *)node)->key[0]);
+      Count++;
+    }
+    printf(" NULL (items : %d)\n", Count);
+    pthread_mutex_unlock(&app.indexes.idxs[1].tree->write);
+    printf("MAX TREE SIZE : %d\n", app.indexes.item_count[1]);
+    pthread_mutex_unlock(&app.indexes.mutex);
   }
   atomic_store(&queue->run, 0);
   sleep(5);

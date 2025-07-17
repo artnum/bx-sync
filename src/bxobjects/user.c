@@ -138,11 +138,9 @@ bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
     bx_database_add_param_uint64(query, ":_checksum", &user->checksum);
     bx_database_add_param_uint64(query, ":_last_updated", &now);
 
-    bx_log_error("Adding user %s ", user->remote_firstname.value);
     if (!bx_database_execute(query)) {
       bx_log_error("Adding user %s failed", user->remote_firstname.value);
     }
-    index_dump(&app->indexes, BXILL_USER_CACHE);
     bx_database_free_query(query);
     free_object(user);
     return true;
