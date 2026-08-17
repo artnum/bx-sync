@@ -8,6 +8,7 @@
 #include <mysql/mysql.h>
 
 BXillError bx_prune_items(bXill *app, PruningParameters *param) {
+#if 0
   CacheIter iter;
 
   cache_iter_init(param->cache, &iter);
@@ -34,6 +35,7 @@ BXillError bx_prune_items(bXill *app, PruningParameters *param) {
   }
   bx_database_free_result(param->query);
   cache_prune(param->cache);
+#endif
   return NoError;
 }
 

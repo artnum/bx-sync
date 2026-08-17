@@ -43,7 +43,7 @@ const struct timespec THREAD_ERROR_SLEEP_TIME = {
     .tv_nsec = 3 * BXILL_THREAD_SLEEP_MS * MS_TO_NS, .tv_sec = 0};
 
 void thread_blocks_signals() {
-  sigset_t set;
+  sigset_t set = {0};
   sigaddset(&set, SIGALRM);
   sigaddset(&set, SIGHUP);
   sigaddset(&set, SIGINT);
@@ -592,6 +592,8 @@ int main(int argc, char **argv) {
   index_init(&app.indexes);
   index_new(&app.indexes, "User");
   index_new(&app.indexes, "Contact");
+  index_new(&app.indexes, "Project");
+  index_new(&app.indexes, "BulkProject");
   pthread_t log_thread;
   pthread_create(&log_thread, NULL, bx_log_out_thread, (void *)&app);
 
@@ -611,26 +613,13 @@ int main(int argc, char **argv) {
 
   /* RUN CODE TO UPDATE DATABASE */
   pthread_create(&threads[CONTACT_THREAD], NULL, contact_thread, (void *)&app);
-
   pthread_create(&threads[PROJECT_THREAD], NULL, project_thread, (void *)&app);
   pthread_create(&threads[INVOICE_THREAD], NULL, invoice_thread, (void *)&app);
   pthread_create(&threads[RANDOM_ITEM_THREAD], NULL, random_item_thread,
                  (void *)&app);
+
   while (kill_signal == 0) {
     sleep(1);
-    pthread_mutex_lock(&app.indexes.mutex);
-    pthread_mutex_lock(&app.indexes.idxs[1].tree->write);
-    printf("Node by list ID :\n");
-    int Count = 0;
-    for (struct IntrusiveList *node = app.indexes.idxs[1].tree->front; node;
-         node = node->next) {
-      printf("%lu -> ", ((struct RBNode *)node)->key[0]);
-      Count++;
-    }
-    printf(" NULL (items : %d)\n", Count);
-    pthread_mutex_unlock(&app.indexes.idxs[1].tree->write);
-    printf("MAX TREE SIZE : %d\n", app.indexes.item_count[1]);
-    pthread_mutex_unlock(&app.indexes.mutex);
   }
   atomic_store(&queue->run, 0);
   sleep(5);

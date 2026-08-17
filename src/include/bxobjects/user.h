@@ -9,6 +9,7 @@ struct s_BXObjectUser {
   enum e_BXObjectType type;
 
   uint64_t checksum;
+  uint64_t key_id[2];
 
   BXUInteger remote_id;
   BXString remote_salutation_type;

@@ -11,6 +11,8 @@ struct s_BXObjectProject {
   enum e_BXObjectType type;
 
   uint64_t checksum;
+  uint64_t k_id[2];
+  uint64_t k_contact_id[2];
 
   BXUInteger id;
   BXUuid uuid;

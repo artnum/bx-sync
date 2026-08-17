@@ -14,11 +14,11 @@
   "VALUES (:_checksum, :_last_updated, :id, :firstname, :lastname, "           \
   ":email, :salutation_type, :is_superadmin, :is_accountant);"
 #define QUERY_UPDATE                                                           \
-  "INSERT IGNORE INTO user (_checksum, _last_updated, "                        \
-  "id, firstname, lastname, email, salutation_type, is_superadmin, "           \
-  "is_accountant) "                                                            \
-  "VALUES (:_checksum, :_last_updated, :id, :firstname, :lastname, "           \
-  ":email, :salutation_type, :is_superadmin, :is_accountant);"
+  "UPDATE user SET _checksum = :_checksum, _last_updated = :_last_updated, "   \
+  "id, firstname = :firstname, lastname = :lastname, email = :email, "         \
+  "salutation_type = :salutation_type, is_superadmin = :is_superadmin, "       \
+  "is_accountant = :is_accountant WHERE id = :id;"
+#define QUERY_SELECT_CHECKSUM "SELECT _checksum FROM user WHERE id = :id"
 
 static inline void free_object(BXObjectUser *user) {
   if (user == NULL) {
@@ -87,8 +87,23 @@ bool bx_user_is_in_database(MYSQL *conn, BXGeneric *item) {
   return true;
 }
 
+BXRetValChecksum bx_user_get_db_checksum(bXill *app, MYSQL *conn,
+                                         BXGeneric *item) {
+  BXRetValChecksum ret = {
+      .r.success = false, .r.type = BXRetVal_checksum, .data = 0};
+
+  BXDatabaseQuery *query = bx_database_new_query(conn, QUERY_SELECT_CHECKSUM);
+  if (query != NULL && bx_database_add_bxtype(query, ":id", item) &&
+      bx_database_execute(query) && bx_database_results(query)) {
+    if (query->results != NULL && query->results->column_count > 0) {
+      ret.data = query->results->columns[0].i_value;
+      ret.r.success = true;
+    }
+  }
+  return ret;
+}
+
 bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
-  bx_log_debug("BX Use Sync Item %lu", bx_object_value_to_index(item));
   BXNetRequest *request = bx_do_request(app->queue, NULL, GET_USER_PATH, item);
   if (request == NULL || request->response == NULL ||
       request->response->http_code != 200) {
@@ -114,65 +129,46 @@ bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   char is_superadmin = user->remote_is_superadmin.value ? 1 : 0;
   char is_accountant = user->remote_is_accountant.value ? 1 : 0;
   time_t now = time(NULL);
-  BXDatabaseQuery *query =
-      bx_database_new_query(conn, "SELECT _checksum FROM user WHERE id = :id;");
-  bx_database_add_param_int64(query, ":id", &user->remote_id.value);
-  bx_database_execute(query);
-  bx_database_results(query);
-  if (query->results == NULL || query->results->column_count == 0) {
-    bx_database_free_query(query);
+
+  BXRetValChecksum dbresult = bx_user_get_db_checksum(app, conn, item);
+  BXDatabaseQuery *query = NULL;
+  if (!dbresult.r.success) {
     query = bx_database_new_query(conn, QUERY_INSERT);
-
-    bx_database_add_bxtype(query, ":id", (BXGeneric *)&user->remote_id);
-    bx_database_add_bxtype(query, ":firstname",
-                           (BXGeneric *)&user->remote_firstname);
-    bx_database_add_bxtype(query, ":lastname",
-                           (BXGeneric *)&user->remote_lastname);
-    bx_database_add_bxtype(query, ":email", (BXGeneric *)&user->remote_email);
-    bx_database_add_bxtype(query, ":salutation_type",
-                           (BXGeneric *)&user->remote_salutation_type);
-
-    bx_database_add_param_uint8(query, ":is_superadmin", &is_superadmin);
-    bx_database_add_param_uint8(query, ":is_accountant", &is_accountant);
-
-    bx_database_add_param_uint64(query, ":_checksum", &user->checksum);
-    bx_database_add_param_uint64(query, ":_last_updated", &now);
-
-    if (!bx_database_execute(query)) {
-      bx_log_error("Adding user %s failed", user->remote_firstname.value);
+  } else if (dbresult.data != user->checksum) {
+    query = bx_database_new_query(conn, QUERY_UPDATE);
+  } else {
+    uint64_t idx[2];
+    bx_object_id_to_key(item, idx);
+    free_object(user);
+    if (index_set(&app->indexes, BXILL_USER_CACHE, idx, dbresult.data)) {
+      return true;
+    } else {
+      return false;
     }
-    bx_database_free_query(query);
-    free_object(user);
-    return true;
-  }
-  if (query->results[0].columns[0].i_value == user->checksum) {
-    bx_database_free_query(query);
-    free_object(user);
-    return true;
   }
 
-  bx_database_free_query(query);
-  query = bx_database_new_query(conn, QUERY_UPDATE);
-  uint64_t not_deleted = 0;
-  bx_database_add_param_char(query, ":firstname", user->remote_firstname.value,
-                             user->remote_firstname.value_len);
-  bx_database_add_param_char(query, ":lastname", user->remote_lastname.value,
-                             user->remote_lastname.value_len);
-  bx_database_add_param_char(query, ":email", user->remote_email.value,
-                             user->remote_email.value_len);
-  bx_database_add_param_char(query, ":salutation_type",
-                             user->remote_salutation_type.value,
-                             user->remote_salutation_type.value_len);
+  bool ret = false;
+  if (bx_database_add_bxtype(query, ":id", (BXGeneric *)&user->remote_id) &&
+      bx_database_add_bxtype(query, ":firstname",
+                             (BXGeneric *)&user->remote_firstname) &&
+      bx_database_add_bxtype(query, ":lastname",
+                             (BXGeneric *)&user->remote_lastname) &&
+      bx_database_add_bxtype(query, ":email",
+                             (BXGeneric *)&user->remote_email) &&
+      bx_database_add_bxtype(query, ":salutation_type",
+                             (BXGeneric *)&user->remote_salutation_type) &&
 
-  bx_database_add_param_uint8(query, ":is_superadmin", &is_superadmin);
-  bx_database_add_param_uint8(query, ":is_accountant", &is_accountant);
+      bx_database_add_param_uint8(query, ":is_superadmin", &is_superadmin) &&
+      bx_database_add_param_uint8(query, ":is_accountant", &is_accountant) &&
 
-  bx_database_add_param_uint64(query, ":_checksum", &user->checksum);
-  bx_database_add_param_uint64(query, ":_last_updated", &now);
-  bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
-
-  bx_database_execute(query);
+      bx_database_add_param_uint64(query, ":_checksum", &user->checksum) &&
+      bx_database_add_param_uint64(query, ":_last_updated", &now) &&
+      bx_database_execute(query)) {
+    ret = true;
+  } else {
+    bx_log_error("Setting user %s failed", user->remote_firstname.value);
+  }
   bx_database_free_query(query);
   free_object(user);
-  return true;
+  return ret;
 }

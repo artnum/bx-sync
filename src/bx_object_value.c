@@ -1,6 +1,7 @@
 #include "include/bx_object_value.h"
 #include "include/bx_object.h"
 #include <assert.h>
+#include <math.h>
 #include <xxh3.h>
 
 static inline char *_bx_uint2str(BXUInteger *value) {
@@ -130,6 +131,84 @@ uint64_t bx_object_value_to_index(BXGeneric *value) {
     return XXH3_64bits((void *)&((BXUuid *)value)->value, sizeof(uint64_t) * 2);
   default:
     return 0;
+  }
+}
+
+void bx_object_id_to_key(BXGeneric *value, uint64_t key[2]) {
+  assert(value != NULL);
+  key[0] = 0;
+  key[1] = 0;
+  switch (*(uint8_t *)value) {
+  case BX_OBJECT_TYPE_INTEGER:
+    if (!((BXInteger *)value)->isset) {
+      return;
+    }
+    key[1] = (uint64_t)((BXInteger *)value)->value;
+    return;
+  case BX_OBJECT_TYPE_UINTEGER:
+    if (!((BXInteger *)value)->isset) {
+      return;
+    }
+    key[1] = (uint64_t)((BXUInteger *)value)->value;
+    return;
+  case BX_OBJECT_TYPE_BOOL:
+    if (!((BXInteger *)value)->isset) {
+      return;
+    }
+    key[1] = (uint64_t)((BXBool *)value)->value;
+    return;
+  case BX_OBJECT_TYPE_FLOAT: {
+    if (!((BXFloat *)value)->isset) {
+      return;
+    }
+    if (((BXFloat *)value)->value == 0.0) {
+      return;
+    }
+    if (isnan(((BXFloat *)value)->value)) {
+      ((BXFloat *)value)->value = NAN;
+    }
+    union {
+      double u;
+      uint64_t i;
+    } v;
+    v.u = ((BXFloat *)value)->value;
+    if (v.i & 0x8000000000000000ULL) {
+      v.i = ~v.i;
+    } else {
+      v.i ^= 0x8000000000000000ULL;
+    }
+    key[1] = v.i;
+    return;
+  }
+  case BX_OBJECT_TYPE_STRING: {
+    if (!((BXString *)value)->isset) {
+      return;
+    }
+    XXH128_hash_t v = XXH3_128bits(((BXString *)value)->value,
+                                   ((BXString *)value)->value_len);
+    key[1] = v.low64;
+    key[0] = v.high64;
+    return;
+  }
+  case BX_OBJECT_TYPE_BYTES: {
+    if (!((BXBytes *)value)->isset) {
+      return;
+    }
+    XXH128_hash_t v =
+        XXH3_128bits(((BXBytes *)value)->value, ((BXBytes *)value)->value_len);
+    key[1] = v.low64;
+    key[0] = v.high64;
+    return;
+  }
+  case BX_OBJECT_TYPE_UUID: {
+    if (!((BXUuid *)value)->isset) {
+      return;
+    }
+    memcpy(key, ((BXUuid *)value)->value, sizeof(uint64_t) * 2);
+    return;
+  }
+  default:
+    return;
   }
 }
 

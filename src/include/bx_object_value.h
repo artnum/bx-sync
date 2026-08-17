@@ -194,6 +194,7 @@ inline static void _bx_dump_any(const char *key, const void *value, int level) {
   }
 }
 
+void bx_object_id_to_key(BXGeneric *value, uint64_t key[2]);
 int bx_object_value_compare(BXAny *a, BXGeneric *b);
 bool bx_object_value_copy(BXAny *dest, BXGeneric *src);
 char *bx_any_to_str(BXAny *a);

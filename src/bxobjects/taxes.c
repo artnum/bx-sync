@@ -214,6 +214,9 @@ BXillError bx_taxes_walk_item(bXill *app, MYSQL *conn) {
           bx_net_request_free(request);
           return e;
         }
+#ifndef NO_VALGRIND
+        thrd_yield();
+#endif
       }
       bx_net_request_free(request);
       offset.value += limit.value;

@@ -1,7 +1,9 @@
 #include "include/bx_net.h"
 #include "include/bx_conf.h"
 #include "include/bx_mutex.h"
+#include "include/bx_object.h"
 #include "include/bx_utils.h"
+#include "include/hash.h"
 
 #include <bits/time.h>
 #include <curl/curl.h>
@@ -10,6 +12,7 @@
 #include <jansson.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +20,13 @@
 #include <unistd.h>
 
 #define BX_API_AUTH_HEADER "Authorization: Bearer "
+
+typedef struct {
+  uint64_t checksum;
+  time_t last_change;
+} NetQueryState;
+
+static BXHashTable *net_history;
 
 BXNet *bx_net_init(BXConf *conf) {
   BXNet *net = NULL;
@@ -61,6 +71,15 @@ BXNet *bx_net_init(BXConf *conf) {
   net->endpoint_len = elen;
   net->curl = curl_easy_init();
   if (!net->curl) {
+    free(token);
+    free(endpoint);
+    free(net);
+    return NULL;
+  }
+
+  if (!net_history) {
+    free(token);
+    free(endpoint);
     free(net);
     return NULL;
   }
@@ -102,6 +121,8 @@ void bx_net_destroy(BXNet **net) {
     curl_easy_cleanup((*net)->curl);
   }
   free(*net);
+
+
   *net = NULL;
 }
 
@@ -359,6 +380,9 @@ BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params) {
   bx_mutex_unlock(&net->mutex);
 
   free(auth_token);
+
+  net_rdata->seen = false;
+  net_rdata->checksum = XXH3_64bits(net_rdata->data, net_rdata->data_len);
   free(url);
 
   return net_rdata;
@@ -804,6 +828,15 @@ void bx_net_request_free(BXNetRequest *request) {
 }
 
 #define DEFAULT_RATELIMIT_US 60000 /* 1000 requests per minute */
+
+void dump_stat(uint64_t key, void *data) {
+  printf("DUMP STATS\n");
+  NetQueryState *stat = data;
+  if (stat) {
+    printf("KEY %lu :: CK %lu | LAST %lu", key, stat->checksum,
+           stat->last_change);
+  }
+}
 
 static void *_bx_net_loop_worker(void *l) {
   BXNetRequestList *list = (BXNetRequestList *)l;

@@ -12,6 +12,9 @@ struct s_BXObjectContact {
   enum e_BXObjectType type;
 
   uint64_t checksum;
+  uint64_t key_id[2];
+  uint64_t key_user_id[2];
+  uint64_t key_owner_id[2];
 
   BXUInteger id;
   BXUInteger contact_type_id;

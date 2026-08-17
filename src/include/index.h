@@ -17,13 +17,13 @@ struct RBNode {
   _Atomic uintptr_t child[2];
   _Atomic enum RBColor color;
   uint64_t key[2]; /* we store indexes that can be uuid */
-  _Atomic uintptr_t data;
+  _Atomic uint64_t data;
 };
 
 struct RBTree {
-  _Atomic uintptr_t root;
   void *front;
   void *back;
+  _Atomic uintptr_t root;
   pthread_mutex_t write;
 };
 
@@ -44,17 +44,19 @@ typedef struct {
 void index_init(Indexes *indexes);
 int index_new(Indexes *indexes, const char *name);
 bool index_has(Indexes *indexes, int id, uint64_t *key);
-bool index_set(Indexes *indexes, int id, uint64_t *key);
+bool index_set(Indexes *indexes, int id, uint64_t *key, uint64_t data);
 void index_delete(Indexes *indexes, int id, uint64_t *key);
 void index_dump(Indexes *indexes, int id);
 void index_traverse(Indexes *indexes, int id,
                     void (*cb)(void *userdata, struct RBNode *node),
                     void *userdata);
+void index_destroy(Indexes *indexes);
+uint64_t index_get(Indexes *indexes, int id, uint64_t *key);
 
 struct RBTree *rbtree_create();
-void rbtree_insert(struct RBTree *tree, struct RBNode *idx, uintptr_t *oldata);
+void rbtree_insert(struct RBTree *tree, struct RBNode *idx, uint64_t *oldata);
 uintptr_t rbtree_search(struct RBTree *tree, uint64_t *key);
-struct RBNode *rbtree_create_node(uint64_t key[2], uintptr_t data);
+struct RBNode *rbtree_create_node(uint64_t key[2], uint64_t data);
 struct RBNode *rbtree_delete(struct RBTree *tree, uint64_t key[2]);
 void rbtree_print(struct RBNode *root, int level, char branch);
 void rbtree_free_node(struct RBNode *idx);

@@ -33,6 +33,8 @@ struct s_BXNetRData {
   char *data;
   size_t data_len;
   long int http_code;
+  uint64_t checksum;
+  bool seen;
 };
 
 typedef struct s_BXNetURLParams BXNetURLParams;

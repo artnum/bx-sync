@@ -1,5 +1,6 @@
 #include "include/index.h"
-#include "include/bx_ids_cache.h"
+#include "include/bxill.h"
+
 #include <assert.h>
 #include <bits/pthreadtypes.h>
 #include <pthread.h>
@@ -7,6 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 #include <sys/types.h>
 #include <threads.h>
 
@@ -229,7 +231,9 @@ inline static void _rbt_insert_fixup(struct RBTree *tree, struct RBNode *x) {
   SET_BLACK(CAST(tree->root));
 }
 void rbtree_insert(struct RBTree *tree, struct RBNode *node,
-                   uintptr_t *olddata) {
+                   uint64_t *olddata) {
+  assert(tree != NULL);
+  assert(node != NULL);
   struct RBNode *parent = NULL;
   struct RBNode *found = _rbt_index_search(tree, node->key, &parent);
 
@@ -288,30 +292,33 @@ struct RBTree *rbtree_create() {
   return tree;
 }
 
-/* TODO */
-static inline void _rbt_destroy_node(struct RBNode *node) {}
-
-/* TODO */
 void rbtree_destroy(struct RBTree *tree) {
-  struct RBNode *node = NULL;
-  node = CAST(tree->root);
-  if (!node) {
-    free(tree);
-    return;
+  pthread_mutex_lock(&tree->write);
+  /* set the tree empty right away */
+  atomic_store(&tree->root, (uintptr_t)NULL);
+
+  struct RBNode *current = (struct RBNode *)tree->front;
+  tree->front = NULL;
+  tree->back = NULL;
+  while (current) {
+    struct RBNode *next = ((struct IntrusiveList *)current)->next;
+
+    /* disconnect node */
+    atomic_store(&current->child[0], (uintptr_t)NULL);
+    atomic_store(&current->child[1], (uintptr_t)NULL);
+    atomic_store(&current->parent, (uintptr_t)NULL);
+    ((struct IntrusiveList *)current)->next = NULL;
+    ((struct IntrusiveList *)current)->previous = NULL;
+
+    rbtree_free_node(current);
+    current = next;
   }
 
-  while (!IS_NIL(LEFT_CHILD(node))) {
-    node = CAST(LEFT_CHILD(node));
-  }
-  while (node->parent != 0) {
-    struct RBNode *tmp = CAST(node->parent);
-    rbtree_free_node(node);
-    node = tmp;
-    SET_LEFT_CHILD(tmp, NULL);
-  }
+  pthread_mutex_unlock(&tree->write);
+  pthread_mutex_destroy(&tree->write);
 }
 
-struct RBNode *rbtree_create_node(uint64_t key[2], uintptr_t data) {
+struct RBNode *rbtree_create_node(uint64_t key[2], uint64_t data) {
   struct RBNode *new = calloc(1, sizeof(*new));
   if (new) {
     new->list.next = NULL;
@@ -454,7 +461,7 @@ struct RBNode *_rbtree_delete(struct RBTree *tree, struct RBNode *z,
   return y;
 }
 
-struct RBNode *rbtree_delete(struct RBTree *tree, uint64_t *key) {
+struct RBNode *rbtree_delete(struct RBTree *tree, uint64_t key[2]) {
   pthread_mutex_lock(&tree->write);
   struct RBNode *z = _rbt_index_search(tree, key, NULL);
   if (!z || IS_NIL(z)) {
@@ -500,8 +507,10 @@ bool _grow_indexes(Indexes *i) {
   return true;
 }
 
-#define INDEX_MAX_SIZE 1000
 int index_new(Indexes *indexes, const char *name) {
+  assert(indexes != NULL && "indexes must not be null");
+  assert(name != NULL && "name must not be null");
+
   pthread_mutex_lock(&indexes->mutex);
   if (indexes->count + 1 >= indexes->length) {
     if (!_grow_indexes(indexes)) {
@@ -528,6 +537,10 @@ int index_new(Indexes *indexes, const char *name) {
 }
 
 bool index_has(Indexes *indexes, int id, uint64_t *key) {
+  assert(indexes != NULL && "indexes must not be null");
+  assert(id >= 0 && "id must be positive integer");
+  assert(key != NULL && "key must not be null");
+
   pthread_mutex_lock(&indexes->mutex);
   if (id >= indexes->count) {
     pthread_mutex_unlock(&indexes->mutex);
@@ -541,8 +554,30 @@ bool index_has(Indexes *indexes, int id, uint64_t *key) {
   return true;
 }
 
-bool index_set(Indexes *indexes, int id, uint64_t *key) {
-  uintptr_t data = (uintptr_t)NULL;
+uint64_t index_get(Indexes *indexes, int id, uint64_t *key) {
+  assert(indexes != NULL && "indexes must not be null");
+  assert(id >= 0 && "id must be positive integer");
+  assert(key != NULL && "key must not be null");
+
+  pthread_mutex_lock(&indexes->mutex);
+  if (id >= indexes->count) {
+    pthread_mutex_unlock(&indexes->mutex);
+    return 0;
+  }
+  struct RBTree *t = indexes->idxs[id].tree;
+  pthread_mutex_unlock(&indexes->mutex);
+
+  struct RBNode *node = _rbt_index_search(t, key, NULL);
+  if (IS_NIL(node)) {
+    return 0;
+  }
+  return atomic_load(&node->data);
+}
+
+bool index_set(Indexes *indexes, int id, uint64_t *key, uint64_t data) {
+  assert(indexes != NULL && "indexes must not be null");
+  assert(key != NULL && "key must not be null");
+
   pthread_mutex_lock(&indexes->mutex);
   if (id >= indexes->count) {
     pthread_mutex_unlock(&indexes->mutex);
@@ -553,9 +588,8 @@ bool index_set(Indexes *indexes, int id, uint64_t *key) {
   pthread_mutex_unlock(&indexes->mutex);
   struct RBNode *new = rbtree_create_node(key, data);
   bool inc_count = true;
-  if (count + 1 > INDEX_MAX_SIZE) {
+  if (count + 1 > BXILL_INDEX_MAX_SIZE) {
     pthread_mutex_lock(&t->write);
-    struct IntrusiveList *root = t->back;
     _rbtree_delete(t, (struct RBNode *)t->root, true);
     inc_count = false;
     pthread_mutex_unlock(&t->write);
@@ -564,17 +598,22 @@ bool index_set(Indexes *indexes, int id, uint64_t *key) {
   rbtree_insert(t, new, &data);
   if (data != 0) {
     rbtree_free_node(new);
+  } else {
+    pthread_mutex_lock(&indexes->mutex);
+    if (inc_count) {
+      indexes->item_count[id]++;
+    }
+    pthread_mutex_unlock(&indexes->mutex);
   }
-  pthread_mutex_lock(&indexes->mutex);
-  if (inc_count) {
-    indexes->item_count[id]++;
-  }
-  pthread_mutex_unlock(&indexes->mutex);
 
   return true;
 }
 
 void index_delete(Indexes *indexes, int id, uint64_t *key) {
+  assert(indexes != NULL && "indexes must not be null");
+  assert(id >= 0 && "id must be positive integer");
+  assert(key != NULL && "key must not be null");
+
   pthread_mutex_lock(&indexes->mutex);
   if (id >= indexes->count) {
     return;
@@ -603,13 +642,18 @@ void index_dump(Indexes *indexes, int id) {
 }
 
 void _prune_callaback(void *userdata, struct RBNode *node) {
+#if 0
   struct RBTraversalQueue *queue = (struct RBTraversalQueue *)userdata;
   if (node->data != (uintptr_t)NULL) {
     CacheItem *item = (CacheItem *)node->data;
   }
+#endif
 }
 
 void index_prune(Indexes *indexes, int id) {
+  assert(indexes != NULL && "indexes must not be null");
+  assert(id >= 0 && "id must be positive integer");
+
   pthread_mutex_lock(&indexes->mutex);
   if (id >= indexes->count) {
     return;
@@ -629,6 +673,10 @@ void index_prune(Indexes *indexes, int id) {
 void index_traverse(Indexes *indexes, int id,
                     void (*cb)(void *userdata, struct RBNode *node),
                     void *userdata) {
+  assert(indexes != NULL && "indexes must not be null");
+  assert(id >= 0 && "id must be positive integer");
+  assert(cb != NULL && "cb must not be null");
+
   pthread_mutex_lock(&indexes->mutex);
   if (id >= indexes->count) {
     pthread_mutex_unlock(&indexes->mutex);
@@ -637,4 +685,23 @@ void index_traverse(Indexes *indexes, int id,
   struct RBTree *t = indexes->idxs[id].tree;
   pthread_mutex_unlock(&indexes->mutex);
   rbtree_traverse(t, cb, userdata);
+}
+
+void index_destroy(Indexes *indexes) {
+  if (indexes == NULL) {
+    return;
+  }
+
+  pthread_mutex_lock(&indexes->mutex);
+  for (int i = 0; i < indexes->count; i++) {
+    free(indexes->idxs[i].name);
+    rbtree_destroy(indexes->idxs[i].tree);
+  }
+
+  free(indexes->item_count);
+  free(indexes->idxs);
+  indexes->count = 0;
+  indexes->length = 0;
+  pthread_mutex_unlock(&indexes->mutex);
+  pthread_mutex_destroy(&indexes->mutex);
 }

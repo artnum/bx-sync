@@ -207,6 +207,11 @@ void *bx_object_contact_decode(void *jroot) {
       bx_object_get_json_string(object, "profile_image", hashState);
 
   contact->checksum = XXH3_64bits_digest(hashState);
+
+  bx_object_id_to_key((BXGeneric *)&contact->id, contact->key_id);
+  bx_object_id_to_key((BXGeneric *)&contact->user_id, contact->key_user_id);
+  bx_object_id_to_key((BXGeneric *)&contact->owner_id, contact->key_owner_id);
+
   XXH3_freeState(hashState);
   return contact;
 }
@@ -349,19 +354,15 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
     bx_object_contact_free(contact);
     return ErrorGeneric;
   }
-  uint64_t cache_id[2] = {
-      bx_object_value_to_index((BXGeneric *)&contact->user_id), 0};
-
-  if (!index_has(&app->indexes, BXILL_USER_CACHE, cache_id)) {
-    if (bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id)) {
-      index_set(&app->indexes, BXILL_USER_CACHE, cache_id);
+  if (!index_has(&app->indexes, BXILL_USER_CACHE, contact->key_user_id)) {
+    if (!bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id)) {
+      return ErrorMissingForeignEntry;
     }
   }
-  cache_id[0] = bx_object_value_to_index((BXGeneric *)&contact->owner_id);
   if (contact->user_id.value != contact->owner_id.value &&
-      !index_has(&app->indexes, BXILL_USER_CACHE, cache_id)) {
-    if (bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id)) {
-      index_set(&app->indexes, BXILL_USER_CACHE, cache_id);
+      !index_has(&app->indexes, BXILL_USER_CACHE, contact->key_owner_id)) {
+    if (!bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id)) {
+      return ErrorMissingForeignEntry;
     }
   }
 
@@ -416,9 +417,8 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
     return e;
   }
   if (query->warning_rows == 0 && !query->has_failed) {
-    cache_set_item(c, (BXGeneric *)&contact->id, contact->checksum);
-    cache_id[0] = bx_object_value_to_index((BXGeneric *)&contact->id);
-    index_set(&app->indexes, BXILL_CONTACT_CACHE, cache_id);
+    index_set(&app->indexes, BXILL_CONTACT_CACHE, contact->key_id,
+              contact->checksum);
   }
   bx_database_free_query(query);
   query = NULL;
@@ -486,6 +486,9 @@ BXillError bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c) {
           bx_net_request_free(request);
           return e;
         }
+#ifndef NO_VALGRIND
+        thrd_yield();
+#endif
       }
       bx_net_request_free(request);
       offset.value += limit.value;

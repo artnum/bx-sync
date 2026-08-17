@@ -51,6 +51,8 @@ int64_t *bx_int_string_array_to_int_array(const char *str);
 char *bx_item_to_path(const char *fmt, ...);
 BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
                             char *path_fmt, ...);
+BXNetRequest *bx_do_base_request(BXNetRequestList *queue, json_t *body,
+                                 char *path_fmt, ...);
 void bx_log_reopen();
 
 /* Logging functions */

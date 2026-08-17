@@ -1,5 +1,6 @@
 #include "../include/bxobjects/project.h"
 #include "../include/bx_database.h"
+#include "../include/bx_decode.h"
 #include "../include/bx_net.h"
 #include "../include/bx_object.h"
 #include "../include/bx_object_value.h"
@@ -34,6 +35,7 @@
   ":pr_budget_type_id,"                                                        \
   ":pr_budget_type_amount, :_checksum, :_last_updated"                         \
   ");"
+#define QUERY_SELECT_CHECKSUM "SELECT _checksum FROM pr_project WHERE id = :id"
 
 static BXObjectProject *decode_object(json_t *object) {
   BXObjectProject *project = NULL;
@@ -68,6 +70,9 @@ static BXObjectProject *decode_object(json_t *object) {
   bxo_getdouble(project, pr_budget_type_amount);
 
   bxo_checksum(project);
+
+  bx_object_id_to_key((BXGeneric *)&project->id, project->k_id);
+  bx_object_id_to_key((BXGeneric *)&project->contact_id, project->k_contact_id);
 
   return project;
 }
@@ -204,6 +209,22 @@ BXillError bx_project_insert_db(MYSQL *conn, BXObjectProject *project) {
   return execute_request(conn, project, QUERY_INSERT);
 }
 
+static uint64_t _bx_get_db_checksum(bXill *app, MYSQL *conn,
+                                    BXObjectProject *project) {
+  BXDatabaseQuery *query = bx_database_new_query(conn, QUERY_SELECT_CHECKSUM);
+  if (query == NULL) {
+    return 0;
+  }
+  uint64_t ck = 0;
+  if (bxd_bind(project, id) && bx_database_execute(query) &&
+      bx_database_results(query)) {
+    if (!query->has_failed && query->has_dataset) {
+      ck = query->results->columns[0].i_value;
+    }
+  }
+  bx_database_free_query(query);
+  return ck;
+}
 BXillError _bx_project_sync_item(bXill *app, MYSQL *conn, json_t *item,
                                  Cache *cache) {
   BXillError RetVal = NoError;
@@ -211,28 +232,26 @@ BXillError _bx_project_sync_item(bXill *app, MYSQL *conn, json_t *item,
   if (project == NULL) {
     return ErrorGeneric;
   }
-  CacheState ProjectState =
-      cache_check_item(cache, (BXGeneric *)&project->id, project->checksum);
-  if (ProjectState == CacheOk) {
+
+  uint64_t ck = index_get(&app->indexes, BXILL_PROJECT_CACHE, project->k_id);
+  if (ck == project->checksum) {
     bx_project_free(project);
     return NoError;
   }
 
-  uint64_t cache_id[2] = {
-      bx_object_value_to_index((BXGeneric *)&project->contact_id), 0};
-  if (!index_has(&app->indexes, BXILL_CONTACT_CACHE, cache_id)) {
-    bx_log_debug("Not yet in cache %lu", cache_id[0]);
+  if (!index_has(&app->indexes, BXILL_CONTACT_CACHE, project->k_contact_id)) {
     return NoError;
   }
 
-  if (ProjectState == CacheNotSet) {
+  ck = _bx_get_db_checksum(app, conn, project);
+  if (ck == 0) {
     BXillError e = bx_project_insert_db(conn, project);
     if (e != NoError) {
       bx_log_error("Failed insert project %ld", project->id.value);
       RetVal = e;
       goto fail_and_return;
     }
-  } else if (ProjectState == CacheNotSync) {
+  } else {
     BXillError e = bx_project_update_db(conn, project);
     if (e != NoError) {
       bx_log_error("Failed update project %d", project->id.value);
@@ -240,7 +259,8 @@ BXillError _bx_project_sync_item(bXill *app, MYSQL *conn, json_t *item,
       goto fail_and_return;
     }
   }
-  cache_set_item(cache, (BXGeneric *)&project->id, project->checksum);
+  index_set(&app->indexes, BXILL_PROJECT_CACHE, project->k_id,
+            project->checksum);
   bx_project_free(project);
   return NoError;
 
@@ -269,30 +289,47 @@ BXillError bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
 #define WALK_PROJECT_PATH "2.0/pr_project?limit=$&offset=$"
 BXillError bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
   bx_log_debug("BX Walk Project Items");
-  int len0hit_count = 0;
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
   const BXInteger limit = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BX_LIST_LIMIT};
   size_t arr_len = 0;
+
   do {
     arr_len = 0;
-    BXNetRequest *request =
-        bx_do_request(app->queue, NULL, WALK_PROJECT_PATH, &limit, &offset);
+    BXNetRequest *request = bx_do_base_request(
+        app->queue, NULL, WALK_PROJECT_PATH, &limit, &offset);
     if (request == NULL) {
       return ErrorNet;
     }
+
+    uint64_t gkey[2] = {offset.value, limit.value};
+    uint64_t ck =
+        XXH3_64bits(request->response->data, request->response->data_len);
+    if (index_get(&app->indexes, BXILL_BULK_PROJECT_CACHE, gkey) == ck) {
+      /* already indexes, no change of the answer from server, no further
+       * processing */
+      bx_log_debug("Project bulk checksum in cache %lu (%lu:%lu)", ck, gkey[0],
+                   gkey[1]);
+      bx_net_request_free(request);
+      offset.value += limit.value;
+      continue;
+    }
+
+    /* Decode here */
+    json_t *json = bx_decode_net(request);
+    if (json == NULL) {
+      bx_net_request_free(request);
+      return ErrorJSON;
+    }
+    request->decoded = json;
+
     if (!json_is_array(request->decoded)) {
       bx_net_request_free(request);
       return ErrorJSON;
     }
 
     arr_len = json_array_size(request->decoded);
-    if (arr_len == 0) {
-      len0hit_count++;
-    } else {
-      len0hit_count = 0;
-    }
     for (size_t i = 0; i < arr_len; i++) {
       BXillError e = _bx_project_sync_item(
           app, conn, json_array_get(request->decoded, i), cache);
@@ -300,6 +337,9 @@ BXillError bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
         bx_net_request_free(request);
         return e;
       }
+    }
+    if (arr_len > 0) {
+      index_set(&app->indexes, BXILL_BULK_PROJECT_CACHE, gkey, ck);
     }
     bx_net_request_free(request);
     offset.value += limit.value;

@@ -4,6 +4,7 @@
 #include "include/bx_net.h"
 #include "include/bx_object_value.h"
 #include "include/bxill.h"
+#include "include/hash.h"
 #include <assert.h>
 #include <fcntl.h>
 #include <jansson.h>
@@ -207,23 +208,20 @@ char *bx_item_to_path(const char *fmt, ...) {
   return _bx_item_to_path(fmt, ap);
 }
 
-BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
-                            char *path_fmt, ...) {
+BXNetRequest *_bx_do_base_request(BXNetRequestList *queue, json_t *body,
+                                  char *path_fmt, va_list ap) {
   BXNetRequest *request = NULL;
   assert(path_fmt != NULL);
   assert(queue != NULL);
-
-  va_list ap;
-  va_start(ap, path_fmt);
 
   char *path = _bx_item_to_path(path_fmt, ap);
   if (path == NULL) {
     bx_log_debug("Request parsing faile %s", path_fmt);
     return NULL;
   }
-
-  bx_log_debug("path %s", path);
   va_end(ap);
+  bx_log_debug("PATH : %s", path);
+
   request = bx_net_request_new(path, NULL);
   free(path);
   if (request == NULL) {
@@ -239,10 +237,29 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
   if (request == NULL) {
     return NULL;
   }
-  thrd_yield();
+
   if (request->cancel || request->response == NULL) {
     bx_net_request_free(request);
     return NULL;
+  }
+
+  return request;
+}
+BXNetRequest *bx_do_base_request(BXNetRequestList *queue, json_t *body,
+                                 char *path_fmt, ...) {
+  va_list ap;
+  va_start(ap, path_fmt);
+  return _bx_do_base_request(queue, body, path_fmt, ap);
+}
+
+BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
+                            char *path_fmt, ...) {
+  va_list ap;
+  va_start(ap, path_fmt);
+  BXNetRequest *request = _bx_do_base_request(queue, body, path_fmt, ap);
+  if (request == NULL) {
+    bx_net_request_free(request);
+    return request;
   }
   json_t *json = bx_decode_net(request);
   if (json == NULL) {
