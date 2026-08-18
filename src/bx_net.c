@@ -379,8 +379,11 @@ failUnlockFreeAndReturn:
   curl_slist_free_all(header_list);
   curl_easy_reset(net->curl);
   bx_mutex_unlock(&net->mutex);
-  if (net_rdata->data) { free(net_rdata->data); }
+  if (net_rdata->data) {
+    free(net_rdata->data);
+  }
   free(net_rdata);
+  free(auth_token);
   free(url);
   return NULL;
 }
@@ -403,31 +406,30 @@ uint64_t bx_net_request_list_add(BXNetRequestList *list,
 BXNetRequest *bx_net_request_list_get_finished(BXNetRequestList *list,
                                                uint64_t request_id) {
   assert(list != NULL);
-  do {
-    pthread_mutex_lock(&list->out_mutex);
-    while (list->out == NULL) {
-      pthread_cond_wait(&list->out_cond, &list->out_mutex);
-      if (atomic_load(&list->run) == 0) {
-        pthread_mutex_unlock(&list->out_mutex);
-        return NULL;
-      }
-    }
-
+  pthread_mutex_lock(&list->out_mutex);
+  for (;;) {
     BXNetRequest *current = list->out;
     BXNetRequest *previous = NULL;
-    while (current->next != NULL) {
+    while (current != NULL) {
+      if (current->id == request_id) {
+        if (previous != NULL) {
+          previous->next = current->next;
+        } else {
+          list->out = current->next;
+        }
+        current->next = NULL;
+        pthread_mutex_unlock(&list->out_mutex);
+        return current;
+      }
       previous = current;
       current = current->next;
     }
-    if (current->id == request_id) {
-      list->out = previous;
+    if (atomic_load(&list->run) == 0) {
       pthread_mutex_unlock(&list->out_mutex);
-      return current;
+      return NULL;
     }
-
-    pthread_mutex_unlock(&list->out_mutex);
-  } while (atomic_load(&list->run));
-  return NULL;
+    pthread_cond_wait(&list->out_cond, &list->out_mutex);
+  }
 }
 
 void bx_net_request_list_cancel(BXNetRequestList *list) {
@@ -490,19 +492,8 @@ void bx_net_request_list_destroy(BXNetRequestList *list) {
   current = list->out;
   while (current != NULL) {
     next = current->next;
-    if (current->path != NULL) {
-      free(current->path);
-    }
-    if (current->decoded != NULL) {
-      json_decref(current->decoded);
-    }
-    if (current->response != NULL) {
-      if (current->response->data) { 
-        free(current->response->data);
-      }
-      free(current->response);
-    }
-    free(current);
+    current->next = NULL;
+    bx_net_request_free(current);
     current = next;
   }
   pthread_mutex_destroy(&list->in_mutex);

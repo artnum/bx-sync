@@ -43,6 +43,7 @@ const struct timespec THREAD_ERROR_SLEEP_TIME = {
 
 void thread_blocks_signals() {
   sigset_t set;
+  sigemptyset(&set);
   sigaddset(&set, SIGALRM);
   sigaddset(&set, SIGHUP);
   sigaddset(&set, SIGINT);
@@ -84,24 +85,39 @@ bool thread_handle_error(BXillError error, bXill *app, MYSQL **conn) {
   if (error == NoError) {
     return true;
   }
-  int ping = mysql_ping(*conn);
-  if (ping == 0) {
-    return true;
+
+  bool need_reconnect = (error == ErrorSQLReconnect);
+  if (*conn != NULL && mysql_ping(*conn) != 0) {
+    switch (mysql_errno(*conn)) {
+    case CR_SERVER_GONE_ERROR:
+    case CR_SERVER_LOST:
+    case CR_CONN_HOST_ERROR:
+      need_reconnect = true;
+      break;
+    default:
+      break;
+    }
   }
-  switch (mysql_errno(*conn)) {
-  case CR_SERVER_GONE_ERROR:
+
+  if (need_reconnect) {
     *conn = thread_reconnect(*conn, app);
     if (*conn == NULL) {
       bx_log_error("Reconnect to MySQL failed");
       return false;
     }
-    break;
-  default:
-    bx_log_error("Unknown error, sleeping a bit");
-    thrd_sleep(&THREAD_ERROR_SLEEP_TIME, NULL);
-    return false;
+    return true;
   }
-  return true;
+
+  bx_log_error("Request/SQL error %d, sleeping a bit", (int)error);
+  thrd_sleep(&THREAD_ERROR_SLEEP_TIME, NULL);
+  return false;
+}
+
+static bool rebuild_prune_query(PruningParameters *param, MYSQL *conn,
+                                const char *sql) {
+  bx_database_free_query(param->query);
+  param->query = bx_database_new_query(conn, sql);
+  return param->query != NULL;
 }
 
 void *random_item_thread(void *arg) {
@@ -243,10 +259,18 @@ void *contact_thread(void *arg) {
       sleep(BXILL_STANDBY_SECONDS);
     }
     BXillError e = NoError;
+    MYSQL *prev_conn = conn;
     (void)((e = bx_contact_walk_items(app, conn, my_cache)) == NoError &&
            (e = bx_prune_items(app, &contact_prune)) == NoError);
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
+      if (conn != prev_conn &&
+          !rebuild_prune_query(&contact_prune, conn,
+                               "DELETE FROM contact WHERE id = :id")) {
+        bx_log_error("Cannot rebuild prune query after reconnect");
+        RetVal = EXIT_FAILURE;
+        break;
+      }
     } else {
       if (error_counter++ > BXILL_THREAD_EXIT_MAX_COUNT) {
         bx_log_error("Too much error, exiting");
@@ -301,6 +325,7 @@ void *project_thread(void *arg) {
   if (!my_cache) {
     bx_log_error("Cache init failed");
     free(filename);
+    thread_teardown_mysql(conn);
     return 0;
   }
   if (!cache_load(my_cache, filename)) {
@@ -325,11 +350,22 @@ void *project_thread(void *arg) {
   bx_log_debug("Project data thread %ld", pthread_self());
   time_t start = time(NULL);
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
+    while (atomic_load(&app->queue->standby)) {
+      sleep(BXILL_STANDBY_SECONDS);
+    }
     BXillError e = NoError;
+    MYSQL *prev_conn = conn;
     (void)((e = bx_project_walk_item(app, conn, my_cache)) == NoError &&
            (e = bx_prune_items(app, &project_prune)) == NoError);
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
+      if (conn != prev_conn &&
+          !rebuild_prune_query(&project_prune, conn,
+                               "DELETE FROM pr_project WHERE id = :id")) {
+        bx_log_error("Cannot rebuild prune query after reconnect");
+        RetVal = EXIT_FAILURE;
+        break;
+      }
     } else {
       if (error_counter++ > BXILL_THREAD_EXIT_MAX_COUNT) {
         bx_log_error("Too much error, exiting");
@@ -382,6 +418,9 @@ void *invoice_thread(void *arg) {
   my_cache = cache_create();
   if (my_cache == NULL) {
     bx_log_error("Cache init failed");
+    free(filename);
+    thread_teardown_mysql(conn);
+    return (void *)EXIT_FAILURE;
   }
   if (!cache_load(my_cache, filename)) {
     cache_empty(my_cache);
@@ -408,11 +447,19 @@ void *invoice_thread(void *arg) {
       sleep(BXILL_STANDBY_SECONDS);
     }
     BXillError e = NoError;
+    MYSQL *prev_conn = conn;
     (void)((e = bx_invoice_walk_items(app, conn, my_cache)) == NoError &&
            (e = bx_prune_items(app, &invoice_prune)) == NoError);
 
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
+      if (conn != prev_conn &&
+          !rebuild_prune_query(&invoice_prune, conn,
+                               "DELETE FROM invoice WHERE id = :id")) {
+        bx_log_error("Cannot rebuild prune query after reconnect");
+        RetVal = EXIT_FAILURE;
+        break;
+      }
     } else {
       if (error_counter++ > BXILL_THREAD_EXIT_MAX_COUNT) {
         bx_log_error("Too much error, exiting");
@@ -425,6 +472,7 @@ void *invoice_thread(void *arg) {
     if (current - start > cache_checkpoint) {
       cache_stats(my_cache, "invoice");
       cache_store(my_cache, filename);
+      start = current;
     }
     cache_next_version(my_cache);
 
@@ -573,8 +621,18 @@ int main(int argc, char **argv) {
       exit(EXIT_FAILURE);
     }
 
-    setuid(bx_conf_get_int(conf, "uid"));
-    setgid(bx_conf_get_int(conf, "gid"));
+    if (setgid(bx_conf_get_int(conf, "gid")) != 0) {
+      bx_log_write("setgid failed");
+      bx_conf_destroy(&conf);
+      bx_log_close();
+      exit(EXIT_FAILURE);
+    }
+    if (setuid(bx_conf_get_int(conf, "uid")) != 0) {
+      bx_log_write("setuid failed");
+      bx_conf_destroy(&conf);
+      bx_log_close();
+      exit(EXIT_FAILURE);
+    }
   }
 
   bx_mutex_init(&MTX_COUNTRY_LIST);
@@ -621,9 +679,10 @@ int main(int argc, char **argv) {
 
   /* RUN CODE TO UPDATE DATABASE */
   pthread_create(&threads[CONTACT_THREAD], NULL, contact_thread, (void *)&app);
-
   pthread_create(&threads[PROJECT_THREAD], NULL, project_thread, (void *)&app);
   pthread_create(&threads[INVOICE_THREAD], NULL, invoice_thread, (void *)&app);
+  pthread_create(&threads[CONTACT_SECTOR_THREAD], NULL, contact_sector_thread,
+                 (void *)&app);
   pthread_create(&threads[RANDOM_ITEM_THREAD], NULL, random_item_thread,
                  (void *)&app);
   while (atomic_load_explicit(&kill_signal, memory_order_acquire) == false) {

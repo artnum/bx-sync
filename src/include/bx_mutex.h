@@ -43,14 +43,7 @@ static inline void bx_mutex_init(BXMutex *mutex) {
 typedef pthread_mutex_t BXMutex;
 
 static inline bool bx_mutex_lock(BXMutex *mutex) {
-  int retry = 100;
-  while (pthread_mutex_trylock(mutex) == EBUSY) {
-    thrd_yield();
-    if (retry-- <= 0) {
-      return false;
-    }
-  }
-  return true;
+  return pthread_mutex_lock(mutex) == 0;
 }
 
 static inline void bx_mutex_unlock(BXMutex *mutex) {

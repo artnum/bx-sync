@@ -9,15 +9,24 @@
 #include <time.h>
 
 #define QUERY_INSERT                                                           \
-  "INSERT IGNORE INTO taxes (`id`, `uuid`, `name`, `code`, `digit`, `type`, "  \
+  "INSERT IGNORE INTO taxes (`id`, `uuid`, `name`, `digit`, `type`, "           \
   "`account_id`, "                                                             \
   "`tax_settlement_type`, `value`, `net_tax_value`, `start_year`, "            \
   "`end_year`, "                                                               \
   "`is_active`, `display_name`, `start_month`, `end_month`, `_checksum`, "     \
-  "`_last_updated`) VALUES (:id, :uuid, :name, :code, :digit, :taxtype, "      \
+  "`_last_updated`) VALUES (:id, :uuid, :name, :digit, :taxtype, "              \
   ":account_id, :tax_settlement_type, :value, :net_tax_value, :start_year, "   \
   ":end_year, :is_active, :display_name, :start_month, :end_month, "           \
   ":_checksum, :_last_updated);"
+#define QUERY_UPDATE                                                           \
+  "UPDATE taxes SET `uuid` = :uuid, `name` = :name, `digit` = :digit, "        \
+  "`type` = :taxtype, `account_id` = :account_id, "                            \
+  "`tax_settlement_type` = :tax_settlement_type, `value` = :value, "           \
+  "`net_tax_value` = :net_tax_value, `start_year` = :start_year, "             \
+  "`end_year` = :end_year, `is_active` = :is_active, "                         \
+  "`display_name` = :display_name, `start_month` = :start_month, "             \
+  "`end_month` = :end_month, `_checksum` = :_checksum, "                       \
+  "`_last_updated` = :_last_updated WHERE `id` = :id;"
 
 void *bx_object_tax_decode(void *jroot) {
   assert(jroot != NULL);
@@ -101,23 +110,28 @@ void bx_dump(BXObjectTax *tax) {
   _bx_dump_any("end_month", &tax->end_month, 0);
 }
 
-BXillError _bx_insert_tax(MYSQL *conn, BXObjectTax *tax) {
-  BXDatabaseQuery *query = bx_database_new_query(conn, QUERY_INSERT);
+static bool bind_tax_params(BXDatabaseQuery *query, BXObjectTax *tax) {
+  time_t now;
+  time(&now);
+  return bxd_bind(tax, id) && bxd_bind(tax, uuid) && bxd_bind(tax, name) &&
+         bxd_bind(tax, digit) && bxd_bind(tax, taxtype) &&
+         bxd_bind(tax, account_id) && bxd_bind(tax, tax_settlement_type) &&
+         bxd_bind(tax, value) && bxd_bind(tax, net_tax_value) &&
+         bxd_bind(tax, start_year) && bxd_bind(tax, start_month) &&
+         bxd_bind(tax, end_year) && bxd_bind(tax, end_month) &&
+         bxd_bind(tax, display_name) && bxd_bind(tax, is_active) &&
+         bx_database_add_param_uint64(query, ":_checksum", &tax->checksum) &&
+         bx_database_add_param_uint64(query, ":_last_updated", &now);
+}
+
+static BXillError execute_tax_query(MYSQL *conn, BXObjectTax *tax,
+                                    const char *sql) {
+  BXDatabaseQuery *query = bx_database_new_query(conn, sql);
   if (!query) {
     return ErrorGeneric;
   }
 
-  time_t now;
-  time(&now);
-  if (!bxd_bind(tax, id) || !bxd_bind(tax, uuid) || !bxd_bind(tax, name) ||
-      !bxd_bind(tax, digit) || !bxd_bind(tax, taxtype) ||
-      !bxd_bind(tax, account_id) || !bxd_bind(tax, tax_settlement_type) ||
-      !bxd_bind(tax, value) || !bxd_bind(tax, net_tax_value) ||
-      !bxd_bind(tax, start_year) || !bxd_bind(tax, start_month) ||
-      !bxd_bind(tax, end_year) || !bxd_bind(tax, end_month) ||
-      !bxd_bind(tax, display_name) || !bxd_bind(tax, is_active) ||
-      !bx_database_add_param_uint64(query, ":_checksum", &tax->checksum) ||
-      !bx_database_add_param_uint64(query, ":_last_updated", &now)) {
+  if (!bind_tax_params(query, tax)) {
     bx_database_free_query(query);
     return ErrorGeneric;
   }
@@ -132,6 +146,14 @@ BXillError _bx_insert_tax(MYSQL *conn, BXObjectTax *tax) {
   }
   bx_database_free_query(query);
   return NoError;
+}
+
+BXillError _bx_insert_tax(MYSQL *conn, BXObjectTax *tax) {
+  return execute_tax_query(conn, tax, QUERY_INSERT);
+}
+
+BXillError _bx_update_tax(MYSQL *conn, BXObjectTax *tax) {
+  return execute_tax_query(conn, tax, QUERY_UPDATE);
 }
 
 ObjectState bx_taxes_check_database(MYSQL *conn, BXObjectTax *tax) {
@@ -173,7 +195,7 @@ BXillError _bx_sync_item(MYSQL *conn, json_t *item) {
     RetVal = _bx_insert_tax(conn, tax);
     break;
   case NeedUpdate:
-    bx_log_info("UPDATE not yet implemented for %ld", tax->id.value);
+    RetVal = _bx_update_tax(conn, tax);
     break;
   case NeedNothing:
     break;
