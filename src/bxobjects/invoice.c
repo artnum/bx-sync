@@ -266,14 +266,25 @@ BXillError _bx_invoice_sync_item(bXill *app, MYSQL *conn, json_t *item,
     }
   }
 
-  if (!bx_contact_is_in_database(conn, (BXGeneric *)&invoice->contact_id)) {
-    RetVal = ErrorGeneric;
-    goto fail_and_return;
+  if (invoice->contact_id.isset && invoice->contact_id.value != 0 &&
+      !bx_contact_is_in_database(conn, (BXGeneric *)&invoice->contact_id)) {
+    bx_log_debug("Skip invoice %lu: contact %lu missing",
+                 (unsigned long)invoice->id.value,
+                 (unsigned long)invoice->contact_id.value);
+    bx_object_invoice_free(invoice);
+    invoice = NULL;
+    bx_net_request_free(full);
+    return NoError;
   }
-  if (!bx_project_is_in_database(conn, (BXGeneric *)&invoice->project_id) &&
-      invoice->project_id.value > 0) {
-    RetVal = ErrorGeneric;
-    goto fail_and_return;
+  if (invoice->project_id.isset && invoice->project_id.value > 0 &&
+      !bx_project_is_in_database(conn, (BXGeneric *)&invoice->project_id)) {
+    bx_log_debug("Skip invoice %lu: project %lu missing",
+                 (unsigned long)invoice->id.value,
+                 (unsigned long)invoice->project_id.value);
+    bx_object_invoice_free(invoice);
+    invoice = NULL;
+    bx_net_request_free(full);
+    return NoError;
   } else if (invoice->project_id.value == 0) {
     invoice->project_id.isset = false;
   }
@@ -369,6 +380,16 @@ BXillError _bx_invoice_sync_item(bXill *app, MYSQL *conn, json_t *item,
     }
     goto fail_and_return;
   }
+  if (!bx_database_persist_ok(query)) {
+    bx_log_debug("Skip extras for invoice %lu: persist failed",
+                 (unsigned long)invoice->id.value);
+    bx_database_free_query(query);
+    query = NULL;
+    bx_object_invoice_free(invoice);
+    invoice = NULL;
+    bx_net_request_free(full);
+    return NoError;
+  }
 
   bx_database_free_query(query);
   query = NULL;
@@ -377,6 +398,10 @@ BXillError _bx_invoice_sync_item(bXill *app, MYSQL *conn, json_t *item,
   if (RetVal == NoError) {
     cache_set_item(cache, (BXGeneric *)&invoice->id, invoice->checksum);
     (void)bx_invoice_extra_sync(app, conn, invoice->id.value);
+  } else if (RetVal != ErrorSQLReconnect) {
+    bx_log_debug("Invoice %lu positions failed: %d",
+                 (unsigned long)invoice->id.value, (int)RetVal);
+    RetVal = NoError;
   }
   bx_object_invoice_free(invoice);
   invoice = NULL;

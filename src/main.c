@@ -17,6 +17,7 @@
 #include "include/bxobjects/language.h"
 #include "include/bxobjects/project.h"
 #include "include/bxobjects/taxes.h"
+#include "include/bxobjects/user.h"
 #include "include/bx_sync_more.h"
 
 #include <fcntl.h>
@@ -39,6 +40,37 @@
 
 #define MAX_COMMAND_LEN 100
 extern BXMutex io_mutex;
+
+/* contact → project → invoice: each cycle waits for the parent walk. */
+static pthread_mutex_t sync_order_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t sync_order_cv = PTHREAD_COND_INITIALIZER;
+static unsigned contact_cycle;
+static unsigned project_cycle;
+
+static void sync_order_wake(void) {
+  pthread_mutex_lock(&sync_order_mu);
+  pthread_cond_broadcast(&sync_order_cv);
+  pthread_mutex_unlock(&sync_order_mu);
+}
+
+static void sync_order_advance(unsigned *counter) {
+  pthread_mutex_lock(&sync_order_mu);
+  (*counter)++;
+  pthread_cond_broadcast(&sync_order_cv);
+  pthread_mutex_unlock(&sync_order_mu);
+}
+
+static void sync_order_wait(unsigned *seen, unsigned *counter, bXill *app) {
+  pthread_mutex_lock(&sync_order_mu);
+  while (*seen == *counter &&
+         atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
+    pthread_cond_wait(&sync_order_cv, &sync_order_mu);
+  }
+  if (*seen != *counter) {
+    *seen = *counter;
+  }
+  pthread_mutex_unlock(&sync_order_mu);
+}
 extern BXMutex MTX_COUNTRY_LIST;
 const struct timespec THREAD_SLEEP_TIME = {
     .tv_nsec = MS_TO_NS(BXILL_THREAD_SLEEP_MS), .tv_sec = 0};
@@ -278,6 +310,7 @@ void *contact_thread(void *arg) {
     MYSQL *prev_conn = conn;
     (void)((e = bx_contact_walk_items(app, conn, my_cache)) == NoError &&
            (e = bx_prune_items(app, &contact_prune)) == NoError);
+    sync_order_advance(&contact_cycle);
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
       if (conn != prev_conn &&
@@ -310,6 +343,7 @@ void *contact_thread(void *arg) {
   cache_store(my_cache, filename);
   free(filename);
   cache_destroy(my_cache);
+  sync_order_advance(&contact_cycle);
   return (void *)(intptr_t)RetVal;
 }
 
@@ -365,14 +399,20 @@ void *project_thread(void *arg) {
 
   bx_log_debug("Project data thread %ld", pthread_self());
   time_t start = time(NULL);
+  unsigned seen_contact = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
+    }
+    sync_order_wait(&seen_contact, &contact_cycle, app);
+    if (!atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
+      break;
     }
     BXillError e = NoError;
     MYSQL *prev_conn = conn;
     (void)((e = bx_project_walk_item(app, conn, my_cache)) == NoError &&
            (e = bx_prune_items(app, &project_prune)) == NoError);
+    sync_order_advance(&project_cycle);
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
       if (conn != prev_conn &&
@@ -405,6 +445,7 @@ void *project_thread(void *arg) {
   cache_store(my_cache, filename);
   free(filename);
   cache_destroy(my_cache);
+  sync_order_advance(&project_cycle);
   return (void *)(intptr_t)RetVal;
 }
 
@@ -458,9 +499,14 @@ void *invoice_thread(void *arg) {
 
   bx_log_debug("Invoice data thread %ld", pthread_self());
   time_t start = time(NULL);
+  unsigned seen_project = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
+    }
+    sync_order_wait(&seen_project, &project_cycle, app);
+    if (!atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
+      break;
     }
     BXillError e = NoError;
     MYSQL *prev_conn = conn;
@@ -723,6 +769,9 @@ int main(int argc, char **argv) {
     if (bx_lookups_walk_more(&app, lookup_conn) != NoError) {
       bx_log_error("Lookup load failed: extra lookups");
     }
+    if (bx_user_walk_items(&app, lookup_conn) != NoError) {
+      bx_log_error("Lookup load failed: user");
+    }
     thread_teardown_mysql(lookup_conn);
   } else {
     bx_log_error("Lookup bootstrap skipped: MySQL connect failed");
@@ -745,6 +794,7 @@ int main(int argc, char **argv) {
   }
   bx_log_info("Kill signal received");
   atomic_store_explicit(&queue->run, 0, memory_order_release);
+  sync_order_wake();
   sleep(5);
 
   pthread_cond_signal(&queue->in_cond);

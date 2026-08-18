@@ -4,6 +4,10 @@
 #include "../include/bx_object_value.h"
 #include "../include/bx_utils.h"
 #include "../include/bxill.h"
+#include <jansson.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #define GET_USER_PATH "3.0/users/$"
 #define QUERY_INSERT                                                          \
@@ -111,86 +115,163 @@ bool bx_user_is_in_database(MYSQL *conn, BXGeneric *item) {
   return true;
 }
 
-bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
-  bx_log_debug("BX Use Sync Item");
-  BXNetRequest *request = bx_do_request(app->queue, NULL, GET_USER_PATH, item);
-  if (request == NULL) {
-    bx_net_request_free(request);
+static void ensure_str(BXString *s) {
+  if (s->isset && s->value != NULL) {
+    return;
+  }
+  s->type = BX_OBJECT_TYPE_STRING;
+  s->isset = true;
+  s->value = calloc(1, 1);
+  s->value_len = 0;
+}
+
+static bool persist_user(MYSQL *conn, BXObjectUser *user) {
+  if (conn == NULL || user == NULL || !user->remote_id.isset) {
     return false;
   }
-  if (request == NULL || request->response == NULL ||
-      request->response->http_code != 200) {
-    bx_net_request_free(request);
-    return false;
-  }
-  BXObjectUser *user = decode_object(request->decoded);
-  bx_net_request_free(request);
-  if (user == NULL) {
-    return false;
-  }
+  ensure_str(&user->remote_firstname);
+  ensure_str(&user->remote_lastname);
+  ensure_str(&user->remote_email);
+  ensure_str(&user->remote_salutation_type);
 
   char is_superadmin = user->remote_is_superadmin.value ? 1 : 0;
   char is_accountant = user->remote_is_accountant.value ? 1 : 0;
   time_t now = time(NULL);
+  uint64_t not_deleted = 0;
   BXDatabaseQuery *query =
       bx_database_new_query(conn, "SELECT _checksum FROM user WHERE id = :id;");
-  bx_database_add_param_int64(query, ":id", &user->remote_id.value);
-  bx_database_execute(query);
-  bx_database_results(query);
-  uint64_t not_deleted = 0;
-  if (query->results == NULL || query->results->column_count == 0) {
+  if (query == NULL) {
+    return false;
+  }
+  bx_database_add_bxtype(query, ":id", (BXGeneric *)&user->remote_id);
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
     bx_database_free_query(query);
-    query = bx_database_new_query(conn, QUERY_INSERT);
-
-    bx_database_add_bxtype      (query, ":id", (BXGeneric *)&user->remote_id);
-    bx_database_add_bxtype      (query, ":firstname",
-                                 (BXGeneric *)&user->remote_firstname);
-    bx_database_add_bxtype      (query, ":lastname",
-                                 (BXGeneric *)&user->remote_lastname);
-    bx_database_add_bxtype      (query, ":email", (BXGeneric *)&user->remote_email);
-    bx_database_add_bxtype      (query, ":salutation_type",
-                                 (BXGeneric *)&user->remote_salutation_type);
-
-    bx_database_add_param_uint8 (query, ":is_superadmin", &is_superadmin);
-    bx_database_add_param_uint8 (query, ":is_accountant", &is_accountant);
-
-    bx_database_add_param_uint64(query, ":_checksum", &user->checksum);
-    bx_database_add_param_uint64(query, ":_last_updated", &now);
-    bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
-
-    bx_database_execute(query);
+    return false;
+  }
+  int need_insert =
+      (query->results == NULL || query->results->column_count == 0);
+  if (!need_insert &&
+      (uint64_t)query->results->columns[0].i_value == user->checksum) {
     bx_database_free_query(query);
-    free_object(user);
     return true;
   }
-  if (query->results[0].columns[0].i_value == user->checksum) {
-    bx_database_free_query(query);
-    free_object(user);
-    return true;
-  }
-
   bx_database_free_query(query);
-  query = bx_database_new_query(conn, QUERY_UPDATE);
-  bx_database_add_bxtype      (query, ":id", (BXGeneric *)&user->remote_id);
-  bx_database_add_param_char  (query, ":firstname", user->remote_firstname.value,
-                               user->remote_firstname.value_len);
-  bx_database_add_param_char  (query, ":lastname", user->remote_lastname.value,
-                               user->remote_lastname.value_len);
-  bx_database_add_param_char  (query, ":email", user->remote_email.value,
-                               user->remote_email.value_len);
-  bx_database_add_param_char  (query, ":salutation_type",
-                               user->remote_salutation_type.value,
-                               user->remote_salutation_type.value_len);
 
-  bx_database_add_param_uint8 (query, ":is_superadmin", &is_superadmin);
-  bx_database_add_param_uint8 (query, ":is_accountant", &is_accountant);
-
+  query = bx_database_new_query(conn, need_insert ? QUERY_INSERT : QUERY_UPDATE);
+  if (query == NULL) {
+    return false;
+  }
+  bx_database_add_bxtype(query, ":id", (BXGeneric *)&user->remote_id);
+  bx_database_add_bxtype(query, ":firstname",
+                         (BXGeneric *)&user->remote_firstname);
+  bx_database_add_bxtype(query, ":lastname",
+                         (BXGeneric *)&user->remote_lastname);
+  bx_database_add_bxtype(query, ":email", (BXGeneric *)&user->remote_email);
+  bx_database_add_bxtype(query, ":salutation_type",
+                         (BXGeneric *)&user->remote_salutation_type);
+  bx_database_add_param_uint8(query, ":is_superadmin", &is_superadmin);
+  bx_database_add_param_uint8(query, ":is_accountant", &is_accountant);
   bx_database_add_param_uint64(query, ":_checksum", &user->checksum);
   bx_database_add_param_uint64(query, ":_last_updated", &now);
   bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
-
-  bx_database_execute(query);
+  bool ok = bx_database_execute(query) && bx_database_results(query) &&
+            bx_database_persist_ok(query);
   bx_database_free_query(query);
-  free_object(user);
-  return true;
+  return ok;
+}
+
+static BXObjectUser *decode_user_json(json_t *root) {
+  if (json_is_object(root)) {
+    json_t *data = json_object_get(root, "data");
+    if (json_is_object(data)) {
+      root = data;
+    }
+  }
+  if (!json_is_object(root)) {
+    return NULL;
+  }
+  return decode_object(root);
+}
+
+bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
+  bx_log_debug("BX Use Sync Item");
+  const char *paths[] = {GET_USER_PATH, "3.0/fictional_users/$", NULL};
+  for (int i = 0; paths[i] != NULL; i++) {
+    BXNetRequest *request =
+        bx_do_request(app->queue, NULL, (char *)paths[i], item);
+    if (request == NULL || request->response == NULL ||
+        request->response->http_code != 200) {
+      bx_net_request_free(request);
+      continue;
+    }
+    BXObjectUser *user = decode_user_json(request->decoded);
+    bx_net_request_free(request);
+    if (user == NULL) {
+      continue;
+    }
+    bool ok = persist_user(conn, user);
+    free_object(user);
+    if (ok) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static BXillError walk_user_path(bXill *app, MYSQL *conn, const char *path) {
+  BXInteger offset = {
+      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
+  const BXInteger limit = {
+      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
+  size_t arr_len = 0;
+  do {
+    BXNetRequest *request =
+        bx_do_request(app->queue, NULL, (char *)path, &limit, &offset);
+    if (request == NULL) {
+      return ErrorNet;
+    }
+    json_t *arr = request->decoded;
+    if (json_is_object(arr)) {
+      json_t *data = json_object_get(arr, "data");
+      if (json_is_array(data)) {
+        arr = data;
+      }
+    }
+    if (!json_is_array(arr)) {
+      bx_net_request_free(request);
+      return ErrorJSON;
+    }
+    arr_len = json_array_size(arr);
+    for (size_t i = 0; i < arr_len; i++) {
+      BXObjectUser *user = decode_user_json(json_array_get(arr, i));
+      if (user == NULL) {
+        continue;
+      }
+      bool ok = persist_user(conn, user);
+      free_object(user);
+      if (!ok) {
+        bx_log_error("Failed persist user from %s", path);
+      }
+    }
+    bx_net_request_free(request);
+    offset.value += limit.value;
+  } while (arr_len > 0);
+  return NoError;
+}
+
+BXillError bx_user_walk_items(bXill *app, MYSQL *conn) {
+  bx_log_debug("BX Walk User Items");
+  BXillError e = walk_user_path(app, conn, "3.0/users?limit=$&offset=$");
+  if (e == ErrorSQLReconnect) {
+    return e;
+  }
+  if (e != NoError) {
+    bx_log_error("User list walk failed: %d", (int)e);
+  }
+  e = walk_user_path(app, conn, "3.0/fictional_users?limit=$&offset=$");
+  if (e != NoError && e != ErrorSQLReconnect) {
+    bx_log_error("Fictional user list walk failed: %d", (int)e);
+    return NoError;
+  }
+  return e;
 }

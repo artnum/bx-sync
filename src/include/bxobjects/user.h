@@ -21,5 +21,6 @@ struct s_BXObjectUser {
 
 bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item);
 bool bx_user_is_in_database(MYSQL *conn, BXGeneric *item);
+BXillError bx_user_walk_items(bXill *app, MYSQL *conn);
 
 #endif /* BX_OBJECT_USER_H__ */

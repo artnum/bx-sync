@@ -6,6 +6,7 @@
 #include "../include/bx_utils.h"
 #include "../include/bxill.h"
 #include "../include/bx_sync_more.h"
+#include "../include/bxobjects/contact.h"
 #include <jansson.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -191,6 +192,8 @@ BXillError execute_request(MYSQL *conn, BXObjectProject *project,
   }
   if (!bx_database_results(query)) {
     retval = ErrorGeneric;
+  } else if (!bx_database_persist_ok(query)) {
+    retval = ErrorSQLInsert;
   }
 
 exit_point:
@@ -220,19 +223,36 @@ BXillError _bx_project_sync_item(bXill *app, MYSQL *conn, json_t *item,
     return NoError;
   }
 
+  if (project->contact_id.isset && project->contact_id.value != 0 &&
+      !bx_contact_is_in_database(conn, (BXGeneric *)&project->contact_id)) {
+    bx_log_debug("Skip project %lu: contact %lu missing",
+                 (unsigned long)project->id.value,
+                 (unsigned long)project->contact_id.value);
+    bx_project_free(project);
+    return NoError;
+  }
+
   if (ProjectState == CacheNotSet) {
     BXillError e = bx_project_insert_db(conn, project);
-    if (e != NoError) {
-      bx_log_error("Failed insert project %ld", project->id.value);
+    if (e == ErrorSQLReconnect) {
       RetVal = e;
       goto fail_and_return;
     }
+    if (e != NoError) {
+      bx_log_debug("Failed insert project %ld", project->id.value);
+      bx_project_free(project);
+      return NoError;
+    }
   } else if (ProjectState == CacheNotSync) {
     BXillError e = bx_project_update_db(conn, project);
-    if (e != NoError) {
-      bx_log_error("Failed update project %d", project->id.value);
+    if (e == ErrorSQLReconnect) {
       RetVal = e;
       goto fail_and_return;
+    }
+    if (e != NoError) {
+      bx_log_debug("Failed update project %ld", project->id.value);
+      bx_project_free(project);
+      return NoError;
     }
   }
   cache_set_item(cache, (BXGeneric *)&project->id, project->checksum);

@@ -56,6 +56,7 @@ struct s_BXDatabaseQuery {
   bool has_dataset;
   bool has_failed;
   bool need_reconnect;
+  bool had_fk_error;
   uint64_t affected_rows;
   uint64_t warning_rows;
   MYSQL_RES *result_metadata;
@@ -120,7 +121,13 @@ bool bx_database_replace_param(BXDatabaseQuery *query, const char *name,
 void bx_database_dump_column(BXDatabaseColumn *column);
 void bx_database_dump_row(BXDatabaseQuery *query, BXDatabaseRow *row);
 
-void bx_database_print_warnings(MYSQL *conn);
+void bx_database_print_warnings(BXDatabaseQuery *query);
+
+/* True when the last execute wrote the row (no failure, no FK 1452). */
+static inline bool bx_database_persist_ok(const BXDatabaseQuery *query) {
+  return query != NULL && !query->has_failed && !query->had_fk_error &&
+         query->warning_rows == 0;
+}
 
 #define bx_database_add_param_int8(query, name, value)                         \
   bx_database_add_param_int(query, name, value, sizeof(int8_t),                \

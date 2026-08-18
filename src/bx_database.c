@@ -527,10 +527,11 @@ bool bx_database_execute(BXDatabaseQuery *query) {
   query->exectued = true;
 
   query->warning_rows = mysql_stmt_warning_count(query->stmt);
+  query->had_fk_error = false;
   if (query->warning_rows > 0) {
     bx_log_debug("MYSQL Warning %d, query %s", query->warning_rows,
                  query->query);
-    bx_database_print_warnings(query->stmt->mysql);
+    bx_database_print_warnings(query);
   }
 
   return true;
@@ -739,7 +740,11 @@ bool bx_database_results(BXDatabaseQuery *query) {
   return true;
 }
 
-void bx_database_print_warnings(MYSQL *conn) {
+void bx_database_print_warnings(BXDatabaseQuery *query) {
+  if (query == NULL || query->stmt == NULL || query->stmt->mysql == NULL) {
+    return;
+  }
+  MYSQL *conn = query->stmt->mysql;
   if (mysql_query(conn, "SHOW WARNINGS")) {
     bx_log_debug("SHOW WARNINGS query failed: %s", mysql_error(conn));
     return;
@@ -754,6 +759,11 @@ void bx_database_print_warnings(MYSQL *conn) {
   MYSQL_ROW row;
   while ((row = mysql_fetch_row(result))) {
     bx_log_debug("Level: %s, Code: %s, Message: %s", row[0], row[1], row[2]);
+    if (row[1] != NULL &&
+        (strcmp(row[1], "1452") == 0 || strcmp(row[1], "1216") == 0 ||
+         strcmp(row[1], "1451") == 0)) {
+      query->had_fk_error = true;
+    }
   }
 
   mysql_free_result(result);

@@ -413,12 +413,24 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
     return ErrorGeneric;
   }
 
-  if (!bx_user_is_in_database(conn, (BXGeneric *)&contact->user_id)) {
-    bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id);
+  if (contact->user_id.isset && contact->user_id.value != 0 &&
+      !bx_user_is_in_database(conn, (BXGeneric *)&contact->user_id)) {
+    (void)bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id);
   }
-  if (contact->user_id.value != contact->owner_id.value &&
+  if (contact->owner_id.isset && contact->owner_id.value != 0 &&
+      contact->user_id.value != contact->owner_id.value &&
       !bx_user_is_in_database(conn, (BXGeneric *)&contact->owner_id)) {
-    bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id);
+    (void)bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id);
+  }
+  if ((contact->user_id.isset && contact->user_id.value != 0 &&
+       !bx_user_is_in_database(conn, (BXGeneric *)&contact->user_id)) ||
+      (contact->owner_id.isset && contact->owner_id.value != 0 &&
+       !bx_user_is_in_database(conn, (BXGeneric *)&contact->owner_id))) {
+    bx_log_debug("Skip contact %lu: user missing",
+                 (unsigned long)contact->id.value);
+    bx_database_free_query(query);
+    bx_object_contact_free(contact);
+    return NoError;
   }
 
   uint64_t now = time(NULL);
@@ -472,9 +484,14 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
     bx_database_free_query(query);
     return e;
   }
-  if (query->warning_rows == 0 && !query->has_failed) {
-    cache_set_item(c, (BXGeneric *)&contact->id, contact->checksum);
+  if (!bx_database_persist_ok(query)) {
+    bx_log_debug("Skip extras for contact %lu: persist failed",
+                 (unsigned long)contact->id.value);
+    bx_database_free_query(query);
+    bx_object_contact_free(contact);
+    return NoError;
   }
+  cache_set_item(c, (BXGeneric *)&contact->id, contact->checksum);
   bx_database_free_query(query);
   query = NULL;
   (void)bx_contact_group_link(conn, contact->id.value,
