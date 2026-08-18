@@ -111,7 +111,7 @@ void *random_item_thread(void *arg) {
   thread_blocks_signals();
   conn = thread_setup_mysql(app);
   bx_log_debug("Random items thread data thread %lx", pthread_self());
-  while (atomic_load(&(app->queue->run))) {
+  while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
@@ -146,7 +146,7 @@ void *contact_sector_thread(void *arg) {
     return (void *)EXIT_FAILURE;
   }
   bx_log_debug("Contact Sector data thread %lx", pthread_self());
-  while (atomic_load(&(app->queue->run))) {
+  while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
@@ -231,7 +231,7 @@ void *contact_thread(void *arg) {
       .cache = my_cache};
   bx_log_debug("Contact data thread %lx", pthread_self());
   time_t start = time(NULL);
-  while (atomic_load(&(app->queue->run))) {
+  while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
@@ -314,7 +314,7 @@ void *project_thread(void *arg) {
 
   bx_log_debug("Project data thread %ld", pthread_self());
   time_t start = time(NULL);
-  while (atomic_load(&app->queue->run)) {
+  while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     BXillError e = NoError;
     (void)((e = bx_project_walk_item(app, conn, my_cache)) == NoError &&
            (e = bx_prune_items(app, &project_prune)) == NoError);
@@ -389,7 +389,7 @@ void *invoice_thread(void *arg) {
 
   bx_log_debug("Invoice data thread %ld", pthread_self());
   time_t start = time(NULL);
-  while (atomic_load(&app->queue->run)) {
+  while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
@@ -425,12 +425,12 @@ void *invoice_thread(void *arg) {
 }
 
 /* signal handler */
-bool kill_signal = 0;
+_Atomic(bool) kill_signal = 0;
 void signal_hander(int sig) {
   switch (sig) {
   case SIGINT:
   case SIGTERM:
-    kill_signal = true;
+    atomic_store_explicit(&kill_signal, true, memory_order_release);
     bx_log_info("Kill signal received");
     break;
   case SIGHUP:
@@ -612,10 +612,10 @@ int main(int argc, char **argv) {
   pthread_create(&threads[INVOICE_THREAD], NULL, invoice_thread, (void *)&app);
   pthread_create(&threads[RANDOM_ITEM_THREAD], NULL, random_item_thread,
                  (void *)&app);
-  while (kill_signal == 0) {
+  while (atomic_load_explicit(&kill_signal, memory_order_acquire) == 0) {
     pause();
   }
-  atomic_store(&queue->run, 0);
+  atomic_store_explicit(&queue->run, 0, memory_order_release);
   sleep(5);
 
   pthread_cond_signal(&queue->in_cond);
