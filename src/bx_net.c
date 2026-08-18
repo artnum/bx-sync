@@ -61,6 +61,8 @@ BXNet *bx_net_init(BXConf *conf) {
   net->endpoint_len = elen;
   net->curl = curl_easy_init();
   if (!net->curl) {
+    free(token);
+    free(endpoint);
     free(net);
     return NULL;
   }
@@ -278,11 +280,14 @@ BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params) {
   slen = strlen(net->auth_token) + sizeof(BX_API_AUTH_HEADER) + 1;
   char *auth_token = calloc(slen, sizeof(*auth_token));
   if (auth_token == NULL) {
+    free(net_rdata);
     free(url);
     return NULL;
   }
   if (snprintf(auth_token, slen, "%s%s", BX_API_AUTH_HEADER, net->auth_token) <
       0) {
+    free(net_rdata);
+    free(auth_token);
     free(url);
     return NULL;
   }
@@ -338,7 +343,7 @@ BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params) {
   if (curl_easy_setopt(net->curl, CURLOPT_URL, url) != CURLE_OK) {
     goto failUnlockFreeAndReturn;
   }
-  if (curl_easy_setopt(net->curl, CURLOPT_SSL_VERIFYPEER, 0) != CURLE_OK) {
+  if (curl_easy_setopt(net->curl, CURLOPT_SSL_VERIFYPEER, 1) != CURLE_OK) {
     goto failUnlockFreeAndReturn;
   }
   clock_t start = clock();
@@ -368,6 +373,7 @@ failUnlockFreeAndReturn:
   curl_slist_free_all(header_list);
   curl_easy_reset(net->curl);
   bx_mutex_unlock(&net->mutex);
+  if (net_rdata->data) { free(net_rdata->data); }
   free(net_rdata);
   free(url);
   return NULL;
@@ -485,6 +491,9 @@ void bx_net_request_list_destroy(BXNetRequestList *list) {
       json_decref(current->decoded);
     }
     if (current->response != NULL) {
+      if (current->response->data) { 
+        free(current->response->data);
+      }
       free(current->response);
     }
     free(current);

@@ -63,7 +63,7 @@ static inline char *_bx_bytes2str(BXBytes *value) {
     str = calloc((value->value_len * 2) + 1, sizeof(*str));
     if (str) {
       for (int i = 0; i < value->value_len; i++) {
-        snprintf(&str[j], 3, "%2x", str[i]);
+        snprintf(&str[j], 3, "%2x", value->value[i]);
         j += 2;
       }
     }

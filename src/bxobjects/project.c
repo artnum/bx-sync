@@ -251,6 +251,7 @@ BXillError bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
   }
 
   if (request->response == NULL || request->response->http_code != 200) {
+    bx_net_request_free(request);
     return false;
   }
 

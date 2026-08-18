@@ -22,11 +22,13 @@ static inline BXObjectContactSector *decode_object(json_t *root) {
   if (hashState == NULL) {
     return NULL;
   }
-  XXH3_64bits_reset(hashState);
   contact_sector = calloc(1, sizeof(*contact_sector));
   if (contact_sector == NULL) {
+    XXH3_freeState(hashState);
     return NULL;
   }
+  
+  XXH3_64bits_reset(hashState);
   contact_sector->type = BXTypeContactSector;
   contact_sector->remote_id = bx_object_get_json_uint(object, "id", hashState);
   contact_sector->remote_name =
@@ -49,6 +51,7 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
       bx_do_request(app->queue, NULL, WALK_CONTACT_SECTOR_PATH);
   if (request == NULL || request->response == NULL ||
       request->response->http_code != 200) {
+    bx_net_request_free(request);
     return ErrorGeneric;
   }
 
@@ -93,6 +96,7 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
   for (size_t i = 0; i < contact_sector_array_count; i++) {
     json_t *o = json_array_get(contact_sector_array, i);
     BXObjectContactSector *contact_sector = decode_object(o);
+    if (!contact_sector) { continue; }
 
     /* set to "not delete" items already in database */
     if (items != NULL && items_count > 0) {
@@ -102,10 +106,6 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
           break;
         }
       }
-    }
-
-    if (contact_sector == NULL) {
-      continue;
     }
 
     time_t now = time(NULL);

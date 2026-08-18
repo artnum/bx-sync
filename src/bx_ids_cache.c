@@ -390,7 +390,7 @@ void cache_store(Cache *c, const char *filename) {
     memcpy(ptr, &c->items[i].checksum, sizeof(uint64_t));
     ptr += sizeof(uint64_t);
     memcpy(ptr, &len, sizeof(size_t));
-    ptr += sizeof(ptr);
+    ptr += sizeof(size_t);
     memcpy(ptr, v, len);
     fwrite(entry, entry_size, 1, fp);
   }
@@ -546,11 +546,13 @@ bool cache_load(Cache *c, const char *filename) {
           free(c->items[j].id.__bytes.value);
           c->items[j].id.__bytes.value = NULL;
         }
+        break;
       case BX_OBJECT_TYPE_STRING:
         if (c->items[j].id.__string.value) {
           free(c->items[j].id.__string.value);
           c->items[j].id.__string.value = NULL;
         }
+        break;
       }
     }
     if (c->items) {

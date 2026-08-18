@@ -33,7 +33,7 @@
 #include <unistd.h>
 
 #define MAX_COMMAND_LEN 100
-#define MS_TO_NS 100000
+#define MS_TO_NS 1000000
 extern BXMutex io_mutex;
 extern BXMutex MTX_COUNTRY_LIST;
 const struct timespec THREAD_SLEEP_TIME = {
@@ -62,6 +62,7 @@ MYSQL *thread_setup_mysql(bXill *app) {
                           bx_conf_get_string(app->conf, "mysql-password"),
                           bx_conf_get_string(app->conf, "mysql-database"), 0,
                           NULL, 0)) {
+    mysql_close(conn);
     return NULL;
   }
   bx_log_debug("New MYSQL Thread : %lu", mysql_thread_id(conn));
@@ -212,6 +213,8 @@ void *contact_thread(void *arg) {
   if (bx_prune_from_db(app, &prune_one_source_of_truth) == ErrorSQLReconnect) {
     conn = thread_reconnect(conn, app);
     if (!conn) {
+      free(filename);
+      cache_destroy(my_cache);
       bx_database_free_query(prune_one_source_of_truth.query);
       thread_teardown_mysql(conn);
       bx_log_error("Cannot set up MYSQL");

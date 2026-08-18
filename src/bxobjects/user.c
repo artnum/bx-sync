@@ -64,11 +64,13 @@ static inline BXObjectUser *decode_object(json_t *root) {
   if (hashState == NULL) {
     return NULL;
   }
-  XXH3_64bits_reset(hashState);
   user = calloc(1, sizeof(*user));
   if (user == NULL) {
+    XXH3_freeState(hashState);
     return NULL;
   }
+  
+  XXH3_64bits_reset(hashState);
   user->type = BXTypeUser;
   user->remote_id = bx_object_get_json_uint(object, "id", hashState);
   user->remote_firstname =
@@ -114,6 +116,7 @@ bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   bx_log_debug("BX Use Sync Item");
   BXNetRequest *request = bx_do_request(app->queue, NULL, GET_USER_PATH, item);
   if (request == NULL) {
+    bx_net_request_free(request);
     return false;
   }
   if (request == NULL || request->response == NULL ||

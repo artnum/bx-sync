@@ -136,7 +136,7 @@ BXString bx_object_get_json_string(json_t *object, const char *key,
     }
     memcpy(str.value, json_string_value(value), str.value_len);
   } else if (json_is_integer(value)) {
-    str.value_len = snprintf(NULL, 0, "%lld", json_integer_value(value)) - 1;
+    str.value_len = snprintf(NULL, 0, "%lld", json_integer_value(value));
     str.value = calloc(str.value_len + 1, sizeof(*str.value));
     if (str.value == NULL) {
       return str;

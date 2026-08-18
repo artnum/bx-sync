@@ -114,7 +114,7 @@ BXDatabaseQuery *bx_database_new_query(MYSQL *mysql, const char *query) {
   }
   new->stmt = mysql_stmt_init(mysql);
   if (new->stmt == NULL) {
-    bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(new->stmt));
+    bx_log_error("[MYSQL ERROR] %s", mysql_error(mysql));
     free(new);
     return NULL;
   }
@@ -483,6 +483,7 @@ bool bx_database_execute(BXDatabaseQuery *query) {
   if (mysql_stmt_bind_param(query->stmt, query->binds) != 0) {
     bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(query->stmt));
     free(query->binds);
+    query->binds = NULL;
     return false;
   }
 

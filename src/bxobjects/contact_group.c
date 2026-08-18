@@ -69,11 +69,14 @@ bool bx_contact_group_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   if (request == NULL || request->response == NULL ||
       request->response->http_code != 200) {
     if (request == NULL || request->response == NULL) {
+      bx_net_request_free(request);
       return false;
     }
     if (request->response->http_code == 404) {
+      bx_net_request_free(request);
       return db_delete_object(conn, ((BXInteger *)item)->value);
     }
+    bx_net_request_free(request);
     return false;
   }
 
