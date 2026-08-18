@@ -378,6 +378,7 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
   bx_database_add_bxtype(query, ":birthday", (BXGeneric *)&contact->birthday);
   bx_database_add_bxtype(query, ":address", (BXGeneric *)&contact->address);
   bx_database_add_bxtype(query, ":city", (BXGeneric *)&contact->city);
+  bx_database_add_bxtype(query, ":mail", (BXGeneric *)&contact->mail);
   bx_database_add_bxtype(query, ":mail_second",
                          (BXGeneric *)&contact->mail_second);
   bx_database_add_bxtype(query, ":phone_fixed_second",
