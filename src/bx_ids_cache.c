@@ -22,12 +22,12 @@ bool _grow_cache(Cache *c) {
 }
 
 CacheItem *_find_item(Cache *c, BXGeneric *item_id) {
-  int64_t left = 0;
-  int64_t right = c->count - 1;
-  int64_t middle = 0;
   if (c == NULL || item_id == NULL) {
     return NULL;
   }
+  int64_t left = 0;
+  int64_t right = c->count - 1;
+  int64_t middle = 0;
   if (c->count <= 0) {
     return NULL;
   }
@@ -363,6 +363,7 @@ void cache_store(Cache *c, const char *filename) {
       break;
     }
     if (v == NULL) {
+      free(entry);
       fclose(fp);
       return;
     }
