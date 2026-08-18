@@ -212,11 +212,13 @@ void *bx_object_contact_decode(void *jroot) {
   if (hashState == NULL) {
     return NULL;
   }
-  XXH3_64bits_reset(hashState);
   contact = calloc(1, sizeof(*contact));
   if (contact == NULL) {
+    XXH3_freeState(hashState);
     return NULL;
   }
+  
+  XXH3_64bits_reset(hashState);
   contact->type = BXTypeContact;
 
   /* integer */
@@ -494,11 +496,11 @@ BXillError bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
   BXNetRequest *request =
       bx_do_request(app->queue, NULL, GET_CONTACT_PATH, item, &show_archived);
   if (request == NULL) {
-    return false;
+    return ErrorNet;
   }
   if (request->response == NULL || request->response->http_code != 200) {
     bx_net_request_free(request);
-    return false;
+    return ErrorNet;
   }
   bool retVal =
       _bx_contact_sync_item(app, conn, request->decoded, show_archived, c);

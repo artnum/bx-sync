@@ -26,11 +26,13 @@ void *bx_object_tax_decode(void *jroot) {
   if (hashState == NULL) {
     return NULL;
   }
-  XXH3_64bits_reset(hashState);
   tax = calloc(1, sizeof(*tax));
   if (tax == NULL) {
+    XXH3_freeState(hashState);
     return NULL;
   }
+  
+  XXH3_64bits_reset(hashState);
   tax->type = BXTypeInvoiceTax;
   tax->id = bx_object_get_json_uint(jroot, "id", hashState);
   tax->uuid = bx_object_get_json_uuid(jroot, "uuid", hashState);
@@ -102,7 +104,7 @@ void bx_dump(BXObjectTax *tax) {
 BXillError _bx_insert_tax(MYSQL *conn, BXObjectTax *tax) {
   BXDatabaseQuery *query = bx_database_new_query(conn, QUERY_INSERT);
   if (!query) {
-    return false;
+    return ErrorGeneric;
   }
 
   time_t now;
@@ -159,7 +161,7 @@ BXillError _bx_sync_item(MYSQL *conn, json_t *item) {
   BXObjectTax *tax = NULL;
   tax = bx_object_tax_decode(item);
   if (!tax) {
-    return false;
+    return ErrorGeneric;
   }
   BXillError RetVal = NoError;
   switch (bx_taxes_check_database(conn, tax)) {

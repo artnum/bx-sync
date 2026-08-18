@@ -455,7 +455,14 @@ bool bx_database_execute(BXDatabaseQuery *query) {
   if (query->exectued) {
     mysql_stmt_reset(query->stmt);
     bx_database_free_result(query);
-    memset(query->binds, 0, query->param_count * sizeof(*query->binds));
+    if (query->binds) {
+        memset(query->binds, 0, query->param_count * sizeof(*query->binds));
+    } else {
+      query->binds = calloc(query->param_count, sizeof(*query->binds));
+      if (query->binds == NULL) {
+        return false;
+      }
+    }
   } else {
     query->binds = calloc(query->param_count, sizeof(*query->binds));
     if (query->binds == NULL) {

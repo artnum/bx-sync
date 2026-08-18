@@ -34,7 +34,6 @@
     "_checksum = :_checksum, "                                                \
     "_last_updated = :_last_updated, "                                        \
     "_deleted = :_deleted, "                                                  \
-    "id = :id, "                                                              \
     "lastname = :lastname, "                                                  \
     "firstname = :firstname, "                                                \
     "email = :email, "                                                        \
@@ -121,6 +120,7 @@ bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   }
   if (request == NULL || request->response == NULL ||
       request->response->http_code != 200) {
+    bx_net_request_free(request);
     return false;
   }
   BXObjectUser *user = decode_object(request->decoded);

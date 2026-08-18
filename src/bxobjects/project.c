@@ -43,6 +43,7 @@ static BXObjectProject *decode_object(json_t *object) {
   }
   XXH3_state_t *hash_state = XXH3_createState();
   if (hash_state == NULL) {
+    free(project);
     return NULL;
   }
   XXH3_64bits_reset(hash_state);
@@ -247,12 +248,12 @@ BXillError bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
   BXNetRequest *request =
       bx_do_request(app->queue, NULL, GET_PROJECT_PATH, item);
   if (request == NULL) {
-    return false;
+    return ErrorNet;
   }
 
   if (request->response == NULL || request->response->http_code != 200) {
     bx_net_request_free(request);
-    return false;
+    return ErrorNet;
   }
 
   bool ret = _bx_project_sync_item(conn, request->decoded, cache);

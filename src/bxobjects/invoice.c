@@ -131,11 +131,12 @@ void *bx_object_invoice_decode(void *object) {
   if (hashState == NULL) {
     return NULL;
   }
-  XXH3_64bits_reset(hashState);
   invoice = calloc(1, sizeof(*invoice));
   if (invoice == NULL) {
+    XXH3_freeState(hashState);
     return NULL;
   }
+  XXH3_64bits_reset(hashState);
   invoice->type = BXTypeInvoice;
 
   /* integer */

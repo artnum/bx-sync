@@ -297,6 +297,8 @@ BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params) {
   struct curl_slist *tmp = NULL;
   tmp = curl_slist_append(tmp, auth_token);
   if (tmp == NULL) {
+    free(net_rdata);
+    free(auth_token);
     free(url);
     return NULL;
   }
@@ -304,6 +306,8 @@ BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params) {
   tmp = curl_slist_append(header_list, "Accept: application/json");
   if (tmp == NULL) {
     curl_slist_free_all(header_list);
+    free(net_rdata);
+    free(auth_token);
     free(url);
     return NULL;
   }
@@ -313,6 +317,8 @@ BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params) {
                    "(https://github.com/artnum/bx-sync; etienne@artnum.ch)");
   if (tmp == NULL) {
     curl_slist_free_all(header_list);
+    free(net_rdata);
+    free(auth_token);
     free(url);
     return NULL;
   }

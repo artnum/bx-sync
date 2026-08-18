@@ -114,6 +114,7 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
     bx_database_add_param_int64(query, ":id", &contact_sector->remote_id.value);
     bx_database_execute(query);
     bx_database_results(query);
+    uint64_t not_deleted = 0;
     if (query->results == NULL || query->results->column_count == 0) {
       bx_database_free_query(query);
       query = bx_database_new_query(
@@ -128,6 +129,7 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
       bx_database_add_param_uint64(query, ":id",
                                    &contact_sector->remote_id.value);
       bx_database_add_param_uint64(query, ":_last_updated", &now);
+      bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
       bool e = bx_database_execute(query);
       bx_database_free_query(query);
       free_object(contact_sector);
@@ -149,7 +151,6 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
         conn, "UPDATE contact_sector SET _checksum = :_checksum, name = :name, "
               "_last_updated = :_last_updated, _deleted = :_deleted "
               "WHERE id = :id;");
-    uint64_t not_deleted = 0;
     bx_database_add_bxtype(query, ":id", (BXGeneric *)&contact_sector->remote_id);
     bx_database_add_param_char(query, ":name",
                                contact_sector->remote_name.value,

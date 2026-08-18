@@ -111,6 +111,10 @@ void *random_item_thread(void *arg) {
   BXillError RetVal = NoError;
   thread_blocks_signals();
   conn = thread_setup_mysql(app);
+  if (!conn) {
+    return (void *)EXIT_FAILURE;
+  }
+
   bx_log_debug("Random items thread data thread %lx", pthread_self());
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
@@ -281,11 +285,14 @@ void *project_thread(void *arg) {
   /* mysql setup */
   MYSQL *conn = NULL;
   conn = thread_setup_mysql(app);
-
+  if (!conn) {
+    return (void *)EXIT_FAILURE;
+  }
   /* cache filename */
   char *filename = bx_utils_cache_filename(app, CACHE_FILE_PROJECT);
   if (!filename) {
     bx_log_error("Failed allocation of cache filename %s", CACHE_FILE_PROJECT);
+    thread_teardown_mysql(conn);
     return 0;
   }
 
@@ -358,10 +365,14 @@ void *invoice_thread(void *arg) {
   thread_blocks_signals();
   /* mysql setup */
   conn = thread_setup_mysql(app);
+  if (!conn) {
+    return (void *)EXIT_FAILURE;
+  }
 
   /* filename for cache */
   char *filename = bx_utils_cache_filename(app, CACHE_FILE_INVOICE);
   if (!filename) {
+    thread_teardown_mysql(conn);
     bx_log_error("Failed allocation of cache filename %s", CACHE_FILE_INVOICE);
     return 0;
   }
