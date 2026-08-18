@@ -839,6 +839,12 @@ static void *_bx_net_loop_worker(void *l) {
     pthread_mutex_unlock(&list->in_mutex);
 
     request->response = bx_fetch(list->net, request->path, request->params);
+    if (!request->response) {
+      request->cancel = true;
+      request->done = true;
+      standby = true;
+      goto put_back_into_list;
+    }
     switch (request->response->http_code) {
     case 429:
     case 500:
@@ -867,6 +873,7 @@ static void *_bx_net_loop_worker(void *l) {
     request->cancel = false;
     request->done = true;
 
+put_back_into_list:
     pthread_mutex_lock(&list->out_mutex);
     if (list->out == NULL) {
       list->out = request;
