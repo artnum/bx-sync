@@ -17,6 +17,7 @@
 #include "include/bxobjects/language.h"
 #include "include/bxobjects/project.h"
 #include "include/bxobjects/taxes.h"
+#include "include/bx_sync_more.h"
 
 #include <fcntl.h>
 #include <jansson.h>
@@ -140,6 +141,18 @@ void *random_item_thread(void *arg) {
       sleep(BXILL_STANDBY_SECONDS);
     }
     BXillError e = bx_taxes_walk_item(app, conn);
+    if (e != ErrorSQLReconnect) {
+      BXillError r = bx_records_walk_more(app, conn);
+      if (r != NoError) {
+        e = r;
+      }
+    }
+    if (e != ErrorSQLReconnect) {
+      BXillError r = bx_kb_sales_walk_items(app, conn);
+      if (r != NoError) {
+        e = r;
+      }
+    }
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
     } else {
@@ -706,6 +719,9 @@ int main(int argc, char **argv) {
     }
     if (!bx_language_load(&app, lookup_conn)) {
       bx_log_error("Lookup load failed: language");
+    }
+    if (bx_lookups_walk_more(&app, lookup_conn) != NoError) {
+      bx_log_error("Lookup load failed: extra lookups");
     }
     thread_teardown_mysql(lookup_conn);
   } else {

@@ -16,5 +16,13 @@ BXillError bx_unit_walk_items(bXill *app, MYSQL *conn);
 BXillError bx_salutation_walk_items(bXill *app, MYSQL *conn);
 BXillError bx_title_walk_items(bXill *app, MYSQL *conn);
 BXillError bx_payment_type_walk_items(bXill *app, MYSQL *conn);
+BXillError bx_communication_kind_walk_items(bXill *app, MYSQL *conn);
+BXillError bx_project_state_walk_items(bXill *app, MYSQL *conn);
+BXillError bx_project_type_walk_items(bXill *app, MYSQL *conn);
+BXillError bx_timesheet_status_walk_items(bXill *app, MYSQL *conn);
+BXillError bx_todo_status_walk_items(bXill *app, MYSQL *conn);
+BXillError bx_todo_priority_walk_items(bXill *app, MYSQL *conn);
+BXillError bx_stock_walk_items(bXill *app, MYSQL *conn);
+BXillError bx_stock_place_walk_items(bXill *app, MYSQL *conn);
 
 #endif /* BX_NAMED_LIST_H__ */

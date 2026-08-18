@@ -300,3 +300,583 @@ CREATE TABLE IF NOT EXISTS taxes (
   INDEX USING HASH (_checksum)
 );
 
+-- ** Step 2: remaining GET resources (no payroll, no file blobs) **
+
+CREATE TABLE IF NOT EXISTS country (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(80) NOT NULL,
+    name_short VARCHAR(16) DEFAULT NULL,
+    iso3166_alpha2 CHAR(2) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS account_group (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    uuid BINARY(16) DEFAULT NULL,
+    account_no VARCHAR(20) DEFAULT NULL,
+    name TEXT,
+    parent_fibu_account_group_id BIGINT UNSIGNED DEFAULT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_locked BOOLEAN DEFAULT FALSE,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS client_service (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(80) NOT NULL,
+    default_is_billable BOOLEAN DEFAULT FALSE,
+    default_price_per_hour DOUBLE DEFAULT NULL,
+    account_id BIGINT UNSIGNED DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS communication_kind (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(80) NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS pr_project_state (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(80) NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS pr_project_type (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(80) NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS timesheet_status (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(80) NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS todo_status (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(80) NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS todo_priority (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(80) NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS stock (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(80) NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS stock_place (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(80) NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS bank_account (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(120) DEFAULT NULL,
+    owner TEXT,
+    owner_address TEXT,
+    owner_zip VARCHAR(20) DEFAULT NULL,
+    owner_city VARCHAR(80) DEFAULT NULL,
+    owner_country_code CHAR(2) DEFAULT NULL,
+    bc_nr VARCHAR(32) DEFAULT NULL,
+    bank_name VARCHAR(120) DEFAULT NULL,
+    bank_nr VARCHAR(64) DEFAULT NULL,
+    bank_account_nr VARCHAR(64) DEFAULT NULL,
+    iban_nr VARCHAR(64) DEFAULT NULL,
+    currency_id BIGINT UNSIGNED DEFAULT NULL,
+    account_id BIGINT UNSIGNED DEFAULT NULL,
+    remarks TEXT,
+    invoice_mode VARCHAR(32) DEFAULT NULL,
+    qr_invoice_iban VARCHAR(64) DEFAULT NULL,
+    type VARCHAR(32) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS company_profile (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name VARCHAR(160) DEFAULT NULL,
+    address TEXT,
+    address_nr VARCHAR(20) DEFAULT NULL,
+    postcode VARCHAR(20) DEFAULT NULL,
+    city VARCHAR(80) DEFAULT NULL,
+    country_id BIGINT UNSIGNED DEFAULT NULL,
+    legal_form VARCHAR(80) DEFAULT NULL,
+    country_name VARCHAR(80) DEFAULT NULL,
+    mail TEXT,
+    phone_fixed VARCHAR(80) DEFAULT NULL,
+    phone_mobile VARCHAR(80) DEFAULT NULL,
+    fax VARCHAR(80) DEFAULT NULL,
+    url TEXT,
+    ust_id_nr VARCHAR(80) DEFAULT NULL,
+    mwst_nr VARCHAR(80) DEFAULT NULL,
+    trade_register_nr VARCHAR(80) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS calendar_year (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    start VARCHAR(20) DEFAULT NULL,
+    end VARCHAR(20) DEFAULT NULL,
+    is_vat_subject BOOLEAN DEFAULT NULL,
+    is_annual_reporting BOOLEAN DEFAULT NULL,
+    created_at VARCHAR(40) DEFAULT NULL,
+    updated_at VARCHAR(40) DEFAULT NULL,
+    vat_accounting_method VARCHAR(40) DEFAULT NULL,
+    vat_accounting_type VARCHAR(40) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS business_year (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    start VARCHAR(20) DEFAULT NULL,
+    end VARCHAR(20) DEFAULT NULL,
+    status VARCHAR(40) DEFAULT NULL,
+    closed_at VARCHAR(20) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS vat_period (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    start VARCHAR(20) DEFAULT NULL,
+    end VARCHAR(20) DEFAULT NULL,
+    type VARCHAR(40) DEFAULT NULL,
+    status VARCHAR(40) DEFAULT NULL,
+    closed_at VARCHAR(20) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS contact_relation (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    contact_id BIGINT UNSIGNED DEFAULT NULL,
+    contact_sub_id BIGINT UNSIGNED DEFAULT NULL,
+    description TEXT,
+    updated_at VARCHAR(32) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS additional_address (
+    id BIGINT UNSIGNED NOT NULL,
+    name TEXT,
+    name_addition TEXT,
+    address TEXT,
+    street_name TEXT,
+    house_number VARCHAR(20) DEFAULT NULL,
+    address_addition TEXT,
+    postcode VARCHAR(20) DEFAULT NULL,
+    city VARCHAR(80) DEFAULT NULL,
+    country_id BIGINT UNSIGNED DEFAULT NULL,
+    subject TEXT,
+    description TEXT,
+    _contact_id BIGINT UNSIGNED NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (id, _contact_id),
+    FOREIGN KEY (_contact_id) REFERENCES contact(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS article (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    user_id BIGINT UNSIGNED DEFAULT NULL,
+    article_type_id BIGINT UNSIGNED DEFAULT NULL,
+    contact_id BIGINT UNSIGNED DEFAULT NULL,
+    intern_code VARCHAR(80) DEFAULT NULL,
+    intern_name TEXT,
+    intern_description TEXT,
+    purchase_price DOUBLE DEFAULT NULL,
+    sale_price DOUBLE DEFAULT NULL,
+    currency_id BIGINT UNSIGNED DEFAULT NULL,
+    tax_id BIGINT UNSIGNED DEFAULT NULL,
+    unit_id BIGINT UNSIGNED DEFAULT NULL,
+    is_stock BOOLEAN DEFAULT FALSE,
+    stock_id BIGINT UNSIGNED DEFAULT NULL,
+    stock_place_id BIGINT UNSIGNED DEFAULT NULL,
+    stock_nr DOUBLE DEFAULT NULL,
+    remarks TEXT,
+    article_group_id BIGINT UNSIGNED DEFAULT NULL,
+    account_id BIGINT UNSIGNED DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS note (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    user_id BIGINT UNSIGNED DEFAULT NULL,
+    event_start VARCHAR(32) DEFAULT NULL,
+    subject TEXT,
+    info TEXT,
+    contact_id BIGINT UNSIGNED DEFAULT NULL,
+    project_id BIGINT UNSIGNED DEFAULT NULL,
+    entry_id BIGINT UNSIGNED DEFAULT NULL,
+    module_id BIGINT UNSIGNED DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS task (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    user_id BIGINT UNSIGNED DEFAULT NULL,
+    finish_date VARCHAR(40) DEFAULT NULL,
+    subject TEXT,
+    info TEXT,
+    contact_id BIGINT UNSIGNED DEFAULT NULL,
+    sub_contact_id BIGINT UNSIGNED DEFAULT NULL,
+    project_id BIGINT UNSIGNED DEFAULT NULL,
+    todo_status_id BIGINT UNSIGNED DEFAULT NULL,
+    todo_priority_id BIGINT UNSIGNED DEFAULT NULL,
+    has_reminder BOOLEAN DEFAULT FALSE,
+    communication_kind_id BIGINT UNSIGNED DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS timesheet (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    user_id BIGINT UNSIGNED DEFAULT NULL,
+    status_id BIGINT UNSIGNED DEFAULT NULL,
+    client_service_id BIGINT UNSIGNED DEFAULT NULL,
+    text TEXT,
+    allowable_bill BOOLEAN DEFAULT NULL,
+    contact_id BIGINT UNSIGNED DEFAULT NULL,
+    sub_contact_id BIGINT UNSIGNED DEFAULT NULL,
+    pr_project_id BIGINT UNSIGNED DEFAULT NULL,
+    pr_package_id BIGINT UNSIGNED DEFAULT NULL,
+    pr_milestone_id BIGINT UNSIGNED DEFAULT NULL,
+    estimated_time VARCHAR(16) DEFAULT NULL,
+    date VARCHAR(20) DEFAULT NULL,
+    duration VARCHAR(16) DEFAULT NULL,
+    running BOOLEAN DEFAULT FALSE,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS kb_quote (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    document_nr VARCHAR(255) DEFAULT NULL,
+    title VARCHAR(160) DEFAULT NULL,
+    contact_id BIGINT UNSIGNED DEFAULT NULL,
+    contact_sub_id BIGINT UNSIGNED DEFAULT NULL,
+    user_id BIGINT UNSIGNED DEFAULT NULL,
+    project_id BIGINT UNSIGNED DEFAULT NULL,
+    language_id BIGINT UNSIGNED DEFAULT NULL,
+    bank_account_id BIGINT UNSIGNED DEFAULT NULL,
+    currency_id BIGINT UNSIGNED DEFAULT NULL,
+    payment_type_id BIGINT UNSIGNED DEFAULT NULL,
+    header TEXT,
+    footer TEXT,
+    total_gross DOUBLE DEFAULT NULL,
+    total_net DOUBLE DEFAULT NULL,
+    total_taxes DOUBLE DEFAULT NULL,
+    total DOUBLE DEFAULT NULL,
+    total_rounding_difference DOUBLE DEFAULT NULL,
+    mwst_type INT DEFAULT NULL,
+    mwst_is_net TINYINT DEFAULT NULL,
+    show_position_taxes TINYINT DEFAULT NULL,
+    is_valid_from VARCHAR(20) DEFAULT NULL,
+    is_valid_until VARCHAR(20) DEFAULT NULL,
+    contact_address TEXT,
+    kb_item_status_id INT DEFAULT NULL,
+    updated_at VARCHAR(32) DEFAULT NULL,
+    template_slug VARCHAR(64) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS kb_order (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    document_nr VARCHAR(255) DEFAULT NULL,
+    title VARCHAR(160) DEFAULT NULL,
+    contact_id BIGINT UNSIGNED DEFAULT NULL,
+    contact_sub_id BIGINT UNSIGNED DEFAULT NULL,
+    user_id BIGINT UNSIGNED DEFAULT NULL,
+    project_id BIGINT UNSIGNED DEFAULT NULL,
+    language_id BIGINT UNSIGNED DEFAULT NULL,
+    bank_account_id BIGINT UNSIGNED DEFAULT NULL,
+    currency_id BIGINT UNSIGNED DEFAULT NULL,
+    payment_type_id BIGINT UNSIGNED DEFAULT NULL,
+    header TEXT,
+    footer TEXT,
+    total_gross DOUBLE DEFAULT NULL,
+    total_net DOUBLE DEFAULT NULL,
+    total_taxes DOUBLE DEFAULT NULL,
+    total DOUBLE DEFAULT NULL,
+    total_rounding_difference DOUBLE DEFAULT NULL,
+    mwst_type INT DEFAULT NULL,
+    mwst_is_net TINYINT DEFAULT NULL,
+    is_valid_from VARCHAR(20) DEFAULT NULL,
+    contact_address TEXT,
+    kb_item_status_id INT DEFAULT NULL,
+    updated_at VARCHAR(32) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS kb_delivery (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    document_nr VARCHAR(255) DEFAULT NULL,
+    title VARCHAR(160) DEFAULT NULL,
+    contact_id BIGINT UNSIGNED DEFAULT NULL,
+    user_id BIGINT UNSIGNED DEFAULT NULL,
+    project_id BIGINT UNSIGNED DEFAULT NULL,
+    language_id BIGINT UNSIGNED DEFAULT NULL,
+    kb_item_status_id INT DEFAULT NULL,
+    is_valid_from VARCHAR(20) DEFAULT NULL,
+    contact_address TEXT,
+    updated_at VARCHAR(32) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS quote_position (
+    id BIGINT NOT NULL,
+    amount FLOAT DEFAULT NULL,
+    account_id BIGINT DEFAULT NULL,
+    unit_id BIGINT UNSIGNED DEFAULT NULL,
+    tax_id BIGINT DEFAULT NULL,
+    tax_value FLOAT DEFAULT NULL,
+    description TEXT,
+    unit_price FLOAT DEFAULT NULL,
+    discount FLOAT DEFAULT NULL,
+    position INT DEFAULT NULL,
+    internal_position INT DEFAULT NULL,
+    type VARCHAR(32) DEFAULT NULL,
+    parent_id BIGINT DEFAULT NULL,
+    _quote_id BIGINT UNSIGNED NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (id, _quote_id)
+);
+
+CREATE TABLE IF NOT EXISTS order_position (
+    id BIGINT NOT NULL,
+    amount FLOAT DEFAULT NULL,
+    account_id BIGINT DEFAULT NULL,
+    unit_id BIGINT UNSIGNED DEFAULT NULL,
+    tax_id BIGINT DEFAULT NULL,
+    tax_value FLOAT DEFAULT NULL,
+    description TEXT,
+    unit_price FLOAT DEFAULT NULL,
+    discount FLOAT DEFAULT NULL,
+    position INT DEFAULT NULL,
+    internal_position INT DEFAULT NULL,
+    type VARCHAR(32) DEFAULT NULL,
+    parent_id BIGINT DEFAULT NULL,
+    _order_id BIGINT UNSIGNED NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (id, _order_id)
+);
+
+CREATE TABLE IF NOT EXISTS invoice_payment (
+    id BIGINT UNSIGNED NOT NULL,
+    date VARCHAR(20) DEFAULT NULL,
+    value DOUBLE DEFAULT NULL,
+    bank_account_id BIGINT UNSIGNED DEFAULT NULL,
+    title TEXT,
+    is_cash_discount BOOLEAN DEFAULT NULL,
+    kb_invoice_id BIGINT UNSIGNED DEFAULT NULL,
+    _invoice_id BIGINT UNSIGNED NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (id, _invoice_id),
+    FOREIGN KEY (_invoice_id) REFERENCES invoice(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS invoice_reminder (
+    id BIGINT UNSIGNED NOT NULL,
+    kb_invoice_id BIGINT UNSIGNED DEFAULT NULL,
+    title TEXT,
+    is_valid_from VARCHAR(20) DEFAULT NULL,
+    is_valid_to VARCHAR(20) DEFAULT NULL,
+    reminder_level INT DEFAULT NULL,
+    is_sent BOOLEAN DEFAULT NULL,
+    remaining_price DOUBLE DEFAULT NULL,
+    _invoice_id BIGINT UNSIGNED NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (id, _invoice_id),
+    FOREIGN KEY (_invoice_id) REFERENCES invoice(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS kb_comment (
+    id BIGINT UNSIGNED NOT NULL,
+    text TEXT,
+    user_id BIGINT UNSIGNED DEFAULT NULL,
+    user_name VARCHAR(160) DEFAULT NULL,
+    date VARCHAR(32) DEFAULT NULL,
+    is_public BOOLEAN DEFAULT NULL,
+    _document_type VARCHAR(20) NOT NULL,
+    _document_id BIGINT UNSIGNED NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (id, _document_type, _document_id)
+);
+
+CREATE TABLE IF NOT EXISTS project_milestone (
+    id BIGINT UNSIGNED NOT NULL,
+    name TEXT,
+    end_date VARCHAR(20) DEFAULT NULL,
+    comment TEXT,
+    pr_parent_milestone_id BIGINT UNSIGNED DEFAULT NULL,
+    _project_id BIGINT UNSIGNED NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (id, _project_id),
+    FOREIGN KEY (_project_id) REFERENCES pr_project(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS project_package (
+    id BIGINT UNSIGNED NOT NULL,
+    name TEXT,
+    spent_time_in_hours DOUBLE DEFAULT NULL,
+    estimated_time_in_hours DOUBLE DEFAULT NULL,
+    comment TEXT,
+    pr_milestone_id BIGINT UNSIGNED DEFAULT NULL,
+    _project_id BIGINT UNSIGNED NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (id, _project_id),
+    FOREIGN KEY (_project_id) REFERENCES pr_project(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS purchase_order (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    document_nr VARCHAR(255) DEFAULT NULL,
+    title TEXT,
+    contact_id BIGINT UNSIGNED DEFAULT NULL,
+    contact_sub_id BIGINT UNSIGNED DEFAULT NULL,
+    user_id BIGINT UNSIGNED DEFAULT NULL,
+    project_id BIGINT UNSIGNED DEFAULT NULL,
+    language_id BIGINT UNSIGNED DEFAULT NULL,
+    bank_account_id BIGINT UNSIGNED DEFAULT NULL,
+    currency_id BIGINT UNSIGNED DEFAULT NULL,
+    payment_type_id BIGINT UNSIGNED DEFAULT NULL,
+    header TEXT,
+    footer TEXT,
+    template_slug VARCHAR(64) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS purchase_bill (
+    id CHAR(36) PRIMARY KEY,
+    created_at VARCHAR(40) DEFAULT NULL,
+    document_no VARCHAR(80) DEFAULT NULL,
+    status VARCHAR(40) DEFAULT NULL,
+    vendor_ref TEXT,
+    vendor TEXT,
+    title TEXT,
+    currency_code VARCHAR(8) DEFAULT NULL,
+    pending_amount DOUBLE DEFAULT NULL,
+    net DOUBLE DEFAULT NULL,
+    gross DOUBLE DEFAULT NULL,
+    bill_date VARCHAR(20) DEFAULT NULL,
+    due_date VARCHAR(20) DEFAULT NULL,
+    overdue BOOLEAN DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS expense (
+    id CHAR(36) PRIMARY KEY,
+    created_at VARCHAR(40) DEFAULT NULL,
+    document_no VARCHAR(80) DEFAULT NULL,
+    status VARCHAR(40) DEFAULT NULL,
+    vendor TEXT,
+    title TEXT,
+    currency_code VARCHAR(8) DEFAULT NULL,
+    paid_on VARCHAR(20) DEFAULT NULL,
+    booking_account_id BIGINT UNSIGNED DEFAULT NULL,
+    net DOUBLE DEFAULT NULL,
+    gross DOUBLE DEFAULT NULL,
+    chargeable_contact_id BIGINT UNSIGNED DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS manual_entry (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    type VARCHAR(40) DEFAULT NULL,
+    date VARCHAR(20) DEFAULT NULL,
+    reference_nr TEXT,
+    created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+    edited_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+    is_locked BOOLEAN DEFAULT NULL,
+    locked_info VARCHAR(80) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS manual_entry_line (
+    id BIGINT UNSIGNED NOT NULL,
+    date VARCHAR(20) DEFAULT NULL,
+    debit_account_id BIGINT UNSIGNED DEFAULT NULL,
+    credit_account_id BIGINT UNSIGNED DEFAULT NULL,
+    tax_id BIGINT UNSIGNED DEFAULT NULL,
+    description TEXT,
+    amount DOUBLE DEFAULT NULL,
+    currency_id BIGINT UNSIGNED DEFAULT NULL,
+    _entry_id BIGINT UNSIGNED NOT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (id, _entry_id)
+);

@@ -139,5 +139,8 @@ void bx_object_position_free(void *data);
 void *bx_object_position_decode(void *object);
 BXillError bx_invoice_positions_store(MYSQL *conn, uint64_t invoice_id,
                                       json_t *positions);
+BXillError bx_kb_positions_store(MYSQL *conn, const char *table,
+                                 const char *parent_col, uint64_t parent_id,
+                                 json_t *positions);
 
 #endif /* BX_OBJECT_POSITION_H__ */

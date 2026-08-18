@@ -5,6 +5,8 @@
 #include "../include/bxill.h"
 #include <assert.h>
 #include <jansson.h>
+#include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 /* xxh3_32bits */
@@ -519,20 +521,14 @@ static inline void _bx_object_position_de_dump(void *data) {
   _bx_dump_any("discount_total", &position->remote_discount_total, 1);
 }
 
-#define POS_INSERT                                                             \
-  "INSERT INTO invoice_position (id, amount, account_id, unit_id, tax_id, "    \
-  "tax_value, description, unit_price, discount, position, internal_position, "\
-  "type, parent_id, _invoice_id, _checksum, _last_updated) VALUES (:id, "       \
-  ":amount, :account_id, :unit_id, :tax_id, :tax_value, :description, "         \
-  ":unit_price, :discount, :position, :internal_position, :type, :parent_id, " \
-  ":_invoice_id, :_checksum, :_last_updated)"
-#define POS_UPDATE                                                             \
-  "UPDATE invoice_position SET amount = :amount, account_id = :account_id, "   \
-  "unit_id = :unit_id, tax_id = :tax_id, tax_value = :tax_value, "              \
-  "description = :description, unit_price = :unit_price, discount = :discount, "\
-  "position = :position, internal_position = :internal_position, type = :type, "\
-  "parent_id = :parent_id, _checksum = :_checksum, "                           \
-  "_last_updated = :_last_updated WHERE id = :id AND _invoice_id = :_invoice_id"
+static int pos_table_ok(const char *table, const char *parent_col) {
+  return (strcmp(table, "invoice_position") == 0 &&
+          strcmp(parent_col, "_invoice_id") == 0) ||
+         (strcmp(table, "quote_position") == 0 &&
+          strcmp(parent_col, "_quote_id") == 0) ||
+         (strcmp(table, "order_position") == 0 &&
+          strcmp(parent_col, "_order_id") == 0);
+}
 
 static void unset_if_zero(BXUInteger *v) {
   if (v->isset && v->value == 0) {
@@ -540,7 +536,8 @@ static void unset_if_zero(BXUInteger *v) {
   }
 }
 
-static BXillError persist_one_position(MYSQL *conn, uint64_t invoice_id,
+static BXillError persist_one_position(MYSQL *conn, const char *table,
+                                       const char *parent_col, uint64_t doc_id,
                                        json_t *item) {
   XXH3_state_t *hash = XXH3_createState();
   if (hash == NULL) {
@@ -568,16 +565,18 @@ static BXillError persist_one_position(MYSQL *conn, uint64_t invoice_id,
   unset_if_zero(&tax_id);
   unset_if_zero(&parent_id);
 
-  BXDatabaseQuery *query = bx_database_new_query(
-      conn, "SELECT _checksum FROM invoice_position WHERE id = :id AND "
-            "_invoice_id = :_invoice_id");
+  char select_sql[192];
+  snprintf(select_sql, sizeof(select_sql),
+           "SELECT _checksum FROM %s WHERE id = :id AND %s = :_parent", table,
+           parent_col);
+  BXDatabaseQuery *query = bx_database_new_query(conn, select_sql);
   if (query == NULL) {
     bx_object_free_value(&text);
     bx_object_free_value(&type);
     return ErrorGeneric;
   }
   bx_database_add_bxtype(query, ":id", (BXGeneric *)&id);
-  bx_database_add_param_uint64(query, ":_invoice_id", &invoice_id);
+  bx_database_add_param_uint64(query, ":_parent", &doc_id);
   if (!bx_database_execute(query) || !bx_database_results(query)) {
     BXillError e = query->need_reconnect ? ErrorSQLReconnect : ErrorGeneric;
     bx_database_free_query(query);
@@ -596,7 +595,29 @@ static BXillError persist_one_position(MYSQL *conn, uint64_t invoice_id,
   }
   bx_database_free_query(query);
 
-  query = bx_database_new_query(conn, need_insert ? POS_INSERT : POS_UPDATE);
+  char sql[900];
+  if (need_insert) {
+    snprintf(sql, sizeof(sql),
+             "INSERT INTO %s (id, amount, account_id, unit_id, tax_id, "
+             "tax_value, description, unit_price, discount, position, "
+             "internal_position, type, parent_id, %s, _checksum, "
+             "_last_updated) VALUES (:id, :amount, :account_id, :unit_id, "
+             ":tax_id, :tax_value, :description, :unit_price, :discount, "
+             ":position, :internal_position, :type, :parent_id, :_parent, "
+             ":_checksum, :_last_updated)",
+             table, parent_col);
+  } else {
+    snprintf(sql, sizeof(sql),
+             "UPDATE %s SET amount = :amount, account_id = :account_id, "
+             "unit_id = :unit_id, tax_id = :tax_id, tax_value = :tax_value, "
+             "description = :description, unit_price = :unit_price, "
+             "discount = :discount, position = :position, "
+             "internal_position = :internal_position, type = :type, "
+             "parent_id = :parent_id, _checksum = :_checksum, "
+             "_last_updated = :_last_updated WHERE id = :id AND %s = :_parent",
+             table, parent_col);
+  }
+  query = bx_database_new_query(conn, sql);
   if (query == NULL) {
     bx_object_free_value(&text);
     bx_object_free_value(&type);
@@ -617,7 +638,7 @@ static BXillError persist_one_position(MYSQL *conn, uint64_t invoice_id,
                          (BXGeneric *)&internal_pos);
   bx_database_add_bxtype(query, ":type", (BXGeneric *)&type);
   bx_database_add_bxtype(query, ":parent_id", (BXGeneric *)&parent_id);
-  bx_database_add_param_uint64(query, ":_invoice_id", &invoice_id);
+  bx_database_add_param_uint64(query, ":_parent", &doc_id);
   bx_database_add_param_uint64(query, ":_checksum", &checksum);
   bx_database_add_param_uint64(query, ":_last_updated", &now);
   if (!bx_database_execute(query) || !bx_database_results(query)) {
@@ -633,20 +654,30 @@ static BXillError persist_one_position(MYSQL *conn, uint64_t invoice_id,
   return NoError;
 }
 
-BXillError bx_invoice_positions_store(MYSQL *conn, uint64_t invoice_id,
-                                      json_t *positions) {
+BXillError bx_kb_positions_store(MYSQL *conn, const char *table,
+                                 const char *parent_col, uint64_t parent_id,
+                                 json_t *positions) {
   if (positions == NULL || !json_is_array(positions)) {
     return NoError;
   }
+  if (!pos_table_ok(table, parent_col)) {
+    return ErrorGeneric;
+  }
   size_t n = json_array_size(positions);
   for (size_t i = 0; i < n; i++) {
-    BXillError e =
-        persist_one_position(conn, invoice_id, json_array_get(positions, i));
+    BXillError e = persist_one_position(conn, table, parent_col, parent_id,
+                                        json_array_get(positions, i));
     if (e != NoError) {
       return e;
     }
   }
   return NoError;
+}
+
+BXillError bx_invoice_positions_store(MYSQL *conn, uint64_t invoice_id,
+                                      json_t *positions) {
+  return bx_kb_positions_store(conn, "invoice_position", "_invoice_id",
+                               invoice_id, positions);
 }
 
 void bx_object_position_dump(void *data) {

@@ -7,6 +7,7 @@
 #include "../include/bxobjects/contact.h"
 #include "../include/bxobjects/position.h"
 #include "../include/bxobjects/project.h"
+#include "../include/bx_sync_more.h"
 #include <assert.h>
 #include <jansson.h>
 #include <sys/types.h>
@@ -375,6 +376,7 @@ BXillError _bx_invoice_sync_item(bXill *app, MYSQL *conn, json_t *item,
   RetVal = bx_invoice_positions_store(conn, invoice->id.value, positions);
   if (RetVal == NoError) {
     cache_set_item(cache, (BXGeneric *)&invoice->id, invoice->checksum);
+    (void)bx_invoice_extra_sync(app, conn, invoice->id.value);
   }
   bx_object_invoice_free(invoice);
   invoice = NULL;

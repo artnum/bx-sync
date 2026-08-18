@@ -11,7 +11,14 @@ static int table_ok(const char *table) {
   return table != NULL &&
          (strcmp(table, "unit") == 0 || strcmp(table, "salutation") == 0 ||
           strcmp(table, "title") == 0 || strcmp(table, "payment_type") == 0 ||
-          strcmp(table, "contact_group") == 0);
+          strcmp(table, "contact_group") == 0 ||
+          strcmp(table, "communication_kind") == 0 ||
+          strcmp(table, "pr_project_state") == 0 ||
+          strcmp(table, "pr_project_type") == 0 ||
+          strcmp(table, "timesheet_status") == 0 ||
+          strcmp(table, "todo_status") == 0 ||
+          strcmp(table, "todo_priority") == 0 || strcmp(table, "stock") == 0 ||
+          strcmp(table, "stock_place") == 0);
 }
 
 static BXillError upsert_named(MYSQL *conn, const char *table, BXUInteger *id,
@@ -139,4 +146,43 @@ BXillError bx_payment_type_walk_items(bXill *app, MYSQL *conn) {
   bx_log_debug("BX Walk Payment Type Items");
   return bx_named_list_walk(app, conn, "2.0/payment_type?limit=$&offset=$",
                             "payment_type");
+}
+
+BXillError bx_communication_kind_walk_items(bXill *app, MYSQL *conn) {
+  return bx_named_list_walk(app, conn, "2.0/communication_kind?limit=$&offset=$",
+                            "communication_kind");
+}
+
+BXillError bx_project_state_walk_items(bXill *app, MYSQL *conn) {
+  return bx_named_list_walk(app, conn, "2.0/pr_project_state?limit=$&offset=$",
+                            "pr_project_state");
+}
+
+BXillError bx_project_type_walk_items(bXill *app, MYSQL *conn) {
+  return bx_named_list_walk(app, conn, "2.0/pr_project_type?limit=$&offset=$",
+                            "pr_project_type");
+}
+
+BXillError bx_timesheet_status_walk_items(bXill *app, MYSQL *conn) {
+  return bx_named_list_walk(app, conn, "2.0/timesheet_status?limit=$&offset=$",
+                            "timesheet_status");
+}
+
+BXillError bx_todo_status_walk_items(bXill *app, MYSQL *conn) {
+  return bx_named_list_walk(app, conn, "2.0/todo_status?limit=$&offset=$",
+                            "todo_status");
+}
+
+BXillError bx_todo_priority_walk_items(bXill *app, MYSQL *conn) {
+  return bx_named_list_walk(app, conn, "2.0/todo_priority?limit=$&offset=$",
+                            "todo_priority");
+}
+
+BXillError bx_stock_walk_items(bXill *app, MYSQL *conn) {
+  return bx_named_list_walk(app, conn, "2.0/stock?limit=$&offset=$", "stock");
+}
+
+BXillError bx_stock_place_walk_items(bXill *app, MYSQL *conn) {
+  return bx_named_list_walk(app, conn, "2.0/stock_place?limit=$&offset=$",
+                            "stock_place");
 }

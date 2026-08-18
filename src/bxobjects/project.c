@@ -5,6 +5,7 @@
 #include "../include/bx_object_value.h"
 #include "../include/bx_utils.h"
 #include "../include/bxill.h"
+#include "../include/bx_sync_more.h"
 #include <jansson.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -205,7 +206,8 @@ BXillError bx_project_insert_db(MYSQL *conn, BXObjectProject *project) {
   return execute_request(conn, project, QUERY_INSERT);
 }
 
-BXillError _bx_project_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
+BXillError _bx_project_sync_item(bXill *app, MYSQL *conn, json_t *item,
+                                 Cache *cache) {
   BXillError RetVal = NoError;
   BXObjectProject *project = decode_object(item);
   if (project == NULL) {
@@ -234,6 +236,9 @@ BXillError _bx_project_sync_item(MYSQL *conn, json_t *item, Cache *cache) {
     }
   }
   cache_set_item(cache, (BXGeneric *)&project->id, project->checksum);
+  if (app != NULL) {
+    (void)bx_project_extra_sync(app, conn, project->id.value);
+  }
   bx_project_free(project);
   return NoError;
 
@@ -256,7 +261,7 @@ BXillError bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
     return ErrorNet;
   }
 
-  bool ret = _bx_project_sync_item(conn, request->decoded, cache);
+  bool ret = _bx_project_sync_item(app, conn, request->decoded, cache);
   bx_net_request_free(request);
   return ret;
 }
@@ -290,7 +295,7 @@ BXillError bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
     }
     for (size_t i = 0; i < arr_len; i++) {
       BXillError e = _bx_project_sync_item(
-          conn, json_array_get(request->decoded, i), cache);
+          app, conn, json_array_get(request->decoded, i), cache);
       if (e != NoError) {
         bx_net_request_free(request);
         return e;

@@ -7,6 +7,7 @@
 #include "../include/bxill.h"
 #include "../include/bxobjects/country_code.h"
 #include "../include/bxobjects/user.h"
+#include "../include/bx_sync_more.h"
 #include <jansson.h>
 #include <mysql/mysql.h>
 #include <stddef.h>
@@ -478,6 +479,7 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
   query = NULL;
   (void)bx_contact_group_link(conn, contact->id.value,
                               contact->contact_groupd_ids.value);
+  (void)bx_contact_extra_sync(app, conn, contact->id.value);
   bx_object_contact_free(contact);
 
   return NoError;
