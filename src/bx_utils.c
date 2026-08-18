@@ -138,20 +138,17 @@ static inline char *_bx_item_to_path(const char *fmt, va_list ap) {
       BXGeneric *item = va_arg(ap, BXGeneric *);
       if (item == NULL) {
         free(path);
-        va_end(ap);
         return NULL;
       }
       char *str = bx_object_value_to_string(item);
       if (str == NULL) {
         free(path);
-        va_end(ap);
         return NULL;
       }
       size_t str_len = strlen(str);
       if (str_len == 0) {
         free(str);
         free(path);
-        va_end(ap);
         return NULL;
       }
 
@@ -162,7 +159,6 @@ static inline char *_bx_item_to_path(const char *fmt, va_list ap) {
       if (tmp == NULL) {
         free(str);
         free(path);
-        va_end(ap);
         return NULL;
       }
       path = tmp;
@@ -187,7 +183,6 @@ static inline char *_bx_item_to_path(const char *fmt, va_list ap) {
     char *tmp = realloc(path, new_len + 1); // +1 for null terminator
     if (tmp == NULL) {
       free(path);
-      va_end(ap);
       return NULL;
     }
     path = tmp;
@@ -197,14 +192,15 @@ static inline char *_bx_item_to_path(const char *fmt, va_list ap) {
     path[path_len] = '\0'; // Null-terminate
   }
 
-  va_end(ap);
   return path;
 }
 
 char *bx_item_to_path(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  return _bx_item_to_path(fmt, ap);
+  char *ret = _bx_item_to_path(fmt, ap);
+  va_end(ap);
+  return ret;
 }
 
 BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
@@ -215,15 +211,15 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
 
   va_list ap;
   va_start(ap, path_fmt);
-
   char *path = _bx_item_to_path(path_fmt, ap);
+  va_end(ap);
+
   if (path == NULL) {
     bx_log_debug("Request parsing faile %s", path_fmt);
     return NULL;
   }
 
   bx_log_debug("path %s", path);
-  va_end(ap);
   request = bx_net_request_new(path, NULL);
   free(path);
   if (request == NULL) {
