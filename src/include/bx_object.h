@@ -25,7 +25,13 @@ enum e_BXObjectType {
   BXTypeInvoicePositionTE,
   BXTypeUser,
   BXTypeLanguage,
-  BXTypeProject
+  BXTypeProject,
+  BXTypeAccount,
+  BXTypeUnit,
+  BXTypeSalutation,
+  BXTypeTitle,
+  BXTypePaymentType,
+  BXTypeCurrency
 };
 
 BXBool bx_object_get_json_bool(json_t *object, const char *key,

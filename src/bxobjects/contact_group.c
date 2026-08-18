@@ -1,9 +1,11 @@
 #include "../include/bxobjects/contact_group.h"
 #include "../include/bx_database.h"
+#include "../include/bx_named_list.h"
 #include "../include/bx_object.h"
 #include "../include/bx_object_value.h"
 #include "../include/bx_utils.h"
 #include "../include/bxill.h"
+#include <time.h>
 
 static inline void free_object(BXObjectContactGroup *contact_group) {
   if (contact_group == NULL) {
@@ -117,10 +119,12 @@ bool bx_contact_group_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   bx_database_free_query(query);
   query = bx_database_new_query(
       conn, "UPDATE contact_group SET _checksum = :_checksum, name = :name, "
-            "_last_updated = :_last_updated, _deleted = :_deleted;");
+            "_last_updated = :_last_updated, _deleted = :_deleted "
+            "WHERE id = :id;");
   uint64_t not_deleted = 0;
   bx_database_add_param_char(query, ":name", contact_group->remote_name.value,
                              contact_group->remote_name.value_len);
+  bx_database_add_param_uint64(query, ":id", &contact_group->remote_id.value);
   bx_database_add_param_uint64(query, ":_checksum", &contact_group->checksum);
   bx_database_add_param_uint64(query, ":_last_updated", &now);
   bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
@@ -129,4 +133,56 @@ bool bx_contact_group_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   free_object(contact_group);
 
   return true;
+}
+
+BXillError bx_contact_group_walk_items(bXill *app, MYSQL *conn) {
+  bx_log_debug("BX Walk Contact Group Items");
+  return bx_named_list_walk(app, conn, "2.0/contact_group?limit=$&offset=$",
+                            "contact_group");
+}
+
+BXillError bx_contact_group_link(MYSQL *conn, uint64_t contact_id,
+                                 const char *group_ids) {
+  BXDatabaseQuery *del = bx_database_new_query(
+      conn, "DELETE FROM cg2c WHERE contact = :cid");
+  if (del == NULL) {
+    return ErrorGeneric;
+  }
+  bx_database_add_param_uint64(del, ":cid", &contact_id);
+  if (!bx_database_execute(del)) {
+    BXillError e = del->need_reconnect ? ErrorSQLReconnect : ErrorGeneric;
+    bx_database_free_query(del);
+    return e;
+  }
+  bx_database_free_query(del);
+
+  int64_t *ids = bx_int_string_array_to_int_array(group_ids);
+  if (ids == NULL) {
+    return NoError;
+  }
+  BXDatabaseQuery *ins = bx_database_new_query(
+      conn, "INSERT IGNORE INTO cg2c (contact_group, contact) "
+            "VALUES (:gid, :cid)");
+  if (ins == NULL) {
+    free(ids);
+    return ErrorGeneric;
+  }
+  uint64_t gid = 0;
+  bx_database_add_param_uint64(ins, ":gid", &gid);
+  bx_database_add_param_uint64(ins, ":cid", &contact_id);
+  for (int64_t i = 1; i <= ids[0]; i++) {
+    gid = (uint64_t)ids[i];
+    if (gid == 0) {
+      continue;
+    }
+    if (!bx_database_execute(ins)) {
+      BXillError e = ins->need_reconnect ? ErrorSQLReconnect : ErrorGeneric;
+      bx_database_free_query(ins);
+      free(ids);
+      return e;
+    }
+  }
+  bx_database_free_query(ins);
+  free(ids);
+  return NoError;
 }

@@ -1,8 +1,11 @@
 #include "../include/bxobjects/position.h"
+#include "../include/bx_database.h"
 #include "../include/bx_object.h"
 #include "../include/bx_utils.h"
+#include "../include/bxill.h"
 #include <assert.h>
 #include <jansson.h>
+#include <time.h>
 
 /* xxh3_32bits */
 #define KbPositionCustom 0x2cf90d36
@@ -514,6 +517,136 @@ static inline void _bx_object_position_de_dump(void *data) {
   _bx_dump_any("is_percentual", &position->remote_is_percentual, 1);
   _bx_dump_any("value", &position->remote_value, 1);
   _bx_dump_any("discount_total", &position->remote_discount_total, 1);
+}
+
+#define POS_INSERT                                                             \
+  "INSERT INTO invoice_position (id, amount, account_id, unit_id, tax_id, "    \
+  "tax_value, description, unit_price, discount, position, internal_position, "\
+  "type, parent_id, _invoice_id, _checksum, _last_updated) VALUES (:id, "       \
+  ":amount, :account_id, :unit_id, :tax_id, :tax_value, :description, "         \
+  ":unit_price, :discount, :position, :internal_position, :type, :parent_id, " \
+  ":_invoice_id, :_checksum, :_last_updated)"
+#define POS_UPDATE                                                             \
+  "UPDATE invoice_position SET amount = :amount, account_id = :account_id, "   \
+  "unit_id = :unit_id, tax_id = :tax_id, tax_value = :tax_value, "              \
+  "description = :description, unit_price = :unit_price, discount = :discount, "\
+  "position = :position, internal_position = :internal_position, type = :type, "\
+  "parent_id = :parent_id, _checksum = :_checksum, "                           \
+  "_last_updated = :_last_updated WHERE id = :id AND _invoice_id = :_invoice_id"
+
+static void unset_if_zero(BXUInteger *v) {
+  if (v->isset && v->value == 0) {
+    v->isset = false;
+  }
+}
+
+static BXillError persist_one_position(MYSQL *conn, uint64_t invoice_id,
+                                       json_t *item) {
+  XXH3_state_t *hash = XXH3_createState();
+  if (hash == NULL) {
+    return ErrorGeneric;
+  }
+  XXH3_64bits_reset(hash);
+  BXUInteger id = bx_object_get_json_uint(item, "id", hash);
+  BXFloat amount = bx_object_get_json_double(item, "amount", hash);
+  BXUInteger account_id = bx_object_get_json_uint(item, "account_id", hash);
+  BXUInteger unit_id = bx_object_get_json_uint(item, "unit_id", hash);
+  BXUInteger tax_id = bx_object_get_json_uint(item, "tax_id", hash);
+  BXFloat tax_value = bx_object_get_json_double(item, "tax_value", hash);
+  BXString text = bx_object_get_json_string(item, "text", hash);
+  BXFloat unit_price = bx_object_get_json_double(item, "unit_price", hash);
+  BXFloat discount = bx_object_get_json_double(item, "discount_in_percent", hash);
+  BXUInteger pos = bx_object_get_json_uint(item, "pos", hash);
+  BXUInteger internal_pos = bx_object_get_json_uint(item, "internal_pos", hash);
+  BXString type = bx_object_get_json_string(item, "type", hash);
+  BXUInteger parent_id = bx_object_get_json_uint(item, "parent_id", hash);
+  uint64_t checksum = XXH3_64bits_digest(hash);
+  XXH3_freeState(hash);
+
+  unset_if_zero(&unit_id);
+  unset_if_zero(&account_id);
+  unset_if_zero(&tax_id);
+  unset_if_zero(&parent_id);
+
+  BXDatabaseQuery *query = bx_database_new_query(
+      conn, "SELECT _checksum FROM invoice_position WHERE id = :id AND "
+            "_invoice_id = :_invoice_id");
+  if (query == NULL) {
+    bx_object_free_value(&text);
+    bx_object_free_value(&type);
+    return ErrorGeneric;
+  }
+  bx_database_add_bxtype(query, ":id", (BXGeneric *)&id);
+  bx_database_add_param_uint64(query, ":_invoice_id", &invoice_id);
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = query->need_reconnect ? ErrorSQLReconnect : ErrorGeneric;
+    bx_database_free_query(query);
+    bx_object_free_value(&text);
+    bx_object_free_value(&type);
+    return e;
+  }
+  int need_insert =
+      (query->results == NULL || query->results->column_count == 0);
+  if (!need_insert &&
+      (uint64_t)query->results->columns[0].i_value == checksum) {
+    bx_database_free_query(query);
+    bx_object_free_value(&text);
+    bx_object_free_value(&type);
+    return NoError;
+  }
+  bx_database_free_query(query);
+
+  query = bx_database_new_query(conn, need_insert ? POS_INSERT : POS_UPDATE);
+  if (query == NULL) {
+    bx_object_free_value(&text);
+    bx_object_free_value(&type);
+    return ErrorGeneric;
+  }
+  uint64_t now = (uint64_t)time(NULL);
+  bx_database_add_bxtype(query, ":id", (BXGeneric *)&id);
+  bx_database_add_bxtype(query, ":amount", (BXGeneric *)&amount);
+  bx_database_add_bxtype(query, ":account_id", (BXGeneric *)&account_id);
+  bx_database_add_bxtype(query, ":unit_id", (BXGeneric *)&unit_id);
+  bx_database_add_bxtype(query, ":tax_id", (BXGeneric *)&tax_id);
+  bx_database_add_bxtype(query, ":tax_value", (BXGeneric *)&tax_value);
+  bx_database_add_bxtype(query, ":description", (BXGeneric *)&text);
+  bx_database_add_bxtype(query, ":unit_price", (BXGeneric *)&unit_price);
+  bx_database_add_bxtype(query, ":discount", (BXGeneric *)&discount);
+  bx_database_add_bxtype(query, ":position", (BXGeneric *)&pos);
+  bx_database_add_bxtype(query, ":internal_position",
+                         (BXGeneric *)&internal_pos);
+  bx_database_add_bxtype(query, ":type", (BXGeneric *)&type);
+  bx_database_add_bxtype(query, ":parent_id", (BXGeneric *)&parent_id);
+  bx_database_add_param_uint64(query, ":_invoice_id", &invoice_id);
+  bx_database_add_param_uint64(query, ":_checksum", &checksum);
+  bx_database_add_param_uint64(query, ":_last_updated", &now);
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = query->need_reconnect ? ErrorSQLReconnect : ErrorGeneric;
+    bx_database_free_query(query);
+    bx_object_free_value(&text);
+    bx_object_free_value(&type);
+    return e;
+  }
+  bx_database_free_query(query);
+  bx_object_free_value(&text);
+  bx_object_free_value(&type);
+  return NoError;
+}
+
+BXillError bx_invoice_positions_store(MYSQL *conn, uint64_t invoice_id,
+                                      json_t *positions) {
+  if (positions == NULL || !json_is_array(positions)) {
+    return NoError;
+  }
+  size_t n = json_array_size(positions);
+  for (size_t i = 0; i < n; i++) {
+    BXillError e =
+        persist_one_position(conn, invoice_id, json_array_get(positions, i));
+    if (e != NoError) {
+      return e;
+    }
+  }
+  return NoError;
 }
 
 void bx_object_position_dump(void *data) {

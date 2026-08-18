@@ -476,15 +476,8 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
   }
   bx_database_free_query(query);
   query = NULL;
-  /*
-    contact_group_sync(app, conn, contact);
-
-    uint64_t *branch_ids = (uint64_t *)bx_int_string_array_to_int_array(
-        contact->contact_branch_ids.value);
-    if (branch_ids != NULL) {
-      free(branch_ids);
-    }
-  */
+  (void)bx_contact_group_link(conn, contact->id.value,
+                              contact->contact_groupd_ids.value);
   bx_object_contact_free(contact);
 
   return NoError;

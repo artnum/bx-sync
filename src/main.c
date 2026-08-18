@@ -6,9 +6,13 @@
 #include "include/bx_prune.h"
 #include "include/bx_utils.h"
 #include "include/bxill.h"
+#include "include/bx_named_list.h"
+#include "include/bxobjects/account.h"
 #include "include/bxobjects/contact.h"
+#include "include/bxobjects/contact_group.h"
 #include "include/bxobjects/contact_sector.h"
 #include "include/bxobjects/country_code.h"
+#include "include/bxobjects/currency.h"
 #include "include/bxobjects/invoice.h"
 #include "include/bxobjects/language.h"
 #include "include/bxobjects/project.h"
@@ -675,6 +679,38 @@ int main(int argc, char **argv) {
   /* REQUEST AVAILABLE, LOAD SOME STUFF HERE*/
 
   assert(bx_country_code_load(&app) != false);
+
+  /* Lookups first so document FKs (units, etc.) can resolve. */
+  MYSQL *lookup_conn = thread_setup_mysql(&app);
+  if (lookup_conn) {
+    if (bx_unit_walk_items(&app, lookup_conn) != NoError) {
+      bx_log_error("Lookup load failed: unit");
+    }
+    if (bx_account_walk_items(&app, lookup_conn) != NoError) {
+      bx_log_error("Lookup load failed: account");
+    }
+    if (bx_salutation_walk_items(&app, lookup_conn) != NoError) {
+      bx_log_error("Lookup load failed: salutation");
+    }
+    if (bx_title_walk_items(&app, lookup_conn) != NoError) {
+      bx_log_error("Lookup load failed: title");
+    }
+    if (bx_payment_type_walk_items(&app, lookup_conn) != NoError) {
+      bx_log_error("Lookup load failed: payment_type");
+    }
+    if (bx_currency_walk_items(&app, lookup_conn) != NoError) {
+      bx_log_error("Lookup load failed: currency");
+    }
+    if (bx_contact_group_walk_items(&app, lookup_conn) != NoError) {
+      bx_log_error("Lookup load failed: contact_group");
+    }
+    if (!bx_language_load(&app, lookup_conn)) {
+      bx_log_error("Lookup load failed: language");
+    }
+    thread_teardown_mysql(lookup_conn);
+  } else {
+    bx_log_error("Lookup bootstrap skipped: MySQL connect failed");
+  }
 
   /* RUN CODE TO UPDATE DATABASE */
   pthread_create(&threads[CONTACT_THREAD], NULL, contact_thread, (void *)&app);

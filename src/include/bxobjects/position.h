@@ -3,6 +3,8 @@
 
 #include "../bx_object.h"
 #include "../bx_object_value.h"
+#include "../bxill.h"
+#include <jansson.h>
 #include <stdint.h>
 
 typedef struct s_BXObjectGenericPosition BXObjectGenericPosition;
@@ -135,5 +137,7 @@ struct s_BXObjectPositionDE {
 void bx_object_position_dump(void *data);
 void bx_object_position_free(void *data);
 void *bx_object_position_decode(void *object);
+BXillError bx_invoice_positions_store(MYSQL *conn, uint64_t invoice_id,
+                                      json_t *positions);
 
 #endif /* BX_OBJECT_POSITION_H__ */
