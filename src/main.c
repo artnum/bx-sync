@@ -33,13 +33,12 @@
 #include <unistd.h>
 
 #define MAX_COMMAND_LEN 100
-#define MS_TO_NS 1000000
 extern BXMutex io_mutex;
 extern BXMutex MTX_COUNTRY_LIST;
 const struct timespec THREAD_SLEEP_TIME = {
-    .tv_nsec = BXILL_THREAD_SLEEP_MS * MS_TO_NS, .tv_sec = 0};
+    .tv_nsec = MS_TO_NS(BXILL_THREAD_SLEEP_MS), .tv_sec = 0};
 const struct timespec THREAD_ERROR_SLEEP_TIME = {
-    .tv_nsec = 3 * BXILL_THREAD_SLEEP_MS * MS_TO_NS, .tv_sec = 0};
+    .tv_nsec = 3 * MS_TO_NS(BXILL_THREAD_SLEEP_MS), .tv_sec = 0};
 
 void thread_blocks_signals() {
   sigset_t set;

@@ -514,7 +514,7 @@ BXillError bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c) {
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
   const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BX_LIST_LIMIT};
+      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
   BXBool show_archived = {
       .type = BX_OBJECT_TYPE_BOOL, .isset = true, .value = false};
 

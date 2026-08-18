@@ -5,13 +5,28 @@
 #include "bx_net.h"
 #include <mysql/mysql.h>
 
-#define BX_LIST_LIMIT 500
-#define BXILL_DEFAULT_DRIFT 10
-#define BXILL_DEFAULT_CACHE_CHECKPOINT 5
-#define BXILL_DEFAULT_CACHE_DIR "/tmp/"
-#define BXILL_STANDBY_SECONDS 600 /* 10 min standby */
-#define BXILL_THREAD_SLEEP_MS 250
-#define BXILL_THREAD_EXIT_MAX_COUNT 10
+#ifndef BXILL_LIST_LIMIT
+    #define BXILL_LIST_LIMIT 500
+#endif /* BXILL_LIST_LIMIT */ 
+#ifndef BXILL_DEFAULT_DRIFT
+    #define BXILL_DEFAULT_DRIFT 10
+#endif /* BXILL_DEFAULT_DRIFT */
+#ifndef BXILL_DEFAULT_CACHE_CHECKPOINT
+    #define BXILL_DEFAULT_CACHE_CHECKPOINT 5
+#endif /* BXILL_DEFAULT_CACHE_CHECKPOINT */
+#ifndef BXILL_DEFAULT_CACHE_DIR 
+    #define BXILL_DEFAULT_CACHE_DIR "/tmp/"
+#endif /* BXILL_DEFAULT_CACHE_DIR */    
+#ifndef BXILL_STANDBY_SECONDS
+    #define BXILL_STANDBY_SECONDS 600 /* 10 min standby */
+#endif /* BXILL_STANDBY_SECONDS */
+#ifndef BXILL_THREAD_SLEEP_MS
+    #define BXILL_THREAD_SLEEP_MS 250
+#endif /* BXILL_THREAD_SLEEP_MS */
+#ifndef BXILL_THREAD_EXIT_MAX_COUNT
+    #define BXILL_THREAD_EXIT_MAX_COUNT 10
+#endif /* BXILL_THREAD_EXIT_MAX_COUNT */ 
+
 enum e_ObjectState { Error = 0, NeedUpdate, NeedCreate, NeedNothing };
 typedef enum e_ObjectState ObjectState;
 

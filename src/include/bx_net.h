@@ -8,6 +8,10 @@
 #include <jansson.h>
 #include <time.h>
 
+#ifndef BX_NET_DEFAULT_MS_SLEEP
+    #define BX_NET_DEFAULT_MS_SLEEP 125
+#endif /* BX_NET_DEFAULT_MS_SLEEP */
+
 typedef struct s_BXNetRatelimit BXNetRatelimit;
 struct s_BXNetRatelimit {
   int max_request;

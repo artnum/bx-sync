@@ -810,12 +810,10 @@ void bx_net_request_free(BXNetRequest *request) {
   free(request);
 }
 
-#define DEFAULT_RATELIMIT_US 60000 /* 1000 requests per minute */
-
 static void *_bx_net_loop_worker(void *l) {
   BXNetRequestList *list = (BXNetRequestList *)l;
 
-  int us_sleep = DEFAULT_RATELIMIT_US;
+  int us_sleep = MS_TO_US(BX_NET_DEFAULT_MS_SLEEP);
   uint64_t request_count = 0;
   const float max_request_share = 1;
   time_t start = 0;
@@ -891,7 +889,6 @@ put_back_into_list:
     pthread_cond_broadcast(&list->out_cond);
     pthread_mutex_unlock(&list->out_mutex);
 
-#ifdef RATE_LIMIT_API
     assert(bx_mutex_lock(&list->net->mutex_limit) != false);
     /*
      * Cumulative average of time slice. Trying to use as much bandwith
@@ -902,17 +899,23 @@ put_back_into_list:
      * It might not please people at bexio, as this is designed to run
      * 24/7, but we pay for this bandwith we use it.
      */
-    float us_sleep_1 =
-        (((float)list->net->limits.reset_time * 1000000) /
-         (max_request_share * (float)list->net->limits.remaining_request));
+    float average_us_sleep = 0;
+    float us_sleep_1 = 0;
 
-    float average_us_sleep =
-        (us_sleep_1 + (us_sleep * (list->net->request_count - 1))) /
+    if (list->net->limits.max_request == 0) {
+        us_sleep_1 = (float)MS_TO_US(BX_NET_DEFAULT_MS_SLEEP);
+    } else {
+         us_sleep_1 = (((float)SEC_TO_US(list->net->limits.reset_time)) /
+             (max_request_share * (float)list->net->limits.remaining_request));
+    }
+   
+    average_us_sleep = (us_sleep_1 + (us_sleep * (list->net->request_count - 1))) /
         list->net->request_count;
     us_sleep = (int)average_us_sleep;
+
     request_count++;
-    if (us_sleep <= 0 || us_sleep > DEFAULT_RATELIMIT_US * 100) {
-      us_sleep = DEFAULT_RATELIMIT_US;
+    if (us_sleep <= 0 || us_sleep > MS_TO_US(BX_NET_DEFAULT_MS_SLEEP)) {
+      us_sleep = MS_TO_US(BX_NET_DEFAULT_MS_SLEEP);
     }
     bx_log_debug("US_SLEEP %d, LIMIT %d, REMAINING %d, RESET %d", us_sleep,
                  list->net->limits.max_request,
@@ -925,14 +928,6 @@ put_back_into_list:
       /* don't load server too much */
       usleep(us_sleep);
     }
-#else
-    if (standby) {
-        sleep(BXILL_STANDBY_SECONDS);
-    } else {
-        /* fix sleep at 100 ms */
-        usleep(100000);
-    }
-#endif
   }
 quit_task:
   bx_log_debug("Emptying undone request list as we go away");

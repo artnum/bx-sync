@@ -22,6 +22,12 @@ struct s_BXLogMsg {
 #define LOG_LEVEL_INFO 0x08
 #define LOG_LEVEL_ERROR 0x01
 
+#define SEC_TO_MS(x) ((x) * 1000)
+#define SEC_TO_US(x) (SEC_TO_MS(x) * 1000)
+#define SEC_TO_NS(x) (SEC_TO_US(x) * 1000)
+#define MS_TO_US(x) ((x) * 1000)
+#define MS_TO_NS(x) (MS_TO_US(x) * 1000)
+
 struct s_BXLog {
   FILE *fp;
   bXill *app;

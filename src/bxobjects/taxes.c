@@ -210,7 +210,7 @@ BXillError bx_taxes_walk_item(bXill *app, MYSQL *conn) {
   BXInteger offset = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
   const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BX_LIST_LIMIT};
+      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
   BXString scope = {.type = BX_OBJECT_TYPE_STRING,
                     .isset = true,
                     .value = "active",
