@@ -22,14 +22,14 @@ BXillError bx_prune_items(bXill *app, PruningParameters *param) {
   const BXGeneric *id;
   while ((id = cache_iter_next_prunable_id(&iter, drift, true)) != NULL) {
     bx_log_debug("Prunning %lu\n", ((const BXUInteger *)id)->value);
-    if (bx_database_add_bxtype(param->query, ":id", id)) {
-      if (bx_database_execute(param->query)) {
-        bx_log_debug("Query failed %s", param->query);
-        BXillError e =
-            param->query->need_reconnect ? ErrorSQLReconnect : ErrorGeneric;
-        bx_database_free_result(param->query);
-        return e;
-      }
+    if (!bx_database_add_bxtype(param->query, ":id", id) ||
+        !bx_database_execute(param->query))
+    {
+      bx_log_debug("Query failed %s", param->query);
+      BXillError e =
+          param->query->need_reconnect ? ErrorSQLReconnect : ErrorGeneric;
+      bx_database_free_result(param->query);
+      return e;
     }
   }
   bx_database_free_result(param->query);

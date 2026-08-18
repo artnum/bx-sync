@@ -309,7 +309,7 @@ void *project_thread(void *arg) {
 
   PruningParameters project_prune = {
       .query =
-          bx_database_new_query(conn, "DELETE FROM contact WHERE id = :id"),
+          bx_database_new_query(conn, "DELETE FROM pr_project WHERE id = :id"),
       .cache = my_cache};
 
   bx_log_debug("Project data thread %ld", pthread_self());
