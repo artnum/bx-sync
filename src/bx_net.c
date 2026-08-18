@@ -762,6 +762,7 @@ bool bx_net_request_add_param(BXNetRequest *request, const char *name,
   if (e_value == NULL) {
     free(e_name);
     free(param);
+    return false;
   }
   param->name = e_name;
   param->value = e_value;
