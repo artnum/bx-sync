@@ -118,8 +118,8 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
       bx_database_free_query(query);
       query = bx_database_new_query(
           conn,
-          "INSERT INTO contact_sector (_checksum, id, name, _last_updated)"
-          "VALUES (:_checksum, :id, :name, :_last_updated);");
+          "INSERT INTO contact_sector (_checksum, id, name, _last_updated, _deleted)"
+          "VALUES (:_checksum, :id, :name, :_last_updated, :_deleted);");
       bx_database_add_param_char(query, ":name",
                                  contact_sector->remote_name.value,
                                  contact_sector->remote_name.value_len);
@@ -128,13 +128,13 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
       bx_database_add_param_uint64(query, ":id",
                                    &contact_sector->remote_id.value);
       bx_database_add_param_uint64(query, ":_last_updated", &now);
-      BXillError e = bx_database_execute(query);
+      bool e = bx_database_execute(query);
       bx_database_free_query(query);
       free_object(contact_sector);
-      if (e != NoError) {
+      if (!e) {
         json_decref(contact_sector_array);
         free(items);
-        return e;
+        return ErrorSQLInsert;
       }
       continue;
     }
@@ -147,8 +147,10 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
     bx_database_free_query(query);
     query = bx_database_new_query(
         conn, "UPDATE contact_sector SET _checksum = :_checksum, name = :name, "
-              "_last_updated = :_last_updated, _deleted = :_deleted;");
+              "_last_updated = :_last_updated, _deleted = :_deleted "
+              "WHERE id = :id;");
     uint64_t not_deleted = 0;
+    bx_database_add_bxtype(query, ":id", (BXGeneric *)&contact_sector->remote_id);
     bx_database_add_param_char(query, ":name",
                                contact_sector->remote_name.value,
                                contact_sector->remote_name.value_len);
@@ -156,13 +158,13 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
                                  &contact_sector->checksum);
     bx_database_add_param_uint64(query, ":_last_updated", &now);
     bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
-    BXillError e = bx_database_execute(query);
+    bool e = bx_database_execute(query);
     bx_database_free_query(query);
     free_object(contact_sector);
-    if (e != NoError) {
+    if (!e) {
       json_decref(contact_sector_array);
       free(items);
-      return e;
+      return ErrorSQLUpdate;
     }
   }
   json_decref(contact_sector_array);
@@ -174,15 +176,15 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
     BXDatabaseQuery *query = bx_database_new_query(
         conn,
         "UPDATE contact_sector SET _deleted = :_deleted  WHERE id = :id;");
-    bx_database_add_param_int64(query, ":_deleted ", &now);
+    bx_database_add_param_int64(query, ":_deleted", &now);
     bx_database_add_param_int64(query, ":id", to_delete);
     for (int i = 0; i < items_count; i++) {
       if (items[i].deleted) {
         *to_delete = items[i].item;
-        BXillError e = bx_database_execute(query);
-        if (e != NoError) {
+        bool e = bx_database_execute(query);
+        if (!e) {
           free(items);
-          return e;
+          return ErrorSQLUpdate;
         }
       }
     }

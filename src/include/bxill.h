@@ -27,11 +27,12 @@ enum e_ThreadList {
 typedef enum e_BXillError {
   NoError = 0,
   ErrorGeneric,
+  ErrorSQLInsert,
+  ErrorSQLUpdate,
   ErrorSQLReconnect,
   ErrorNet,
   ErrorJSON,
   ErrorDuplicateEntry,
-
   Error_MAX__
 } BXillError;
 

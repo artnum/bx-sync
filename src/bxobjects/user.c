@@ -36,10 +36,11 @@
     "_deleted = :_deleted, "                                                  \
     "id = :id, "                                                              \
     "lastname = :lastname, "                                                  \
+    "firstname = :firstname, "                                                \
     "email = :email, "                                                        \
     "salutation_type = :salutation_type, "                                    \
     "is_superadmin = :is_superadmin, "                                        \
-    "is_accountant = :is_accountant;"                                         \
+    "is_accountant = :is_accountant "                                         \
   "WHERE id = :id;"
 
 static inline void free_object(BXObjectUser *user) {
@@ -68,7 +69,7 @@ static inline BXObjectUser *decode_object(json_t *root) {
   if (user == NULL) {
     return NULL;
   }
-  user->type = BXTypeContactGroup;
+  user->type = BXTypeUser;
   user->remote_id = bx_object_get_json_uint(object, "id", hashState);
   user->remote_firstname =
       bx_object_get_json_string(object, "firstname", hashState);
@@ -133,24 +134,26 @@ bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   bx_database_add_param_int64(query, ":id", &user->remote_id.value);
   bx_database_execute(query);
   bx_database_results(query);
+  uint64_t not_deleted = 0;
   if (query->results == NULL || query->results->column_count == 0) {
     bx_database_free_query(query);
     query = bx_database_new_query(conn, QUERY_INSERT);
 
-    bx_database_add_bxtype(query, ":id", (BXGeneric *)&user->remote_id);
-    bx_database_add_bxtype(query, ":firstname",
-                           (BXGeneric *)&user->remote_firstname);
-    bx_database_add_bxtype(query, ":lastname",
-                           (BXGeneric *)&user->remote_lastname);
-    bx_database_add_bxtype(query, ":email", (BXGeneric *)&user->remote_email);
-    bx_database_add_bxtype(query, ":salutation_type",
-                           (BXGeneric *)&user->remote_salutation_type);
+    bx_database_add_bxtype      (query, ":id", (BXGeneric *)&user->remote_id);
+    bx_database_add_bxtype      (query, ":firstname",
+                                 (BXGeneric *)&user->remote_firstname);
+    bx_database_add_bxtype      (query, ":lastname",
+                                 (BXGeneric *)&user->remote_lastname);
+    bx_database_add_bxtype      (query, ":email", (BXGeneric *)&user->remote_email);
+    bx_database_add_bxtype      (query, ":salutation_type",
+                                 (BXGeneric *)&user->remote_salutation_type);
 
-    bx_database_add_param_uint8(query, ":is_superadmin", &is_superadmin);
-    bx_database_add_param_uint8(query, ":is_accountant", &is_accountant);
+    bx_database_add_param_uint8 (query, ":is_superadmin", &is_superadmin);
+    bx_database_add_param_uint8 (query, ":is_accountant", &is_accountant);
 
     bx_database_add_param_uint64(query, ":_checksum", &user->checksum);
     bx_database_add_param_uint64(query, ":_last_updated", &now);
+    bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
 
     bx_database_execute(query);
     bx_database_free_query(query);
@@ -165,19 +168,19 @@ bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
 
   bx_database_free_query(query);
   query = bx_database_new_query(conn, QUERY_UPDATE);
-  uint64_t not_deleted = 0;
-  bx_database_add_param_char(query, ":firstname", user->remote_firstname.value,
-                             user->remote_firstname.value_len);
-  bx_database_add_param_char(query, ":lastname", user->remote_lastname.value,
-                             user->remote_lastname.value_len);
-  bx_database_add_param_char(query, ":email", user->remote_email.value,
-                             user->remote_email.value_len);
-  bx_database_add_param_char(query, ":salutation_type",
-                             user->remote_salutation_type.value,
-                             user->remote_salutation_type.value_len);
+  bx_database_add_bxtype      (query, ":id", (BXGeneric *)&user->remote_id);
+  bx_database_add_param_char  (query, ":firstname", user->remote_firstname.value,
+                               user->remote_firstname.value_len);
+  bx_database_add_param_char  (query, ":lastname", user->remote_lastname.value,
+                               user->remote_lastname.value_len);
+  bx_database_add_param_char  (query, ":email", user->remote_email.value,
+                               user->remote_email.value_len);
+  bx_database_add_param_char  (query, ":salutation_type",
+                               user->remote_salutation_type.value,
+                               user->remote_salutation_type.value_len);
 
-  bx_database_add_param_uint8(query, ":is_superadmin", &is_superadmin);
-  bx_database_add_param_uint8(query, ":is_accountant", &is_accountant);
+  bx_database_add_param_uint8 (query, ":is_superadmin", &is_superadmin);
+  bx_database_add_param_uint8 (query, ":is_accountant", &is_accountant);
 
   bx_database_add_param_uint64(query, ":_checksum", &user->checksum);
   bx_database_add_param_uint64(query, ":_last_updated", &now);
