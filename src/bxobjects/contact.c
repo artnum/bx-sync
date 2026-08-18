@@ -19,17 +19,17 @@
   "user_id = :user_id, owner_id = :owner_id, title_id = :title_id,"            \
   "salutation_form = :salutation_form, postcode = :postcode, nr = :nr,"        \
   "name_1 = :name_1, name_2 = :name_2, birthday = :birthday, address = "       \
-  ":address"                                                                   \
+  ":address, "                                                                  \
   "city = :city, mail = :mail, mail_second = :mail_second,"                    \
   "phone_fixed = :phone_fixed, phone_fixed_second = :phone_fixed_second,"      \
   "phone_mobile = :phone_mobile, fax = :fax, url = :url, skype_name = "        \
   ":skype_name,"                                                               \
   "remarks = :remarks, updated_at = :updated_at, profile_image = "             \
   ":profile_image,"                                                            \
-  "language_id = :language_id"                                                 \
+  "language_id = :language_id, "                                               \
   "_checksum = :_checksum, _last_updated = :_last_updated, _archived = "       \
-  ":archived"                                                                  \
-  " WHERE id = :id;"
+  ":archived "                                                                 \
+  "WHERE id = :id;"
 #define QUERY_INSERT                                                           \
   "INSERT IGNORE INTO contact (id, contact_type_id, salutation_id, country,"   \
   "user_id, owner_id, title_id, salutation_form, postcode, nr, name_1, "       \
@@ -37,9 +37,9 @@
   "birthday, address, city, mail, mail_second, phone_fixed, "                  \
   "phone_fixed_second,"                                                        \
   "phone_mobile, fax, url, skype_name, remarks, updated_at, profile_image, "   \
-  "language_id,"                                                               \
-  "_checksum, _last_updated, _archived"                                        \
-  ") VALUES (:id, :contact_type_id, :salutation_id, :country, :user_id, "      \
+  "language_id, "                                                              \
+  "_checksum, _last_updated, _archived) "                                      \
+  "VALUES (:id, :contact_type_id, :salutation_id, :country, :user_id, "        \
   ":owner_id,"                                                                 \
   ":title_id, :salutation_form, :postcode, :nr, :name_1, name_2, :birthday, "  \
   ":address,"                                                                  \
@@ -47,7 +47,7 @@
   ":phone_mobile,"                                                             \
   ":fax, :url, :skype_name, :remarks, :updated_at, :profile_image, "           \
   ":language_id, "                                                             \
-  ":_checksum, :_last_updated, :_archived"                                     \
+  ":_checksum, :_last_updated, :_archived "                                    \
   ");"
 
 void bx_object_contact_free(void *data) {
@@ -89,7 +89,7 @@ void bx_object_contact_store(MYSQL *mysql, BXObjectContact *contact) {
       "address, birthday, updated_at, city, mail, mail_second, phone_fixed, "
       "phone_fixed_second, phone_mobile, phone_fax, url, skype_name, remarks, "
       "lanuage_id, contact_group_ids, branch_ids, profile_image, "
-      "_checksum, _last_updated"
+      "_checksum, _last_updated) "
       "VALUES(:id, :user_id, :contact_type_id, :country_id, "
       ":owner_id, :title_id, :salutation_form, :postcode, :nr, :name_1, "
       ":name_2, "
