@@ -9,6 +9,7 @@ Country *COUNTRY_LIST = NULL;
 BXMutex MTX_COUNTRY_LIST;
 
 #define GET_CONTACT_GROUP_PATH "2.0/country"
+#define UNKNOWN_COUNTRY_CODE "??"
 bool bx_country_code_load(bXill *app) {
   bx_log_debug("BX Country Code load");
   BXNetRequest *request =
@@ -43,10 +44,14 @@ bool bx_country_code_load(bXill *app) {
      * least 10 times since my report.
      * Bexio shouldn't be used for anything except trying to crash your
      * company because this application will blow up at one point.
+     *
+     * Going over that again in 2026, they still didn't fix documentation or
+     * API.
      */
     BXString code = bx_object_get_json_string(country, "iso_3166_alpha2", NULL);
     COUNTRY_LIST[i].bx_id = id.value;
-    memcpy(COUNTRY_LIST[i].code, code.value, 2);
+    memcpy(COUNTRY_LIST[i].code,
+           code.value ? code.value : UNKNOWN_COUNTRY_CODE, 2);
     bx_object_free_value(&code);
   }
   bx_mutex_unlock(&MTX_COUNTRY_LIST);
