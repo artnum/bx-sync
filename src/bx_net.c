@@ -930,7 +930,7 @@ put_back_into_list:
   }
 quit_task:
   bx_log_debug("Emptying undone request list as we go away");
-  // bx_net_request_list_cancel(list);
+  bx_net_request_list_cancel(list);
   sleep(3);
   /* list_cancel keeps in mutex locked */
   pthread_mutex_unlock(&list->in_mutex);
