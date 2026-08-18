@@ -877,6 +877,7 @@ static void *_bx_net_loop_worker(void *l) {
     pthread_cond_broadcast(&list->out_cond);
     pthread_mutex_unlock(&list->out_mutex);
 
+#ifdef RATE_LIMIT_API
     assert(bx_mutex_lock(&list->net->mutex_limit) != false);
     /*
      * Cumulative average of time slice. Trying to use as much bandwith
@@ -910,6 +911,14 @@ static void *_bx_net_loop_worker(void *l) {
       /* don't load server too much */
       usleep(us_sleep);
     }
+#else
+    if (standby) {
+        sleep(BXILL_STANDBY_SECONDS);
+    } else {
+        /* fix sleep at 100 ms */
+        usleep(100000);
+    }
+#endif
   }
 quit_task:
   bx_log_debug("Emptying undone request list as we go away");
