@@ -9,7 +9,7 @@
 
 #define GET_LANGUAGE_PATH "2.0/language"
 #define QUERY_UPDATE                                                           \
-  "UPDATE language SET name = :name, decimal_point =: decimal_point,"          \
+  "UPDATE language SET name = :name, decimal_point = :decimal_point,"          \
   "thousands_separator = :thousands_separator, date_format_id = "              \
   ":date_format_id,"                                                           \
   "date_format = :date_format, iso_639_1 = :iso_639_1,"                        \

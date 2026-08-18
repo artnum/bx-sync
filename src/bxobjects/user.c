@@ -6,18 +6,41 @@
 #include "../include/bxill.h"
 
 #define GET_USER_PATH "3.0/users/$"
-#define QUERY_INSERT                                                           \
-  "INSERT INTO user (_checksum, _last_updated, "                               \
-  "id, firstname, lastname, email, salutation_type, is_superadmin, "           \
-  "is_accountant) "                                                            \
-  "VALUES (:_checksum, :_last_updated, :id, :firstname, :lastname, "           \
-  ":email, :salutation_type, :is_superadmin, :is_accountant);"
-#define QUERY_UPDATE                                                           \
-  "INSERT IGNORE INTO user (_checksum, _last_updated, "                        \
-  "id, firstname, lastname, email, salutation_type, is_superadmin, "           \
-  "is_accountant) "                                                            \
-  "VALUES (:_checksum, :_last_updated, :id, :firstname, :lastname, "           \
-  ":email, :salutation_type, :is_superadmin, :is_accountant);"
+#define QUERY_INSERT                                                          \
+  "INSERT IGNORE INTO user ("                                                 \
+    "_checksum, "                                                             \
+    "_last_updated, "                                                         \
+    "_deleted, "                                                              \
+    "id, "                                                                    \
+    "firstname, "                                                             \
+    "lastname, "                                                              \
+    "email, "                                                                 \
+    "salutation_type, "                                                       \
+    "is_superadmin, "                                                         \
+    "is_accountant) "                                                         \
+  "VALUES ("                                                                  \
+    ":_checksum, "                                                            \
+    ":_last_updated, "                                                        \
+    ":_deleted , "                                                            \
+    ":id, "                                                                   \
+    ":firstname, "                                                            \
+    ":lastname, "                                                             \
+    ":email, "                                                                \
+    ":salutation_type, "                                                      \
+    ":is_superadmin, "                                                        \
+    ":is_accountant);"
+#define QUERY_UPDATE                                                          \
+  "UPDATE user SET "                                                          \
+    "_checksum = :_checksum, "                                                \
+    "_last_updated = :_last_updated, "                                        \
+    "_deleted = :_deleted, "                                                  \
+    "id = :id, "                                                              \
+    "lastname = :lastname, "                                                  \
+    "email = :email, "                                                        \
+    "salutation_type = :salutation_type, "                                    \
+    "is_superadmin = :is_superadmin, "                                        \
+    "is_accountant = :is_accountant;"                                         \
+  "WHERE id = :id;"
 
 static inline void free_object(BXObjectUser *user) {
   if (user == NULL) {

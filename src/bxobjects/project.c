@@ -20,7 +20,7 @@
   ":pr_invoice_type_amount, "                                                  \
   "pr_budget_type_id = :pr_budget_type_id, pr_budget_type_amount = "           \
   ":pr_budget_type_amount, "                                                   \
-  "_checksum := :_checksum, _last_updated = :_last_updated WHERE id = :id;"
+  "_checksum = :_checksum, _last_updated = :_last_updated WHERE id = :id;"
 #define QUERY_INSERT                                                           \
   "INSERT IGNORE INTO pr_project (id, uuid, nr, name, start_date,"             \
   "end_date, comment, pr_state_id, pr_project_type_id, contact_id,"            \
