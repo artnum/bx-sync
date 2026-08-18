@@ -414,8 +414,8 @@ bool bx_database_add_bxtype(BXDatabaseQuery *query, const char *name,
 static inline void _bx_database_param_to_bind(MYSQL_BIND *bind,
                                               BXDatabaseParameter *parameter) {
 
-  bind->is_null = (char *)parameter->is_null;
-  if (bind->is_null) {
+  bind->is_null = (char *)&parameter->is_null;
+  if (*bind->is_null) {
     bind->buffer_type = MYSQL_TYPE_NULL;
     parameter->value_length = 0;
     bind->buffer_length = parameter->value_length;
