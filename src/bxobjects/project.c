@@ -254,8 +254,9 @@ BXillError bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
     return false;
   }
 
+  bool ret = _bx_project_sync_item(conn, request->decoded, cache);
   bx_net_request_free(request);
-  return _bx_project_sync_item(conn, request->decoded, cache);
+  return ret;
 }
 
 #define WALK_PROJECT_PATH "2.0/pr_project?limit=$&offset=$"
