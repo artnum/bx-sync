@@ -425,16 +425,16 @@ void *invoice_thread(void *arg) {
 }
 
 /* signal handler */
-_Atomic(bool) kill_signal = 0;
+_Atomic(bool) kill_signal = false;
+_Atomic(bool) reload_signal = false;
 void signal_hander(int sig) {
   switch (sig) {
   case SIGINT:
   case SIGTERM:
     atomic_store_explicit(&kill_signal, true, memory_order_release);
-    bx_log_info("Kill signal received");
     break;
   case SIGHUP:
-    bx_log_reopen();
+    atomic_store_explicit(&reload_signal, true, memory_order_release);
     break;
   default:
     break;
@@ -612,9 +612,14 @@ int main(int argc, char **argv) {
   pthread_create(&threads[INVOICE_THREAD], NULL, invoice_thread, (void *)&app);
   pthread_create(&threads[RANDOM_ITEM_THREAD], NULL, random_item_thread,
                  (void *)&app);
-  while (atomic_load_explicit(&kill_signal, memory_order_acquire) == 0) {
+  while (atomic_load_explicit(&kill_signal, memory_order_acquire) == false) {
+    if (atomic_load_explicit(&reload_signal, memory_order_acquire) == true) {
+        bx_log_reopen();
+        atomic_store_explicit(&reload_signal, false, memory_order_release);
+    }
     pause();
   }
+  bx_log_info("Kill signal received");
   atomic_store_explicit(&queue->run, 0, memory_order_release);
   sleep(5);
 
