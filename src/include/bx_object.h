@@ -44,7 +44,7 @@ BXFloat bx_object_get_json_double(json_t *object, const char *key,
                                   XXH3_state_t *state);
 BXString bx_object_get_json_string(json_t *object, const char *key,
                                    XXH3_state_t *state);
-BXUuid bx_object_get_json_uuid(json_t *object, const char *kex,
+BXUuid bx_object_get_json_uuid(json_t *object, const char *key,
                                XXH3_state_t *state);
 void bx_object_free_value(void *value);
 

@@ -134,7 +134,7 @@ void bx_object_contact_free(void *data) {
   bx_object_free_value(&contact->skype_name);
   bx_object_free_value(&contact->remarks);
   bx_object_free_value(&contact->language_id);
-  bx_object_free_value(&contact->contact_groupd_ids);
+  bx_object_free_value(&contact->contact_group_ids);
   bx_object_free_value(&contact->contact_branch_ids);
   bx_object_free_value(&contact->updated_at);
   bx_object_free_value(&contact->profile_image);
@@ -264,7 +264,7 @@ void *bx_object_contact_decode(void *jroot) {
   contact->skype_name =
       bx_object_get_json_string(object, "skype_name", hashState);
   contact->remarks = bx_object_get_json_string(object, "remarks", hashState);
-  contact->contact_groupd_ids =
+  contact->contact_group_ids =
       bx_object_get_json_string(object, "contact_group_ids", hashState);
   contact->contact_branch_ids =
       bx_object_get_json_string(object, "contact_branch_ids", hashState);
@@ -310,7 +310,7 @@ void bx_object_contact_dump(void *data) {
   _bx_dump_any("skype_name", &contact->skype_name, 1);
   _bx_dump_any("remarks", &contact->remarks, 1);
   _bx_dump_any("language_id", &contact->language_id, 1);
-  _bx_dump_any("contact_group_ids", &contact->contact_groupd_ids, 1);
+  _bx_dump_any("contact_group_ids", &contact->contact_group_ids, 1);
   _bx_dump_any("contact_branch_ids", &contact->contact_branch_ids, 1);
   _bx_dump_any("profile_image", &contact->profile_image, 1);
 }
@@ -497,7 +497,7 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
   bx_database_free_query(query);
   query = NULL;
   (void)bx_contact_group_link(conn, contact->id.value,
-                              contact->contact_groupd_ids.value);
+                              contact->contact_group_ids.value);
   (void)bx_contact_extra_sync(app, conn, contact->id.value);
   bx_object_contact_free(contact);
 

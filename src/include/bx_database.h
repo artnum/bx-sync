@@ -71,7 +71,7 @@ struct s_BXDatabaseQuery {
   BXDatabaseRow *results;
   int row_count;
 
-  bool exectued;
+  bool executed;
 };
 
 /**

@@ -179,7 +179,7 @@ BXDatabaseQuery *bx_database_new_query(MYSQL *mysql, const char *query) {
   if (j < new->query_length) {
     new->query[j] = '\0';
   }
-  new->exectued = false;
+  new->executed = false;
   return new;
 }
 
@@ -452,7 +452,7 @@ static inline void _bx_database_param_to_bind(MYSQL_BIND *bind,
 
 bool bx_database_execute(BXDatabaseQuery *query) {
   assert(query != NULL);
-  if (query->exectued) {
+  if (query->executed) {
     mysql_stmt_reset(query->stmt);
     bx_database_free_result(query);
     if (query->binds) {
@@ -524,7 +524,7 @@ bool bx_database_execute(BXDatabaseQuery *query) {
     }
     query->has_dataset = false;
   }
-  query->exectued = true;
+  query->executed = true;
 
   query->warning_rows = mysql_stmt_warning_count(query->stmt);
   query->had_fk_error = false;

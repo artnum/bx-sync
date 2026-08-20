@@ -39,7 +39,7 @@ struct s_BXObjectContact {
   BXString url;
   BXString skype_name;
   BXString remarks;
-  BXString contact_groupd_ids;
+  BXString contact_group_ids;
   BXString contact_branch_ids;
   BXString updated_at;
   BXString profile_image;
