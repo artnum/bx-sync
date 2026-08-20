@@ -7,15 +7,28 @@
 #include <stdio.h>
 #include <string.h>
 
-#define BX_OBJECT_TYPE_INTEGER 1
-#define BX_OBJECT_TYPE_UINTEGER 2
-#define BX_OBJECT_TYPE_FLOAT 3
-#define BX_OBJECT_TYPE_STRING 4
-#define BX_OBJECT_TYPE_BOOL 5
-#define BX_OBJECT_TYPE_BYTES 6
-#define BX_OBJECT_TYPE_UUID 7
+#define BX_OBJECT_TYPE_INTEGER   1
+#define BX_OBJECT_TYPE_UINTEGER  2
+#define BX_OBJECT_TYPE_FLOAT     3
+#define BX_OBJECT_TYPE_STRING    4
+#define BX_OBJECT_TYPE_BOOL      5
+#define BX_OBJECT_TYPE_BYTES     6
+#define BX_OBJECT_TYPE_UUID      7
+#define BX_OBJECT_TYPE_INTID     8
 
 typedef uint8_t BXGeneric;
+
+/* Internal ID. Each item will get its own internal ID based on their normal
+ * bexio ID (can be an int or a UUID) and some more data to associate to the
+ * endpoint. This internal ID is to be used in new caching implementation with
+ * LMDB as backend. This new cache will lead to move toward a proxy/backup.
+ */
+typedef struct s_BXInternalID BXIntID;
+struct s_BXInternalID {
+    BXGeneric type;
+    bool isset;
+    uint64_t value[4];
+};
 
 typedef struct s_BXInteger BXInteger;
 struct s_BXInteger {
@@ -76,6 +89,7 @@ typedef union {
   BXUuid __uuid;
   BXString __string;
   BXBytes __bytes;
+  BXIntID __intid;
 } BXAny;
 
 char *bx_object_value_to_string(BXGeneric *value);
