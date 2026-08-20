@@ -108,18 +108,42 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
       }
     }
 
-    time_t now = time(NULL);
     BXDatabaseQuery *query = bx_database_new_query(
         conn, "SELECT _checksum FROM contact_sector WHERE id = :id;");
-    if (query == NULL) {
+    time_t now = time(NULL);
+    {
+      BXillError err = ErrorSQLSelect;
+      if (query == NULL) {
+        goto sql_step_1_fail;
+      }
+      if (!bx_database_add_param_int64(query, ":id", &contact_sector->remote_id.value) ||
+          !bx_database_execute(query)) 
+      {
+        if (query->need_reconnect) {
+          err = ErrorSQLReconnect;
+        }
+        goto sql_step_1_fail;
+      }
+      if (!bx_database_results(query)) {
+        if (query->need_reconnect) {
+          err = ErrorSQLReconnect;
+        }
+        goto sql_step_1_fail;
+      }
+      goto next_sql_step_1;
+
+sql_step_1_fail:
+      if(query) { bx_database_free_query(query); }
       free_object(contact_sector);
       json_decref(contact_sector_array);
       free(items);
-      return ErrorGeneric;
+      return err;
+
+
     }
-    bx_database_add_param_int64(query, ":id", &contact_sector->remote_id.value);
-    bx_database_execute(query);
-    bx_database_results(query);
+    
+next_sql_step_1:
+    /* object is not in database, so straight insert */
     uint64_t not_deleted = 0;
     if (query->results == NULL || query->results->column_count == 0) {
       bx_database_free_query(query);
@@ -133,32 +157,39 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
         free(items);
         return ErrorGeneric;
       }
-      bx_database_add_param_char(query, ":name",
-                                 contact_sector->remote_name.value,
-                                 contact_sector->remote_name.value_len);
-      bx_database_add_param_uint64(query, ":_checksum",
-                                   &contact_sector->checksum);
-      bx_database_add_param_uint64(query, ":id",
-                                   &contact_sector->remote_id.value);
-      bx_database_add_param_uint64(query, ":_last_updated", &now);
-      bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
-      bool e = bx_database_execute(query);
-      bx_database_free_query(query);
-      free_object(contact_sector);
-      if (!e) {
+      if(!bx_database_add_param_char(query, ":name",
+                                     contact_sector->remote_name.value,
+                                     contact_sector->remote_name.value_len) ||
+        !bx_database_add_param_uint64(query, ":_checksum",
+                                      &contact_sector->checksum) ||
+        !bx_database_add_param_uint64(query, ":id",
+                                      &contact_sector->remote_id.value) ||
+        !bx_database_add_param_uint64(query, ":_last_updated", &now) ||
+        !bx_database_add_param_uint64(query, ":_deleted", &not_deleted) ||
+        !bx_database_execute(query)) 
+      {  
+        BXillError err = query->need_reconnect ? ErrorSQLReconnect : ErrorSQLSelect;
+        bx_database_free_query(query);
+        free_object(contact_sector);
         json_decref(contact_sector_array);
         free(items);
-        return ErrorSQLInsert;
+        return err;
       }
+      bx_database_free_query(query);
+      free_object(contact_sector);
       continue;
     }
+    
+    /* we have the same checksum than database, nothing to be done */
     if (query->results[0].columns[0].i_value == contact_sector->checksum) {
       bx_database_free_query(query);
       free_object(contact_sector);
       continue;
     }
 
+    /* we need to update the object in the database */
     bx_database_free_query(query);
+
     query = bx_database_new_query(
         conn, "UPDATE contact_sector SET _checksum = :_checksum, name = :name, "
               "_last_updated = :_last_updated, _deleted = :_deleted "
@@ -169,25 +200,32 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
       free(items);
       return ErrorGeneric;
     }
-    bx_database_add_bxtype(query, ":id", (BXGeneric *)&contact_sector->remote_id);
-    bx_database_add_param_char(query, ":name",
-                               contact_sector->remote_name.value,
-                               contact_sector->remote_name.value_len);
-    bx_database_add_param_uint64(query, ":_checksum",
-                                 &contact_sector->checksum);
-    bx_database_add_param_uint64(query, ":_last_updated", &now);
-    bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
-    bool e = bx_database_execute(query);
-    bx_database_free_query(query);
-    free_object(contact_sector);
-    if (!e) {
+    if (!bx_database_add_bxtype(query, ":id", (BXGeneric *)&contact_sector->remote_id) ||
+      !bx_database_add_param_char(query, ":name",
+                                 contact_sector->remote_name.value,
+                                 contact_sector->remote_name.value_len) ||
+      !bx_database_add_param_uint64(query, ":_checksum",
+                                   &contact_sector->checksum) ||
+      !bx_database_add_param_uint64(query, ":_last_updated", &now) ||
+      !bx_database_add_param_uint64(query, ":_deleted", &not_deleted) ||
+      !bx_database_execute(query))
+    {
+      BXillError err = query->need_reconnect ? ErrorSQLReconnect : ErrorSQLUpdate;
+      bx_database_free_query(query);
+      free_object(contact_sector);
       json_decref(contact_sector_array);
       free(items);
-      return ErrorSQLUpdate;
-    }
-  }
-  json_decref(contact_sector_array);
+      return err;
 
+    }
+
+    bx_database_free_query(query);
+    free_object(contact_sector);
+  } /* for (size_t i = 0; i < contact_sector_array_count; i++) */
+
+
+  /* Now handle deletion */
+  json_decref(contact_sector_array);
   if (items != NULL && items_count > 0) {
     int64_t _to_delete = 0;
     int64_t *to_delete = &_to_delete;
@@ -199,16 +237,23 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
       free(items);
       return ErrorGeneric;
     }
-    bx_database_add_param_int64(query, ":_deleted", &now);
-    bx_database_add_param_int64(query, ":id", to_delete);
+    if (!bx_database_add_param_int64(query, ":_deleted", &now) ||
+      !bx_database_add_param_int64(query, ":id", to_delete)) 
+    {
+      BXillError err = query->need_reconnect ? ErrorSQLReconnect : ErrorSQLGeneric;
+      bx_database_free_query(query);
+      free(items);
+      return err;
+    }
     for (int i = 0; i < items_count; i++) {
       if (items[i].deleted) {
         *to_delete = items[i].item;
         bool e = bx_database_execute(query);
         if (!e) {
+          BXillError err = query->need_reconnect ? ErrorSQLReconnect : ErrorSQLUpdate;
           bx_database_free_query(query);
           free(items);
-          return ErrorSQLUpdate;
+          return err;
         }
       }
     }
