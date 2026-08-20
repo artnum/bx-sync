@@ -1,0 +1,3 @@
+[submodule "snowflake-c"]
+	path = snowflake-c
+	url = https://github.com/artnum/snowflake-c.git

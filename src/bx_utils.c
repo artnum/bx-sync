@@ -18,55 +18,28 @@
 #include <threads.h>
 #include <unistd.h>
 
-#define a 0x5DEECE66D
-#define c 0xC
+#define SNOWFLAKE_IMPLEMENTATION
+#define SF_S_NAME "bxsync"
+#include "../snowflake-c/snowflake.h"
 
-static BXUtilsPRNGState BX_GLOBAL_PRNG_STATE;
-static uint16_t _bx_utils_prng(void) {
-  uint32_t xi = 0;
-  bx_mutex_lock(&BX_GLOBAL_PRNG_STATE.mutex);
-  xi = (a * BX_GLOBAL_PRNG_STATE.seed + c) % 0xFFFFFFFF;
-  BX_GLOBAL_PRNG_STATE.seed = xi;
-  bx_mutex_unlock(&BX_GLOBAL_PRNG_STATE.mutex);
-  return (xi >> 16) & 0xFFFF;
-}
-
-void bx_utils_init(void) {
-  struct timeval now;
-
-  bx_mutex_init(&BX_GLOBAL_PRNG_STATE.mutex);
-
-  bx_mutex_lock(&BX_GLOBAL_PRNG_STATE.mutex);
-  gettimeofday(&now, NULL);
-  int ufd = open("/dev/urandom", O_RDONLY);
-  if (ufd < 0) {
-    BX_GLOBAL_PRNG_STATE.seed =
-        (now.tv_sec << 17 | (now.tv_usec & 0x1FFFF)) & 0xFFFFFFFF;
-  } else {
-    if (read(ufd, &BX_GLOBAL_PRNG_STATE.seed,
-             sizeof(BX_GLOBAL_PRNG_STATE.seed)) < 0) {
-      BX_GLOBAL_PRNG_STATE.seed =
-          (now.tv_sec << 17 | (now.tv_usec & 0x1FFFF)) & 0xFFFFFFFF;
-    }
-    close(ufd);
-  }
-  bx_mutex_unlock(&BX_GLOBAL_PRNG_STATE.mutex);
+static snowflake_ctx_t snflk;
+bool bx_utils_init(void) {
+    return snowflake_open(&snflk, 0);
 }
 
 bool bx_utils_gen_id(uint64_t *id) {
   assert(id != NULL);
-  struct timeval now;
-  *id = 0;
 
-  if (gettimeofday(&now, NULL) != 0) {
+  *id = snowflake_get(&snflk);
+  if (*id == SNOWFLAKE_INVALID) {
     return false;
   }
 
-  *id |= (uint64_t)(now.tv_sec & 0xFFFFFFFF) << 32;
-  *id |= (uint64_t)(now.tv_usec >> 4) << 16;
-  *id |= _bx_utils_prng();
-
   return true;
+}
+
+void bx_utils_close(void) {
+    snowflake_close(&snflk);
 }
 
 static inline void _bx_utils_buffer_into_array(int64_t **array, char *buffer) {

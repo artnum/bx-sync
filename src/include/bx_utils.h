@@ -38,8 +38,9 @@ struct s_BXLog {
 };
 
 bool bx_log_init(bXill *app, const char *path, int level);
-void bx_utils_init(void);
+bool bx_utils_init(void);
 bool bx_utils_gen_id(uint64_t *id);
+void bx_utils_close(void);
 void bx_log_write(const char *msg);
 void bx_log_close();
 /**

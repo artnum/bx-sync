@@ -719,7 +719,10 @@ int main(int argc, char **argv) {
   mysql_library_init(argc, argv, NULL);
 
   bx_conf_release(conf, "log-file");
-  bx_utils_init();
+  if(!bx_utils_init()) {
+    printf("Failed setup bx_utils_init\n");
+    return 1;
+  }
   app.conf = conf;
   atomic_store(&app.logthread, true);
   pthread_t log_thread;
@@ -813,7 +816,7 @@ int main(int argc, char **argv) {
   pthread_join(log_thread, NULL);
   bx_conf_destroy(&conf);
   mysql_library_end();
-
+  bx_utils_close();
   bx_log_end();
   if (pid_file_fd != -1) {
     close(pid_file_fd);
