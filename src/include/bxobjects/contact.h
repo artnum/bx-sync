@@ -48,7 +48,9 @@ struct s_BXObjectContact {
 void bx_object_contact_dump(void *data);
 void *bx_object_contact_decode(void *object);
 void bx_object_contact_free(void *data);
+#if 0
 void bx_object_contact_store(MYSQL *mysql, BXObjectContact *contact);
+#endif
 BXillError bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
                                 BXBool show_archived, Cache *c);
 BXillError bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c);

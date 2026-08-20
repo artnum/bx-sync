@@ -142,6 +142,7 @@ void bx_object_contact_free(void *data) {
   free(contact);
 }
 
+#if 0
 void bx_object_contact_store(MYSQL *mysql, BXObjectContact *contact) {
   BXDatabaseQuery *query = bx_database_new_query(
       mysql,
@@ -205,6 +206,7 @@ void bx_object_contact_store(MYSQL *mysql, BXObjectContact *contact) {
 
   bx_database_free_query(query);
 }
+#endif
 
 void *bx_object_contact_decode(void *jroot) {
   json_t *object = (json_t *)jroot;
