@@ -144,6 +144,8 @@ sql_step_1_fail:
     
 next_sql_step_1:
     /* object is not in database, so straight insert */
+    /* noop */ ; /* on some older compiler, declaration right after a label
+                    doesn't compile so just add a noop */
     uint64_t not_deleted = 0;
     if (query->results == NULL || query->results->column_count == 0) {
       bx_database_free_query(query);
