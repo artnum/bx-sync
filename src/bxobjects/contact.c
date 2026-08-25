@@ -10,6 +10,7 @@
 #include "../include/bx_sync_more.h"
 #include <jansson.h>
 #include <mysql/mysql.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <threads.h>
 #include <unistd.h>
@@ -363,25 +364,57 @@ static void contact_group_sync(bXill *app, MYSQL *conn,
 }
 #endif
 
-bool bx_contact_is_in_database(MYSQL *conn, BXGeneric *item) {
+BXillError bx_contact_is_in_database(MYSQL *conn, BXGeneric *item,
+                                     bool *present) {
+  if (present) {
+    *present = false;
+  }
   BXDatabaseQuery *query =
       bx_database_new_query(conn, "SELECT id FROM contact WHERE id = :id;");
   if (query == NULL) {
-    return false;
+    return ErrorGeneric;
   }
   bx_database_add_bxtype(query, ":id", item);
   if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = bx_database_query_error(query);
     bx_database_free_query(query);
-    return false;
+    return e;
   }
 
   if (query->results == NULL || query->results->column_count == 0) {
     bx_database_free_query(query);
-    return false;
+    return NoError;
   }
 
   bx_database_free_query(query);
-  return true;
+  if (present) {
+    *present = true;
+  }
+  return NoError;
+}
+
+static BXillError ensure_user_exists(bXill *app, MYSQL *conn, BXUInteger *id) {
+  if (!id->isset || id->value == 0) {
+    return NoError;
+  }
+  bool present = false;
+  BXillError e =
+      bx_user_is_in_database(conn, (BXGeneric *)id, &present);
+  if (e != NoError) {
+    return e;
+  }
+  if (present) {
+    return NoError;
+  }
+  e = bx_user_sync_item(app, conn, (BXGeneric *)id);
+  if (e == ErrorSQLReconnect) {
+    return e;
+  }
+  e = bx_user_is_in_database(conn, (BXGeneric *)id, &present);
+  if (e != NoError) {
+    return e;
+  }
+  return present ? NoError : ErrorGeneric;
 }
 
 BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
@@ -415,24 +448,36 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
     return ErrorGeneric;
   }
 
-  if (contact->user_id.isset && contact->user_id.value != 0 &&
-      !bx_user_is_in_database(conn, (BXGeneric *)&contact->user_id)) {
-    (void)bx_user_sync_item(app, conn, (BXGeneric *)&contact->user_id);
-  }
-  if (contact->owner_id.isset && contact->owner_id.value != 0 &&
-      contact->user_id.value != contact->owner_id.value &&
-      !bx_user_is_in_database(conn, (BXGeneric *)&contact->owner_id)) {
-    (void)bx_user_sync_item(app, conn, (BXGeneric *)&contact->owner_id);
-  }
-  if ((contact->user_id.isset && contact->user_id.value != 0 &&
-       !bx_user_is_in_database(conn, (BXGeneric *)&contact->user_id)) ||
-      (contact->owner_id.isset && contact->owner_id.value != 0 &&
-       !bx_user_is_in_database(conn, (BXGeneric *)&contact->owner_id))) {
-    bx_log_debug("Skip contact %lu: user missing",
-                 (unsigned long)contact->id.value);
-    bx_database_free_query(query);
-    bx_object_contact_free(contact);
-    return NoError;
+  {
+    BXillError e = ensure_user_exists(app, conn, &contact->user_id);
+    if (e == ErrorSQLReconnect) {
+      bx_database_free_query(query);
+      bx_object_contact_free(contact);
+      return e;
+    }
+    if (e != NoError) {
+      bx_log_debug("Skip contact %lu: user missing",
+                   (unsigned long)contact->id.value);
+      bx_database_free_query(query);
+      bx_object_contact_free(contact);
+      return NoError;
+    }
+    if (contact->owner_id.isset &&
+        contact->owner_id.value != contact->user_id.value) {
+      e = ensure_user_exists(app, conn, &contact->owner_id);
+      if (e == ErrorSQLReconnect) {
+        bx_database_free_query(query);
+        bx_object_contact_free(contact);
+        return e;
+      }
+      if (e != NoError) {
+        bx_log_debug("Skip contact %lu: user missing",
+                     (unsigned long)contact->id.value);
+        bx_database_free_query(query);
+        bx_object_contact_free(contact);
+        return NoError;
+      }
+    }
   }
 
   uint64_t now = time(NULL);
@@ -496,9 +541,19 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
   cache_set_item(c, (BXGeneric *)&contact->id, contact->checksum);
   bx_database_free_query(query);
   query = NULL;
-  (void)bx_contact_group_link(conn, contact->id.value,
-                              contact->contact_group_ids.value);
-  (void)bx_contact_extra_sync(app, conn, contact->id.value);
+  {
+    BXillError e = bx_contact_group_link(conn, contact->id.value,
+                                         contact->contact_group_ids.value);
+    if (e == ErrorSQLReconnect) {
+      bx_object_contact_free(contact);
+      return e;
+    }
+    e = bx_contact_extra_sync(app, conn, contact->id.value);
+    if (e == ErrorSQLReconnect) {
+      bx_object_contact_free(contact);
+      return e;
+    }
+  }
   bx_object_contact_free(contact);
 
   return NoError;
@@ -516,7 +571,7 @@ BXillError bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
     bx_net_request_free(request);
     return ErrorNet;
   }
-  bool retVal =
+  BXillError retVal =
       _bx_contact_sync_item(app, conn, request->decoded, show_archived, c);
   bx_net_request_free(request);
   return retVal;

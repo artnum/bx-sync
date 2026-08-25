@@ -5,6 +5,7 @@
 #include "../bx_object.h"
 #include "../bx_object_value.h"
 #include "../bxill.h"
+#include <stdbool.h>
 
 typedef struct s_BXObjectProject BXObjectProject;
 struct s_BXObjectProject {
@@ -33,5 +34,6 @@ struct s_BXObjectProject {
 BXillError bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache);
 BXillError bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
                                 Cache *cache);
-bool bx_project_is_in_database(MYSQL *conn, BXGeneric *item);
+BXillError bx_project_is_in_database(MYSQL *conn, BXGeneric *item,
+                                     bool *present);
 #endif /* PROJECT_H__ */

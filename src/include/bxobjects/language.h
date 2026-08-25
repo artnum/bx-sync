@@ -21,8 +21,8 @@ struct s_BXObjectLanguage {
 };
 
 void bx_language_free(BXObjectLanguage *language);
-bool bx_language_update_db(MYSQL *conn, BXObjectLanguage *language);
-bool bx_language_insert_db(MYSQL *conn, BXObjectLanguage *language);
-bool bx_language_load(bXill *app, MYSQL *conn);
+BXillError bx_language_update_db(MYSQL *conn, BXObjectLanguage *language);
+BXillError bx_language_insert_db(MYSQL *conn, BXObjectLanguage *language);
+BXillError bx_language_load(bXill *app, MYSQL *conn);
 
 #endif /* LANGUAGE_H__ */

@@ -77,29 +77,36 @@ void bx_language_free(BXObjectLanguage *language) {
   free(language);
 }
 
-ObjectState bx_language_check_database(MYSQL *conn,
-                                       BXObjectLanguage *language) {
+static BXillError bx_language_check_database(MYSQL *conn,
+                                             BXObjectLanguage *language,
+                                             ObjectState *state) {
   BXDatabaseQuery *query = bx_database_new_query(
       conn, "SELECT _checksum FROM language WHERE id = :id");
   if (query == NULL) {
-    return Error;
+    return ErrorGeneric;
   }
   bx_database_add_param_uint64(query, ":id", &language->id.value);
-  bx_database_execute(query);
-  bx_database_results(query);
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = bx_database_query_error(query);
+    bx_database_free_query(query);
+    return e;
+  }
 
   if (query->results == NULL || query->results->column_count == 0) {
     bx_database_free_query(query);
-    return NeedCreate;
+    *state = NeedCreate;
+    return NoError;
   }
 
   if (query->results->columns[0].i_value != language->checksum) {
     bx_database_free_query(query);
-    return NeedUpdate;
+    *state = NeedUpdate;
+    return NoError;
   }
 
   bx_database_free_query(query);
-  return NeedNothing;
+  *state = NeedNothing;
+  return NoError;
 }
 
 static bool bind_params(BXDatabaseQuery *query, BXObjectLanguage *language) {
@@ -130,28 +137,29 @@ static bool bind_params(BXDatabaseQuery *query, BXObjectLanguage *language) {
   return true;
 }
 
-static bool execute_request(MYSQL *conn, BXObjectLanguage *language,
-                            const char *request) {
+static BXillError execute_request(MYSQL *conn, BXObjectLanguage *language,
+                                  const char *request) {
   BXDatabaseQuery *query = NULL;
 
   query = bx_database_new_query(conn, request);
   if (query == NULL) {
-    return false;
+    return ErrorGeneric;
   }
-  bool success = true;
   if (!bind_params(query, language) || !bx_database_execute(query) ||
       !bx_database_results(query)) {
-    success = false;
+    BXillError e = bx_database_query_error(query);
+    bx_database_free_query(query);
+    return e;
   }
   bx_database_free_query(query);
-  return success;
+  return NoError;
 }
 
-bool bx_language_update_db(MYSQL *conn, BXObjectLanguage *language) {
+BXillError bx_language_update_db(MYSQL *conn, BXObjectLanguage *language) {
   return execute_request(conn, language, QUERY_UPDATE);
 }
 
-bool bx_language_insert_db(MYSQL *conn, BXObjectLanguage *language) {
+BXillError bx_language_insert_db(MYSQL *conn, BXObjectLanguage *language) {
   return execute_request(conn, language, QUERY_INSERT);
 }
 
@@ -159,16 +167,16 @@ bool bx_language_delete_db(MYSQL *conn, BXObjectLanguage *language) {
   return false;
 }
 
-bool bx_language_load(bXill *app, MYSQL *conn) {
+BXillError bx_language_load(bXill *app, MYSQL *conn) {
   bx_log_debug("BX Language load");
   BXNetRequest *request = bx_do_request(app->queue, NULL, GET_LANGUAGE_PATH);
   if (request == NULL) {
-    return false;
+    return ErrorNet;
   }
 
   if (request->response == NULL || request->response->http_code != 200) {
     bx_net_request_free(request);
-    return false;
+    return ErrorNet;
   }
 
   json_t *jroot = request->decoded;
@@ -176,7 +184,14 @@ bool bx_language_load(bXill *app, MYSQL *conn) {
   for (size_t i = 0; i < array_length; i++) {
     BXObjectLanguage language;
     if (decode_object(json_array_get(jroot, i), &language) != NULL) {
-      switch (bx_language_check_database(conn, &language)) {
+      ObjectState state = NeedNothing;
+      BXillError e = bx_language_check_database(conn, &language, &state);
+      if (e != NoError) {
+        free_content(&language);
+        bx_net_request_free(request);
+        return e;
+      }
+      switch (state) {
       default:
       case NeedNothing:
         break;
@@ -184,12 +199,24 @@ bool bx_language_load(bXill *app, MYSQL *conn) {
         bx_log_error("Error checking for language %d", language.id.value);
         break;
       case NeedCreate:
-        if (!bx_language_insert_db(conn, &language)) {
+        e = bx_language_insert_db(conn, &language);
+        if (e == ErrorSQLReconnect) {
+          free_content(&language);
+          bx_net_request_free(request);
+          return e;
+        }
+        if (e != NoError) {
           bx_log_error("Failed insert language %d", language.id.value);
         }
         break;
       case NeedUpdate:
-        if (!bx_language_update_db(conn, &language)) {
+        e = bx_language_update_db(conn, &language);
+        if (e == ErrorSQLReconnect) {
+          free_content(&language);
+          bx_net_request_free(request);
+          return e;
+        }
+        if (e != NoError) {
           bx_log_error("Failed insert language %d", language.id.value);
         }
         break;
@@ -198,5 +225,5 @@ bool bx_language_load(bXill *app, MYSQL *conn) {
     }
   }
   bx_net_request_free(request);
-  return true;
+  return NoError;
 }

@@ -14,6 +14,36 @@
 #define BX_DB_STATE_COLON 0x01
 #define BX_DB_STATE_VARNAME 0x02
 
+static void mark_stmt_reconnect(BXDatabaseQuery *query) {
+  if (query == NULL || query->stmt == NULL) {
+    return;
+  }
+  switch (mysql_stmt_errno(query->stmt)) {
+  case CR_SERVER_GONE_ERROR:
+  case CR_SERVER_LOST:
+  case CR_CONN_HOST_ERROR:
+    query->need_reconnect = true;
+    break;
+  default:
+    break;
+  }
+}
+
+static void mark_conn_reconnect(BXDatabaseQuery *query, MYSQL *conn) {
+  if (query == NULL || conn == NULL) {
+    return;
+  }
+  switch (mysql_errno(conn)) {
+  case CR_SERVER_GONE_ERROR:
+  case CR_SERVER_LOST:
+  case CR_CONN_HOST_ERROR:
+    query->need_reconnect = true;
+    break;
+  default:
+    break;
+  }
+}
+
 static inline bool _is_variable_char(unsigned char c) {
   if (c >= '0' && c <= '9') {
     return true;
@@ -472,13 +502,7 @@ bool bx_database_execute(BXDatabaseQuery *query) {
     if (mysql_stmt_prepare(query->stmt, query->query, strlen(query->query)) !=
         0) {
       bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(query->stmt));
-      switch (mysql_stmt_errno(query->stmt)) {
-      case CR_SERVER_GONE_ERROR:
-      case CR_SERVER_LOST:
-      case CR_CONN_HOST_ERROR:
-        query->need_reconnect = true;
-        break;
-      }
+      mark_stmt_reconnect(query);
       return false;
     }
   }
@@ -489,6 +513,7 @@ bool bx_database_execute(BXDatabaseQuery *query) {
 
   if (mysql_stmt_bind_param(query->stmt, query->binds) != 0) {
     bx_log_error("[MYSQL ERROR] %s", mysql_stmt_error(query->stmt));
+    mark_stmt_reconnect(query);
     free(query->binds);
     query->binds = NULL;
     return false;
@@ -499,13 +524,7 @@ bool bx_database_execute(BXDatabaseQuery *query) {
     query->has_failed = true;
     bx_log_error("[MYSQL ERROR] %s %s", mysql_stmt_error(query->stmt),
                  query->query);
-    switch (mysql_stmt_errno(query->stmt)) {
-    case CR_SERVER_GONE_ERROR:
-    case CR_SERVER_LOST:
-    case CR_CONN_HOST_ERROR:
-      query->need_reconnect = true;
-      break;
-    }
+    mark_stmt_reconnect(query);
     return false;
   }
 
@@ -520,6 +539,7 @@ bool bx_database_execute(BXDatabaseQuery *query) {
   if (query->result_metadata == NULL) {
     if (mysql_stmt_errno(query->stmt) != 0) {
       query->has_failed = true;
+      mark_stmt_reconnect(query);
       return false;
     }
     query->has_dataset = false;
@@ -532,6 +552,9 @@ bool bx_database_execute(BXDatabaseQuery *query) {
     bx_log_debug("MYSQL Warning %d, query %s", query->warning_rows,
                  query->query);
     bx_database_print_warnings(query);
+    if (query->need_reconnect) {
+      return false;
+    }
   }
 
   return true;
@@ -688,13 +711,24 @@ bool bx_database_results(BXDatabaseQuery *query) {
     }
 
     if (mysql_stmt_bind_result(query->stmt, binds) != 0) {
+      mark_stmt_reconnect(query);
       free(row);
       free(columns);
-      break;
+      free(binds);
+      free_query_metadata(query);
+      return false;
     }
 
     fetch_success = mysql_stmt_fetch(query->stmt);
-    if (fetch_success == 1 || fetch_success == MYSQL_NO_DATA) {
+    if (fetch_success == 1) {
+      mark_stmt_reconnect(query);
+      free(row);
+      free(columns);
+      free(binds);
+      free_query_metadata(query);
+      return false;
+    }
+    if (fetch_success == MYSQL_NO_DATA) {
       free(row);
       free(columns);
       break;
@@ -747,12 +781,14 @@ void bx_database_print_warnings(BXDatabaseQuery *query) {
   MYSQL *conn = query->stmt->mysql;
   if (mysql_query(conn, "SHOW WARNINGS")) {
     bx_log_debug("SHOW WARNINGS query failed: %s", mysql_error(conn));
+    mark_conn_reconnect(query, conn);
     return;
   }
 
   MYSQL_RES *result = mysql_store_result(conn);
   if (!result) {
     bx_log_debug("Could not get result set: %s", mysql_error(conn));
+    mark_conn_reconnect(query, conn);
     return;
   }
 

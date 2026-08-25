@@ -10,6 +10,7 @@
 #include "../include/bx_sync_more.h"
 #include <assert.h>
 #include <jansson.h>
+#include <stdbool.h>
 #include <sys/types.h>
 #include <threads.h>
 #include <unistd.h>
@@ -266,25 +267,45 @@ BXillError _bx_invoice_sync_item(bXill *app, MYSQL *conn, json_t *item,
     }
   }
 
-  if (invoice->contact_id.isset && invoice->contact_id.value != 0 &&
-      !bx_contact_is_in_database(conn, (BXGeneric *)&invoice->contact_id)) {
-    bx_log_debug("Skip invoice %lu: contact %lu missing",
-                 (unsigned long)invoice->id.value,
-                 (unsigned long)invoice->contact_id.value);
-    bx_object_invoice_free(invoice);
-    invoice = NULL;
-    bx_net_request_free(full);
-    return NoError;
+  if (invoice->contact_id.isset && invoice->contact_id.value != 0) {
+    bool present = false;
+    BXillError e = bx_contact_is_in_database(
+        conn, (BXGeneric *)&invoice->contact_id, &present);
+    if (e != NoError) {
+      bx_object_invoice_free(invoice);
+      invoice = NULL;
+      bx_net_request_free(full);
+      return e;
+    }
+    if (!present) {
+      bx_log_debug("Skip invoice %lu: contact %lu missing",
+                   (unsigned long)invoice->id.value,
+                   (unsigned long)invoice->contact_id.value);
+      bx_object_invoice_free(invoice);
+      invoice = NULL;
+      bx_net_request_free(full);
+      return NoError;
+    }
   }
-  if (invoice->project_id.isset && invoice->project_id.value > 0 &&
-      !bx_project_is_in_database(conn, (BXGeneric *)&invoice->project_id)) {
-    bx_log_debug("Skip invoice %lu: project %lu missing",
-                 (unsigned long)invoice->id.value,
-                 (unsigned long)invoice->project_id.value);
-    bx_object_invoice_free(invoice);
-    invoice = NULL;
-    bx_net_request_free(full);
-    return NoError;
+  if (invoice->project_id.isset && invoice->project_id.value > 0) {
+    bool present = false;
+    BXillError e = bx_project_is_in_database(
+        conn, (BXGeneric *)&invoice->project_id, &present);
+    if (e != NoError) {
+      bx_object_invoice_free(invoice);
+      invoice = NULL;
+      bx_net_request_free(full);
+      return e;
+    }
+    if (!present) {
+      bx_log_debug("Skip invoice %lu: project %lu missing",
+                   (unsigned long)invoice->id.value,
+                   (unsigned long)invoice->project_id.value);
+      bx_object_invoice_free(invoice);
+      invoice = NULL;
+      bx_net_request_free(full);
+      return NoError;
+    }
   } else if (invoice->project_id.value == 0) {
     invoice->project_id.isset = false;
   }
@@ -397,7 +418,10 @@ BXillError _bx_invoice_sync_item(bXill *app, MYSQL *conn, json_t *item,
   RetVal = bx_invoice_positions_store(conn, invoice->id.value, positions);
   if (RetVal == NoError) {
     cache_set_item(cache, (BXGeneric *)&invoice->id, invoice->checksum);
-    (void)bx_invoice_extra_sync(app, conn, invoice->id.value);
+    RetVal = bx_invoice_extra_sync(app, conn, invoice->id.value);
+    if (RetVal != ErrorSQLReconnect && RetVal != NoError) {
+      RetVal = NoError;
+    }
   } else if (RetVal != ErrorSQLReconnect) {
     bx_log_debug("Invoice %lu positions failed: %d",
                  (unsigned long)invoice->id.value, (int)RetVal);
@@ -420,14 +444,14 @@ fail_and_return:
   return RetVal;
 }
 
-bool bx_invoice_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
-                          Cache *cache) {
+BXillError bx_invoice_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
+                                Cache *cache) {
   assert(app != NULL);
   assert(item != NULL);
   BXNetRequest *request = NULL;
   request = bx_do_request(app->queue, NULL, GET_INVOICE_PATH, item);
   if (request == NULL) {
-    return false;
+    return ErrorNet;
   }
   if (request->response == NULL || request->response->http_code != 200) {
     if (request->response != NULL) {
@@ -437,9 +461,10 @@ bool bx_invoice_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
       bx_log_debug("Response bad");
     }
     bx_net_request_free(request);
-    return false;
+    return ErrorNet;
   }
-  bool retVal = _bx_invoice_sync_item(app, conn, request->decoded, cache);
+  BXillError retVal =
+      _bx_invoice_sync_item(app, conn, request->decoded, cache);
   bx_net_request_free(request);
   return retVal;
 }

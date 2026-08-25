@@ -156,27 +156,32 @@ BXillError _bx_update_tax(MYSQL *conn, BXObjectTax *tax) {
   return execute_tax_query(conn, tax, QUERY_UPDATE);
 }
 
-ObjectState bx_taxes_check_database(MYSQL *conn, BXObjectTax *tax) {
+static BXillError bx_taxes_check_database(MYSQL *conn, BXObjectTax *tax,
+                                          ObjectState *state) {
   BXDatabaseQuery *query =
       bx_database_new_query(conn, "SELECT _checksum FROM taxes WHERE id = :id");
   if (query == NULL) {
-    return Error;
+    return ErrorGeneric;
   }
   if (!bx_database_add_bxtype(query, ":id", (BXGeneric *)&tax->id) ||
       !bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = bx_database_query_error(query);
     bx_database_free_query(query);
-    return Error;
+    return e;
   }
   if (query->results == NULL || query->results->column_count == 0) {
     bx_database_free_query(query);
-    return NeedCreate;
+    *state = NeedCreate;
+    return NoError;
   }
   if (query->results->columns[0].i_value != tax->checksum) {
     bx_database_free_query(query);
-    return NeedUpdate;
+    *state = NeedUpdate;
+    return NoError;
   }
   bx_database_free_query(query);
-  return NeedNothing;
+  *state = NeedNothing;
+  return NoError;
 }
 
 BXillError _bx_sync_item(MYSQL *conn, json_t *item) {
@@ -185,8 +190,13 @@ BXillError _bx_sync_item(MYSQL *conn, json_t *item) {
   if (!tax) {
     return ErrorGeneric;
   }
-  BXillError RetVal = NoError;
-  switch (bx_taxes_check_database(conn, tax)) {
+  ObjectState state = NeedNothing;
+  BXillError RetVal = bx_taxes_check_database(conn, tax, &state);
+  if (RetVal != NoError) {
+    bx_object_tax_free(tax);
+    return RetVal;
+  }
+  switch (state) {
   case Error:
     bx_log_error("SQL Failed check tax %ld", tax->id.value);
     RetVal = ErrorGeneric;

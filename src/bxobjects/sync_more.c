@@ -440,8 +440,13 @@ static BXillError kb_doc_one(bXill *app, MYSQL *conn, json_t *item,
       for (size_t i = 0; i < cn; i++) {
         json_t *row = json_array_get(cr->decoded, i);
         json_object_set_new(row, "_document_type", json_string(kb));
-        (void)bx_json_upsert(conn, "kb_comment", row, cf, 7, "_document_id",
-                             id);
+        e = bx_json_upsert(conn, "kb_comment", row, cf, 7, "_document_id",
+                           id);
+        if (e == ErrorSQLReconnect) {
+          bx_net_request_free(cr);
+          bx_net_request_free(full);
+          return e;
+        }
       }
     }
     bx_net_request_free(cr);
@@ -541,9 +546,13 @@ BXillError bx_invoice_extra_sync(bXill *app, MYSQL *conn, uint64_t invoice_id) {
         F("is_cash_discount", BX_F_BOOL), F("kb_invoice_id", BX_F_UINT)};
     size_t n = json_array_size(pay_arr);
     for (size_t i = 0; i < n; i++) {
-      (void)bx_json_upsert(conn, "invoice_payment",
-                           json_array_get(pay_arr, i), f, 7, "_invoice_id",
-                           invoice_id);
+      BXillError e = bx_json_upsert(conn, "invoice_payment",
+                                    json_array_get(pay_arr, i), f, 7,
+                                    "_invoice_id", invoice_id);
+      if (e == ErrorSQLReconnect) {
+        bx_net_request_free(pay);
+        return e;
+      }
     }
   }
   bx_net_request_free(pay);
@@ -559,9 +568,13 @@ BXillError bx_invoice_extra_sync(bXill *app, MYSQL *conn, uint64_t invoice_id) {
         F("remaining_price", BX_F_FLOAT)};
     size_t n = json_array_size(rem_arr);
     for (size_t i = 0; i < n; i++) {
-      (void)bx_json_upsert(conn, "invoice_reminder",
-                           json_array_get(rem_arr, i), f, 8, "_invoice_id",
-                           invoice_id);
+      BXillError e = bx_json_upsert(conn, "invoice_reminder",
+                                    json_array_get(rem_arr, i), f, 8,
+                                    "_invoice_id", invoice_id);
+      if (e == ErrorSQLReconnect) {
+        bx_net_request_free(rem);
+        return e;
+      }
     }
   }
   bx_net_request_free(rem);
@@ -578,8 +591,12 @@ BXillError bx_invoice_extra_sync(bXill *app, MYSQL *conn, uint64_t invoice_id) {
     for (size_t i = 0; i < n; i++) {
       json_t *row = json_array_get(cmt_arr, i);
       json_object_set_new(row, "_document_type", json_string("kb_invoice"));
-      (void)bx_json_upsert(conn, "kb_comment", row, cf, 7, "_document_id",
-                           invoice_id);
+      BXillError e = bx_json_upsert(conn, "kb_comment", row, cf, 7,
+                                    "_document_id", invoice_id);
+      if (e == ErrorSQLReconnect) {
+        bx_net_request_free(cmt);
+        return e;
+      }
     }
   }
   bx_net_request_free(cmt);
@@ -598,9 +615,13 @@ BXillError bx_project_extra_sync(bXill *app, MYSQL *conn, uint64_t project_id) {
         F("comment", BX_F_STR), F("pr_parent_milestone_id", BX_F_UINT)};
     size_t n = json_array_size(ms_arr);
     for (size_t i = 0; i < n; i++) {
-      (void)bx_json_upsert(conn, "project_milestone",
-                           json_array_get(ms_arr, i), f, 5, "_project_id",
-                           project_id);
+      BXillError e = bx_json_upsert(conn, "project_milestone",
+                                    json_array_get(ms_arr, i), f, 5,
+                                    "_project_id", project_id);
+      if (e == ErrorSQLReconnect) {
+        bx_net_request_free(ms);
+        return e;
+      }
     }
   }
   bx_net_request_free(ms);
@@ -616,9 +637,13 @@ BXillError bx_project_extra_sync(bXill *app, MYSQL *conn, uint64_t project_id) {
         F("pr_milestone_id", BX_F_UINT)};
     size_t n = json_array_size(pk_arr);
     for (size_t i = 0; i < n; i++) {
-      (void)bx_json_upsert(conn, "project_package",
-                           json_array_get(pk_arr, i), f, 6, "_project_id",
-                           project_id);
+      BXillError e = bx_json_upsert(conn, "project_package",
+                                    json_array_get(pk_arr, i), f, 6,
+                                    "_project_id", project_id);
+      if (e == ErrorSQLReconnect) {
+        bx_net_request_free(pk);
+        return e;
+      }
     }
   }
   bx_net_request_free(pk);

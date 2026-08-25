@@ -3,6 +3,7 @@
 
 #include "../bx_object_value.h"
 #include "../bxill.h"
+#include <stdbool.h>
 
 typedef struct s_BXObjectUser BXObjectUser;
 struct s_BXObjectUser {
@@ -19,8 +20,8 @@ struct s_BXObjectUser {
   BXBool remote_is_accountant;
 };
 
-bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item);
-bool bx_user_is_in_database(MYSQL *conn, BXGeneric *item);
+BXillError bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item);
+BXillError bx_user_is_in_database(MYSQL *conn, BXGeneric *item, bool *present);
 BXillError bx_user_walk_items(bXill *app, MYSQL *conn);
 
 #endif /* BX_OBJECT_USER_H__ */

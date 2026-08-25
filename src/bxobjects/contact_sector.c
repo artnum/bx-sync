@@ -73,22 +73,27 @@ BXillError bx_contact_sector_walk_items(bXill *app, MYSQL *conn) {
    */
   BXDatabaseQuery *query_ids = bx_database_new_query(
       conn, "SELECT id FROM contact_sector WHERE _deleted = 0;");
-  if (query_ids != NULL) {
-    if (bx_database_execute(query_ids)) {
-      bx_database_results(query_ids);
-      if (query_ids->results != NULL && query_ids->row_count > 0) {
-        items = calloc(query_ids->row_count, sizeof(*items));
-        if (items != NULL) {
-          int i = 0;
-          for (BXDatabaseRow *current = query_ids->results; current != NULL;
-               current = current->next) {
-            items[i].deleted = true;
-            items[i].item = current->columns[0].i_value;
-            i++;
-          }
-          items_count = query_ids->row_count;
-        }
+  if (query_ids == NULL) {
+    json_decref(contact_sector_array);
+    return ErrorGeneric;
+  }
+  if (!bx_database_execute(query_ids) || !bx_database_results(query_ids)) {
+    BXillError e = bx_database_query_error(query_ids);
+    bx_database_free_query(query_ids);
+    json_decref(contact_sector_array);
+    return e;
+  }
+  if (query_ids->results != NULL && query_ids->row_count > 0) {
+    items = calloc(query_ids->row_count, sizeof(*items));
+    if (items != NULL) {
+      int i = 0;
+      for (BXDatabaseRow *current = query_ids->results; current != NULL;
+           current = current->next) {
+        items[i].deleted = true;
+        items[i].item = current->columns[0].i_value;
+        i++;
       }
+      items_count = query_ids->row_count;
     }
   }
   bx_database_free_query(query_ids);

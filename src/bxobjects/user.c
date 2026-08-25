@@ -5,6 +5,7 @@
 #include "../include/bx_utils.h"
 #include "../include/bxill.h"
 #include <jansson.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -94,25 +95,32 @@ static inline BXObjectUser *decode_object(json_t *root) {
   return user;
 }
 
-bool bx_user_is_in_database(MYSQL *conn, BXGeneric *item) {
+BXillError bx_user_is_in_database(MYSQL *conn, BXGeneric *item, bool *present) {
+  if (present) {
+    *present = false;
+  }
   BXDatabaseQuery *query =
       bx_database_new_query(conn, "SELECT id FROM user  WHERE id = :id;");
   if (query == NULL) {
-    return false;
+    return ErrorGeneric;
   }
   bx_database_add_bxtype(query, ":id", item);
   if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = bx_database_query_error(query);
     bx_database_free_query(query);
-    return false;
+    return e;
   }
 
   if (query->results == NULL || query->results->column_count == 0) {
     bx_database_free_query(query);
-    return false;
+    return NoError;
   }
 
   bx_database_free_query(query);
-  return true;
+  if (present) {
+    *present = true;
+  }
+  return NoError;
 }
 
 static void ensure_str(BXString *s) {
@@ -125,9 +133,9 @@ static void ensure_str(BXString *s) {
   s->value_len = 0;
 }
 
-static bool persist_user(MYSQL *conn, BXObjectUser *user) {
+static BXillError persist_user(MYSQL *conn, BXObjectUser *user) {
   if (conn == NULL || user == NULL || !user->remote_id.isset) {
-    return false;
+    return ErrorGeneric;
   }
   ensure_str(&user->remote_firstname);
   ensure_str(&user->remote_lastname);
@@ -141,25 +149,26 @@ static bool persist_user(MYSQL *conn, BXObjectUser *user) {
   BXDatabaseQuery *query =
       bx_database_new_query(conn, "SELECT _checksum FROM user WHERE id = :id;");
   if (query == NULL) {
-    return false;
+    return ErrorGeneric;
   }
   bx_database_add_bxtype(query, ":id", (BXGeneric *)&user->remote_id);
   if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = bx_database_query_error(query);
     bx_database_free_query(query);
-    return false;
+    return e;
   }
   int need_insert =
       (query->results == NULL || query->results->column_count == 0);
   if (!need_insert &&
       (uint64_t)query->results->columns[0].i_value == user->checksum) {
     bx_database_free_query(query);
-    return true;
+    return NoError;
   }
   bx_database_free_query(query);
 
   query = bx_database_new_query(conn, need_insert ? QUERY_INSERT : QUERY_UPDATE);
   if (query == NULL) {
-    return false;
+    return ErrorGeneric;
   }
   bx_database_add_bxtype(query, ":id", (BXGeneric *)&user->remote_id);
   bx_database_add_bxtype(query, ":firstname",
@@ -174,10 +183,14 @@ static bool persist_user(MYSQL *conn, BXObjectUser *user) {
   bx_database_add_param_uint64(query, ":_checksum", &user->checksum);
   bx_database_add_param_uint64(query, ":_last_updated", &now);
   bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
-  bool ok = bx_database_execute(query) && bx_database_results(query) &&
-            bx_database_persist_ok(query);
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = bx_database_query_error(query);
+    bx_database_free_query(query);
+    return e;
+  }
+  int persist_ok = bx_database_persist_ok(query);
   bx_database_free_query(query);
-  return ok;
+  return persist_ok ? NoError : ErrorGeneric;
 }
 
 static BXObjectUser *decode_user_json(json_t *root) {
@@ -193,9 +206,10 @@ static BXObjectUser *decode_user_json(json_t *root) {
   return decode_object(root);
 }
 
-bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
+BXillError bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   bx_log_debug("BX Use Sync Item");
   const char *paths[] = {GET_USER_PATH, "3.0/fictional_users/$", NULL};
+  BXillError last = ErrorGeneric;
   for (int i = 0; paths[i] != NULL; i++) {
     BXNetRequest *request =
         bx_do_request(app->queue, NULL, (char *)paths[i], item);
@@ -209,13 +223,13 @@ bool bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
     if (user == NULL) {
       continue;
     }
-    bool ok = persist_user(conn, user);
+    last = persist_user(conn, user);
     free_object(user);
-    if (ok) {
-      return true;
+    if (last == NoError || last == ErrorSQLReconnect) {
+      return last;
     }
   }
-  return false;
+  return last;
 }
 
 static BXillError walk_user_path(bXill *app, MYSQL *conn, const char *path) {
@@ -247,9 +261,13 @@ static BXillError walk_user_path(bXill *app, MYSQL *conn, const char *path) {
       if (user == NULL) {
         continue;
       }
-      bool ok = persist_user(conn, user);
+      BXillError e = persist_user(conn, user);
       free_object(user);
-      if (!ok) {
+      if (e == ErrorSQLReconnect) {
+        bx_net_request_free(request);
+        return e;
+      }
+      if (e != NoError) {
         bx_log_error("Failed persist user from %s", path);
       }
     }

@@ -8,6 +8,7 @@
 #include "../include/bx_sync_more.h"
 #include "../include/bxobjects/contact.h"
 #include <jansson.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <threads.h>
@@ -130,25 +131,33 @@ ObjectState bx_project_check_database(MYSQL *conn, BXObjectProject *project) {
   return NeedNothing;
 }
 
-bool bx_project_is_in_database(MYSQL *conn, BXGeneric *item) {
+BXillError bx_project_is_in_database(MYSQL *conn, BXGeneric *item,
+                                     bool *present) {
+  if (present) {
+    *present = false;
+  }
   BXDatabaseQuery *query =
       bx_database_new_query(conn, "SELECT id FROM pr_project WHERE id = :id;");
   if (query == NULL) {
-    return false;
+    return ErrorGeneric;
   }
   bx_database_add_bxtype(query, ":id", item);
   if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = bx_database_query_error(query);
     bx_database_free_query(query);
-    return false;
+    return e;
   }
 
   if (query->results == NULL || query->results->column_count == 0) {
     bx_database_free_query(query);
-    return false;
+    return NoError;
   }
 
   bx_database_free_query(query);
-  return true;
+  if (present) {
+    *present = true;
+  }
+  return NoError;
 }
 
 static bool bind_params(BXDatabaseQuery *query, BXObjectProject *project) {
@@ -223,13 +232,21 @@ BXillError _bx_project_sync_item(bXill *app, MYSQL *conn, json_t *item,
     return NoError;
   }
 
-  if (project->contact_id.isset && project->contact_id.value != 0 &&
-      !bx_contact_is_in_database(conn, (BXGeneric *)&project->contact_id)) {
-    bx_log_debug("Skip project %lu: contact %lu missing",
-                 (unsigned long)project->id.value,
-                 (unsigned long)project->contact_id.value);
-    bx_project_free(project);
-    return NoError;
+  if (project->contact_id.isset && project->contact_id.value != 0) {
+    bool present = false;
+    BXillError e = bx_contact_is_in_database(
+        conn, (BXGeneric *)&project->contact_id, &present);
+    if (e != NoError) {
+      bx_project_free(project);
+      return e;
+    }
+    if (!present) {
+      bx_log_debug("Skip project %lu: contact %lu missing",
+                   (unsigned long)project->id.value,
+                   (unsigned long)project->contact_id.value);
+      bx_project_free(project);
+      return NoError;
+    }
   }
 
   if (ProjectState == CacheNotSet) {
@@ -257,7 +274,11 @@ BXillError _bx_project_sync_item(bXill *app, MYSQL *conn, json_t *item,
   }
   cache_set_item(cache, (BXGeneric *)&project->id, project->checksum);
   if (app != NULL) {
-    (void)bx_project_extra_sync(app, conn, project->id.value);
+    BXillError e = bx_project_extra_sync(app, conn, project->id.value);
+    if (e == ErrorSQLReconnect) {
+      bx_project_free(project);
+      return e;
+    }
   }
   bx_project_free(project);
   return NoError;
@@ -281,7 +302,7 @@ BXillError bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
     return ErrorNet;
   }
 
-  bool ret = _bx_project_sync_item(app, conn, request->decoded, cache);
+  BXillError ret = _bx_project_sync_item(app, conn, request->decoded, cache);
   bx_net_request_free(request);
   return ret;
 }

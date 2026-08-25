@@ -117,6 +117,18 @@ MYSQL *thread_reconnect(MYSQL *conn, bXill *app) {
   return thread_setup_mysql(app);
 }
 
+static MYSQL *lookup_step(bXill *app, MYSQL *conn, const char *name,
+                          BXillError e) {
+  if (e == NoError || conn == NULL) {
+    return conn;
+  }
+  bx_log_error("Lookup load failed: %s", name);
+  if (e == ErrorSQLReconnect) {
+    return thread_reconnect(conn, app);
+  }
+  return conn;
+}
+
 bool thread_handle_error(BXillError error, bXill *app, MYSQL **conn) {
   if (error == NoError) {
     return true;
@@ -294,7 +306,16 @@ void *contact_thread(void *arg) {
   int cache_checkpoint = bx_utils_cache_checkpoint(app);
 
   /* load language */
-  bx_language_load(app, conn);
+  if (bx_language_load(app, conn) == ErrorSQLReconnect) {
+    conn = thread_reconnect(conn, app);
+    if (!conn) {
+      free(filename);
+      cache_destroy(my_cache);
+      thread_teardown_mysql(conn);
+      bx_log_error("Cannot set up MYSQL");
+      return (void *)EXIT_FAILURE;
+    }
+  }
 
   PruningParameters contact_prune = {
       .query =
@@ -387,7 +408,17 @@ void *project_thread(void *arg) {
       .query =
           bx_database_new_query(conn, "SELECT id, _checksum FROM pr_project")};
   /* sync */
-  bx_prune_from_db(app, &prune_one_source_of_truth);
+  if (bx_prune_from_db(app, &prune_one_source_of_truth) == ErrorSQLReconnect) {
+    conn = thread_reconnect(conn, app);
+    if (!conn) {
+      free(filename);
+      cache_destroy(my_cache);
+      bx_database_free_query(prune_one_source_of_truth.query);
+      thread_teardown_mysql(conn);
+      bx_log_error("Cannot set up MYSQL");
+      return (void *)EXIT_FAILURE;
+    }
+  }
   bx_database_free_query(prune_one_source_of_truth.query);
 
   int cache_checkpoint = bx_utils_cache_checkpoint(app);
@@ -488,7 +519,17 @@ void *invoice_thread(void *arg) {
       .query =
           bx_database_new_query(conn, "SELECT id, _checksum FROM invoice")};
   /* sync */
-  bx_prune_from_db(app, &prune_one_source_of_truth);
+  if (bx_prune_from_db(app, &prune_one_source_of_truth) == ErrorSQLReconnect) {
+    conn = thread_reconnect(conn, app);
+    if (!conn) {
+      free(filename);
+      cache_destroy(my_cache);
+      bx_database_free_query(prune_one_source_of_truth.query);
+      thread_teardown_mysql(conn);
+      bx_log_error("Cannot set up MYSQL");
+      return (void *)EXIT_FAILURE;
+    }
+  }
   bx_database_free_query(prune_one_source_of_truth.query);
 
   int cache_checkpoint = bx_utils_cache_checkpoint(app);
@@ -745,37 +786,49 @@ int main(int argc, char **argv) {
   /* Lookups first so document FKs (units, etc.) can resolve. */
   MYSQL *lookup_conn = thread_setup_mysql(&app);
   if (lookup_conn) {
-    if (bx_unit_walk_items(&app, lookup_conn) != NoError) {
-      bx_log_error("Lookup load failed: unit");
+    lookup_conn = lookup_step(&app, lookup_conn, "unit",
+                              bx_unit_walk_items(&app, lookup_conn));
+    if (lookup_conn) {
+      lookup_conn = lookup_step(&app, lookup_conn, "account",
+                                bx_account_walk_items(&app, lookup_conn));
     }
-    if (bx_account_walk_items(&app, lookup_conn) != NoError) {
-      bx_log_error("Lookup load failed: account");
+    if (lookup_conn) {
+      lookup_conn = lookup_step(&app, lookup_conn, "salutation",
+                                bx_salutation_walk_items(&app, lookup_conn));
     }
-    if (bx_salutation_walk_items(&app, lookup_conn) != NoError) {
-      bx_log_error("Lookup load failed: salutation");
+    if (lookup_conn) {
+      lookup_conn = lookup_step(&app, lookup_conn, "title",
+                                bx_title_walk_items(&app, lookup_conn));
     }
-    if (bx_title_walk_items(&app, lookup_conn) != NoError) {
-      bx_log_error("Lookup load failed: title");
+    if (lookup_conn) {
+      lookup_conn =
+          lookup_step(&app, lookup_conn, "payment_type",
+                      bx_payment_type_walk_items(&app, lookup_conn));
     }
-    if (bx_payment_type_walk_items(&app, lookup_conn) != NoError) {
-      bx_log_error("Lookup load failed: payment_type");
+    if (lookup_conn) {
+      lookup_conn = lookup_step(&app, lookup_conn, "currency",
+                                bx_currency_walk_items(&app, lookup_conn));
     }
-    if (bx_currency_walk_items(&app, lookup_conn) != NoError) {
-      bx_log_error("Lookup load failed: currency");
+    if (lookup_conn) {
+      lookup_conn =
+          lookup_step(&app, lookup_conn, "contact_group",
+                      bx_contact_group_walk_items(&app, lookup_conn));
     }
-    if (bx_contact_group_walk_items(&app, lookup_conn) != NoError) {
-      bx_log_error("Lookup load failed: contact_group");
+    if (lookup_conn) {
+      lookup_conn = lookup_step(&app, lookup_conn, "language",
+                                bx_language_load(&app, lookup_conn));
     }
-    if (!bx_language_load(&app, lookup_conn)) {
-      bx_log_error("Lookup load failed: language");
+    if (lookup_conn) {
+      lookup_conn = lookup_step(&app, lookup_conn, "extra lookups",
+                                bx_lookups_walk_more(&app, lookup_conn));
     }
-    if (bx_lookups_walk_more(&app, lookup_conn) != NoError) {
-      bx_log_error("Lookup load failed: extra lookups");
+    if (lookup_conn) {
+      lookup_conn = lookup_step(&app, lookup_conn, "user",
+                                bx_user_walk_items(&app, lookup_conn));
     }
-    if (bx_user_walk_items(&app, lookup_conn) != NoError) {
-      bx_log_error("Lookup load failed: user");
+    if (lookup_conn) {
+      thread_teardown_mysql(lookup_conn);
     }
-    thread_teardown_mysql(lookup_conn);
   } else {
     bx_log_error("Lookup bootstrap skipped: MySQL connect failed");
   }

@@ -39,15 +39,23 @@ static inline BXObjectContactGroup *decode_object(json_t *root) {
   return contact_group;
 }
 
-bool db_delete_object(MYSQL *conn, int64_t id) {
+static BXillError db_delete_object(MYSQL *conn, int64_t id) {
   assert(id > 0);
 
   BXDatabaseQuery *query = bx_database_new_query(
       conn, "SELECT _deleted FROM contact_group WHERE id = :id;");
+  if (query == NULL) {
+    return ErrorGeneric;
+  }
   bx_database_add_param_int64(query, ":id", &id);
-  bx_database_execute(query);
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = bx_database_query_error(query);
+    bx_database_free_query(query);
+    return e;
+  }
   if (query->results == NULL || query->results->column_count == 0) {
-    return true;
+    bx_database_free_query(query);
+    return NoError;
   }
   int deleted_value = query->results->columns[0].i_value;
   bx_database_free_query(query);
@@ -55,16 +63,23 @@ bool db_delete_object(MYSQL *conn, int64_t id) {
     time_t now = time(NULL);
     query = bx_database_new_query(
         conn, "UPDATE contact_group SET _deleted = :deleted WHERE id = :id;");
+    if (query == NULL) {
+      return ErrorGeneric;
+    }
     bx_database_add_param_int64(query, ":deleted", &now);
     bx_database_add_param_int64(query, ":id", &id);
-    bx_database_execute(query);
+    if (!bx_database_execute(query) || !bx_database_results(query)) {
+      BXillError e = bx_database_query_error(query);
+      bx_database_free_query(query);
+      return e;
+    }
     bx_database_free_query(query);
   }
-  return true;
+  return NoError;
 }
 
 #define GET_CONTACT_GROUP_PATH "2.0/contact_group/$"
-bool bx_contact_group_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
+BXillError bx_contact_group_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   bx_log_debug("BX Contact Group Sync");
   BXNetRequest *request =
       bx_do_request(app->queue, NULL, GET_CONTACT_GROUP_PATH, item);
@@ -72,48 +87,65 @@ bool bx_contact_group_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
       request->response->http_code != 200) {
     if (request == NULL || request->response == NULL) {
       bx_net_request_free(request);
-      return false;
+      return ErrorNet;
     }
     if (request->response->http_code == 404) {
       bx_net_request_free(request);
       return db_delete_object(conn, ((BXInteger *)item)->value);
     }
     bx_net_request_free(request);
-    return false;
+    return ErrorNet;
   }
 
   BXObjectContactGroup *contact_group = decode_object(request->decoded);
   bx_net_request_free(request);
   if (contact_group == NULL) {
-    return false;
+    return ErrorGeneric;
   }
 
   time_t now = time(NULL);
   BXDatabaseQuery *query = bx_database_new_query(
       conn, "SELECT _checksum FROM contact_group WHERE id = :id;");
+  if (query == NULL) {
+    free_object(contact_group);
+    return ErrorGeneric;
+  }
   bx_database_add_param_int64(query, ":id", &contact_group->remote_id.value);
-  bx_database_execute(query);
-  bx_database_results(query);
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = bx_database_query_error(query);
+    bx_database_free_query(query);
+    free_object(contact_group);
+    return e;
+  }
   if (query->results == NULL || query->results->column_count == 0) {
     bx_database_free_query(query);
     query = bx_database_new_query(
         conn, "INSERT INTO contact_group (_checksum, id, name, _last_updated)"
               " VALUES (:_checksum, :id, :name, :_last_updated);");
+    if (query == NULL) {
+      free_object(contact_group);
+      return ErrorGeneric;
+    }
     bx_database_add_param_char(query, ":name", contact_group->remote_name.value,
                                contact_group->remote_name.value_len);
     bx_database_add_param_uint64(query, ":_checksum", &contact_group->checksum);
     bx_database_add_param_uint64(query, ":id", &contact_group->remote_id.value);
     bx_database_add_param_uint64(query, ":_last_updated", &now);
-    bx_database_execute(query);
+    if (!bx_database_execute(query) || !bx_database_results(query)) {
+      BXillError e = bx_database_query_error(query);
+      bx_database_free_query(query);
+      free_object(contact_group);
+      return e;
+    }
     bx_database_free_query(query);
     free_object(contact_group);
-    return true;
+    return NoError;
   }
 
   if (query->results[0].columns[0].i_value == contact_group->checksum) {
     bx_database_free_query(query);
     free_object(contact_group);
-    return true;
+    return NoError;
   }
 
   bx_database_free_query(query);
@@ -121,6 +153,10 @@ bool bx_contact_group_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
       conn, "UPDATE contact_group SET _checksum = :_checksum, name = :name, "
             "_last_updated = :_last_updated, _deleted = :_deleted "
             "WHERE id = :id;");
+  if (query == NULL) {
+    free_object(contact_group);
+    return ErrorGeneric;
+  }
   uint64_t not_deleted = 0;
   bx_database_add_param_char(query, ":name", contact_group->remote_name.value,
                              contact_group->remote_name.value_len);
@@ -128,11 +164,16 @@ bool bx_contact_group_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   bx_database_add_param_uint64(query, ":_checksum", &contact_group->checksum);
   bx_database_add_param_uint64(query, ":_last_updated", &now);
   bx_database_add_param_uint64(query, ":_deleted", &not_deleted);
-  bx_database_execute(query);
+  if (!bx_database_execute(query) || !bx_database_results(query)) {
+    BXillError e = bx_database_query_error(query);
+    bx_database_free_query(query);
+    free_object(contact_group);
+    return e;
+  }
   bx_database_free_query(query);
   free_object(contact_group);
 
-  return true;
+  return NoError;
 }
 
 BXillError bx_contact_group_walk_items(bXill *app, MYSQL *conn) {

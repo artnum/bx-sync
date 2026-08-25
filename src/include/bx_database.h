@@ -2,6 +2,7 @@
 #define BX_DATABASE_H__
 
 #include "bx_object_value.h"
+#include "bxill.h"
 #include <mysql/mysql.h>
 #include <stdbool.h>
 
@@ -127,6 +128,13 @@ void bx_database_print_warnings(BXDatabaseQuery *query);
 static inline bool bx_database_persist_ok(const BXDatabaseQuery *query) {
   return query != NULL && !query->has_failed && !query->had_fk_error &&
          query->warning_rows == 0;
+}
+
+static inline BXillError bx_database_query_error(const BXDatabaseQuery *query) {
+  if (query != NULL && query->need_reconnect) {
+    return ErrorSQLReconnect;
+  }
+  return ErrorGeneric;
 }
 
 #define bx_database_add_param_int8(query, name, value)                         \
