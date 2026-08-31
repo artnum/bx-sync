@@ -137,6 +137,29 @@ BXillError bx_json_upsert(MYSQL *conn, const char *table, json_t *obj,
   uint64_t checksum = XXH3_64bits_digest(hash);
   XXH3_freeState(hash);
 
+  int pk_ok = 0;
+  switch (fields[0].kind) {
+  case BX_F_UINT:
+    pk_ok = slots[0].u.isset;
+    break;
+  case BX_F_INT:
+    pk_ok = slots[0].i.isset;
+    break;
+  case BX_F_STR:
+    pk_ok = slots[0].s.isset && slots[0].s.value != NULL;
+    break;
+  case BX_F_UUID:
+    pk_ok = slots[0].q.isset;
+    break;
+  case BX_F_FLOAT:
+  case BX_F_BOOL:
+    break;
+  }
+  if (!pk_ok) {
+    free_slots(slots, fields, nfields);
+    return ErrorGeneric;
+  }
+
   char select_sql[256];
   if (parent_sql) {
     snprintf(select_sql, sizeof(select_sql),

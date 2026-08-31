@@ -401,19 +401,43 @@ static const BXJsonField kb_delivery_fields[] = {
     F("kb_item_status_id", BX_F_INT), F("is_valid_from", BX_F_STR),
     F("contact_address", BX_F_STR), F("updated_at", BX_F_STR)};
 
+static json_t *kb_doc_object(json_t *root) {
+  if (json_is_object(root)) {
+    json_t *data = json_object_get(root, "data");
+    if (json_is_object(data)) {
+      return data;
+    }
+    return root;
+  }
+  return NULL;
+}
+
+static int kb_doc_has_id(json_t *obj) {
+  json_t *id = json_object_get(obj, "id");
+  return json_is_integer(id) || json_is_string(id);
+}
+
 static BXillError kb_doc_one(bXill *app, MYSQL *conn, json_t *item,
                              const char *table, const char *get_fmt,
                              const BXJsonField *fields, size_t nfields,
                              const char *pos_table, const char *pos_parent) {
-  json_t *positions = json_object_get(item, "positions");
-  json_t *src = item;
+  json_t *src = kb_doc_object(item);
+  if (src == NULL || !kb_doc_has_id(src)) {
+    return NoError;
+  }
+  json_t *positions = json_object_get(src, "positions");
   BXNetRequest *full = NULL;
   if (positions == NULL) {
-    BXUInteger id = bx_object_get_json_uint(item, "id", NULL);
-    full = bx_do_request(app->queue, NULL, (char *)get_fmt, (BXGeneric *)&id);
-    if (full && full->decoded) {
-      src = full->decoded;
-      positions = json_object_get(src, "positions");
+    BXUInteger id = bx_object_get_json_uint(src, "id", NULL);
+    if (id.isset) {
+      full = bx_do_request(app->queue, NULL, (char *)get_fmt, (BXGeneric *)&id);
+      if (full && full->response && full->response->http_code == 200) {
+        json_t *decoded = kb_doc_object(full->decoded);
+        if (decoded && kb_doc_has_id(decoded)) {
+          src = decoded;
+          positions = json_object_get(src, "positions");
+        }
+      }
     }
   }
   BXillError e = bx_json_upsert(conn, table, src, fields, nfields, NULL, 0);
