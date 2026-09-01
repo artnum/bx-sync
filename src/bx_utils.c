@@ -318,10 +318,10 @@ void _bx_log_queue(char *msg, const char *err, char *file, int line,
     return;
   }
   if (err == NULL) {
-    snprintf(new->msg, LOG_MSG_BUFFER_MAX, "%s", msg);
+    snprintf(new->msg, LOG_MSG_BUFFER_MAX, "[%ld] %s", time(NULL), msg);
   } else {
-    snprintf(new->msg, LOG_MSG_BUFFER_MAX, "%s (%lX) [%s:%d] %s", err, thid,
-             file, line, msg);
+    snprintf(new->msg, LOG_MSG_BUFFER_MAX, "[%ld] %s (%lX) [%s:%d] %s",
+             time(NULL), err, thid, file, line, msg);
   }
   if (bx_mutex_lock(&LOG.mutex) != false) {
     new->next = LOG.head;

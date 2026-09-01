@@ -180,32 +180,24 @@ void *random_item_thread(void *arg) {
   }
 
   bx_log_debug("Random items thread data thread %lx", pthread_self());
-  time_t taxes_cycle_ts = 0;
-  time_t records_cycle_ts = 0;
-  time_t kb_sales_cycle_ts = 0;
+  time_t cycle_ts = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
-    bx_walker_cycle_mark(&taxes_cycle_ts, "taxes");
+    bx_walker_cycle_mark(&cycle_ts, "random_item");
     BXillError e = bx_taxes_walk_item(app, conn);
     if (e != ErrorSQLReconnect) {
-      bx_walker_cycle_mark(&records_cycle_ts, "records");
       BXillError r = bx_records_walk_more(app, conn);
       if (r != NoError) {
         e = r;
       }
-    } else {
-      records_cycle_ts = 0;
     }
     if (e != ErrorSQLReconnect) {
-      bx_walker_cycle_mark(&kb_sales_cycle_ts, "kb_sales");
       BXillError r = bx_kb_sales_walk_items(app, conn);
       if (r != NoError) {
         e = r;
       }
-    } else {
-      kb_sales_cycle_ts = 0;
     }
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
