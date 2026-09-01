@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <threads.h>
+#include <time.h>
 #include <unistd.h>
 
 #define SNOWFLAKE_IMPLEMENTATION
@@ -402,4 +403,15 @@ int bx_utils_cache_checkpoint(bXill *app) {
     cache_checkpoint = BXILL_DEFAULT_CACHE_CHECKPOINT;
   }
   return cache_checkpoint;
+}
+
+void bx_walker_cycle_mark(time_t *ts, const char *name) {
+  time_t now = time(NULL);
+  if (now == (time_t)-1) {
+    return;
+  }
+  if (*ts != 0 && now >= *ts) {
+    bx_log_info("Walker %s cycle: %ld s", name, (long)(now - *ts));
+  }
+  *ts = now;
 }

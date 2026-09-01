@@ -6,6 +6,7 @@
 #include "bxill.h"
 #include <pthread.h>
 #include <stdio.h>
+#include <time.h>
 
 typedef struct {
   uint32_t seed;
@@ -79,4 +80,5 @@ void *bx_log_out_thread(void *arg);
 
 char *bx_utils_cache_filename(bXill *app, const char *filename);
 int bx_utils_cache_checkpoint(bXill *app);
+void bx_walker_cycle_mark(time_t *ts, const char *name);
 #endif /* BX_UTILS_H__ */

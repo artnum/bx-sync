@@ -180,22 +180,32 @@ void *random_item_thread(void *arg) {
   }
 
   bx_log_debug("Random items thread data thread %lx", pthread_self());
+  time_t taxes_cycle_ts = 0;
+  time_t records_cycle_ts = 0;
+  time_t kb_sales_cycle_ts = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
+    bx_walker_cycle_mark(&taxes_cycle_ts, "taxes");
     BXillError e = bx_taxes_walk_item(app, conn);
     if (e != ErrorSQLReconnect) {
+      bx_walker_cycle_mark(&records_cycle_ts, "records");
       BXillError r = bx_records_walk_more(app, conn);
       if (r != NoError) {
         e = r;
       }
+    } else {
+      records_cycle_ts = 0;
     }
     if (e != ErrorSQLReconnect) {
+      bx_walker_cycle_mark(&kb_sales_cycle_ts, "kb_sales");
       BXillError r = bx_kb_sales_walk_items(app, conn);
       if (r != NoError) {
         e = r;
       }
+    } else {
+      kb_sales_cycle_ts = 0;
     }
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
@@ -227,10 +237,12 @@ void *contact_sector_thread(void *arg) {
     return (void *)EXIT_FAILURE;
   }
   bx_log_debug("Contact Sector data thread %lx", pthread_self());
+  time_t cycle_ts = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
+    bx_walker_cycle_mark(&cycle_ts, "contact_sector");
     BXillError e = bx_contact_sector_walk_items(app, conn);
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
@@ -323,10 +335,12 @@ void *contact_thread(void *arg) {
       .cache = my_cache};
   bx_log_debug("Contact data thread %lx", pthread_self());
   time_t start = time(NULL);
+  time_t cycle_ts = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
+    bx_walker_cycle_mark(&cycle_ts, "contact");
     BXillError e = NoError;
     MYSQL *prev_conn = conn;
     (void)((e = bx_contact_walk_items(app, conn, my_cache)) == NoError &&
@@ -430,6 +444,7 @@ void *project_thread(void *arg) {
 
   bx_log_debug("Project data thread %ld", pthread_self());
   time_t start = time(NULL);
+  time_t cycle_ts = 0;
   unsigned seen_contact = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
@@ -439,6 +454,7 @@ void *project_thread(void *arg) {
     if (!atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
       break;
     }
+    bx_walker_cycle_mark(&cycle_ts, "project");
     BXillError e = NoError;
     MYSQL *prev_conn = conn;
     (void)((e = bx_project_walk_item(app, conn, my_cache)) == NoError &&
@@ -540,6 +556,7 @@ void *invoice_thread(void *arg) {
 
   bx_log_debug("Invoice data thread %ld", pthread_self());
   time_t start = time(NULL);
+  time_t cycle_ts = 0;
   unsigned seen_project = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
@@ -549,6 +566,7 @@ void *invoice_thread(void *arg) {
     if (!atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
       break;
     }
+    bx_walker_cycle_mark(&cycle_ts, "invoice");
     BXillError e = NoError;
     MYSQL *prev_conn = conn;
     (void)((e = bx_invoice_walk_items(app, conn, my_cache)) == NoError &&
