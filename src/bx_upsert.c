@@ -2,7 +2,6 @@
 #include "include/bx_database.h"
 #include "include/bx_object.h"
 #include "include/bx_utils.h"
-#include "include/bx_walk.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -268,37 +267,4 @@ BXillError bx_json_upsert(MYSQL *conn, const char *table, json_t *obj,
   bx_database_free_query(query);
   free_slots(slots, fields, nfields);
   return NoError;
-}
-
-typedef struct {
-  BXillError (*sync)(MYSQL *conn, json_t *item);
-} walk_list_ctx;
-
-typedef struct {
-  BXillError (*sync)(bXill *app, MYSQL *conn, json_t *item);
-} walk_list_app_ctx;
-
-static BXillError walk_list_adapt(bXill *app, MYSQL *conn, json_t *item,
-                                  void *ctx) {
-  (void)app;
-  return ((walk_list_ctx *)ctx)->sync(conn, item);
-}
-
-static BXillError walk_list_app_adapt(bXill *app, MYSQL *conn, json_t *item,
-                                      void *ctx) {
-  return ((walk_list_app_ctx *)ctx)->sync(app, conn, item);
-}
-
-BXillError bx_walk_list(bXill *app, MYSQL *conn, const char *path_fmt,
-                        BXillError (*sync)(MYSQL *conn, json_t *item)) {
-  walk_list_ctx ctx = {.sync = sync};
-  return bx_walk_pages(app, conn, path_fmt, NULL, NULL, walk_list_adapt, &ctx);
-}
-
-BXillError bx_walk_list_app(bXill *app, MYSQL *conn, const char *path_fmt,
-                            BXillError (*sync)(bXill *app, MYSQL *conn,
-                                               json_t *item)) {
-  walk_list_app_ctx ctx = {.sync = sync};
-  return bx_walk_pages(app, conn, path_fmt, NULL, NULL, walk_list_app_adapt,
-                       &ctx);
 }

@@ -30,11 +30,4 @@ BXillError bx_json_upsert(MYSQL *conn, const char *table, json_t *obj,
                           const BXJsonField *fields, size_t nfields,
                           const char *parent_sql, uint64_t parent_id);
 
-BXillError bx_walk_list(bXill *app, MYSQL *conn, const char *path_fmt,
-                        BXillError (*sync)(MYSQL *conn, json_t *item));
-
-BXillError bx_walk_list_app(bXill *app, MYSQL *conn, const char *path_fmt,
-                            BXillError (*sync)(bXill *app, MYSQL *conn,
-                                               json_t *item));
-
 #endif /* BX_UPSERT_H__ */

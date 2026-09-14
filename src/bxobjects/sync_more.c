@@ -3,6 +3,7 @@
 #include "../include/bx_object.h"
 #include "../include/bx_upsert.h"
 #include "../include/bx_utils.h"
+#include "../include/bx_walk.h"
 #include "../include/bxobjects/position.h"
 #include <jansson.h>
 #include <stdio.h>
@@ -40,14 +41,20 @@ static BXillError keep_going(BXillError e, const char *label) {
   return NoError;
 }
 
-static BXillError country_one(MYSQL *conn, json_t *item) {
+static BXillError pages(bXill *app, MYSQL *conn, const char *path,
+                        bx_walk_sync_fn sync) {
+  return bx_walk_pages(app, conn, path, NULL, NULL, sync, NULL);
+}
+
+static BXillError country_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT), F("name", BX_F_STR), F("name_short", BX_F_STR),
       F("iso3166_alpha2", BX_F_STR)};
   return up(conn, "country", item, f, 4);
 }
 
-static BXillError account_group_one(MYSQL *conn, json_t *item) {
+static BXillError account_group_one(bXill *app, MYSQL *conn, json_t *item,
+                                    void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT), F("uuid", BX_F_UUID), F("account_no", BX_F_STR),
       F("name", BX_F_STR), F("parent_fibu_account_group_id", BX_F_UINT),
@@ -55,7 +62,8 @@ static BXillError account_group_one(MYSQL *conn, json_t *item) {
   return up(conn, "account_group", item, f, 7);
 }
 
-static BXillError client_service_one(MYSQL *conn, json_t *item) {
+static BXillError client_service_one(bXill *app, MYSQL *conn, json_t *item,
+                                     void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT), F("name", BX_F_STR),
       F("default_is_billable", BX_F_BOOL),
@@ -63,7 +71,8 @@ static BXillError client_service_one(MYSQL *conn, json_t *item) {
   return up(conn, "client_service", item, f, 5);
 }
 
-static BXillError bank_account_one(MYSQL *conn, json_t *item) {
+static BXillError bank_account_one(bXill *app, MYSQL *conn, json_t *item,
+                                   void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT),          F("name", BX_F_STR),
       F("owner", BX_F_STR),        F("owner_address", BX_F_STR),
@@ -77,7 +86,7 @@ static BXillError bank_account_one(MYSQL *conn, json_t *item) {
   return up(conn, "bank_account", item, f, 18);
 }
 
-static BXillError company_one(MYSQL *conn, json_t *item) {
+static BXillError company_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT), F("name", BX_F_STR), F("address", BX_F_STR),
       F("address_nr", BX_F_STR), F("postcode", BX_F_STR), F("city", BX_F_STR),
@@ -89,7 +98,7 @@ static BXillError company_one(MYSQL *conn, json_t *item) {
   return up(conn, "company_profile", item, f, 17);
 }
 
-static BXillError calendar_one(MYSQL *conn, json_t *item) {
+static BXillError calendar_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT), F("start", BX_F_STR), F("end", BX_F_STR),
       F("is_vat_subject", BX_F_BOOL), F("is_annual_reporting", BX_F_BOOL),
@@ -98,14 +107,16 @@ static BXillError calendar_one(MYSQL *conn, json_t *item) {
   return up(conn, "calendar_year", item, f, 9);
 }
 
-static BXillError business_year_one(MYSQL *conn, json_t *item) {
+static BXillError business_year_one(bXill *app, MYSQL *conn, json_t *item,
+                                    void *ctx) {
   static const BXJsonField f[] = {F("id", BX_F_UINT), F("start", BX_F_STR),
                                   F("end", BX_F_STR), F("status", BX_F_STR),
                                   F("closed_at", BX_F_STR)};
   return up(conn, "business_year", item, f, 5);
 }
 
-static BXillError vat_period_one(MYSQL *conn, json_t *item) {
+static BXillError vat_period_one(bXill *app, MYSQL *conn, json_t *item,
+                                 void *ctx) {
   static const BXJsonField f[] = {F("id", BX_F_UINT), F("start", BX_F_STR),
                                   F("end", BX_F_STR), F("type", BX_F_STR),
                                   F("status", BX_F_STR),
@@ -116,13 +127,13 @@ static BXillError vat_period_one(MYSQL *conn, json_t *item) {
 BXillError bx_lookups_walk_more(bXill *app, MYSQL *conn) {
   BXillError e;
   bx_log_debug("BX Walk extra lookups");
-  if ((e = keep_going(bx_walk_list(app, conn, "2.0/country?limit=$&offset=$",
+  if ((e = keep_going(pages(app, conn, "2.0/country?limit=$&offset=$",
                                    country_one),
                       "country")) != NoError) {
     return e;
   }
   if ((e = keep_going(
-           bx_walk_list(app, conn, "2.0/account_groups?limit=$&offset=$",
+           pages(app, conn, "2.0/account_groups?limit=$&offset=$",
                         account_group_one),
            "account_group")) != NoError) {
     return e;
@@ -159,33 +170,33 @@ BXillError bx_lookups_walk_more(bXill *app, MYSQL *conn) {
     return e;
   }
   if ((e = keep_going(
-           bx_walk_list(app, conn, "2.0/client_service?limit=$&offset=$",
+           pages(app, conn, "2.0/client_service?limit=$&offset=$",
                         client_service_one),
            "client_service")) != NoError) {
     return e;
   }
-  if ((e = keep_going(bx_walk_list(app, conn, "3.0/banking/accounts?limit=$&offset=$",
+  if ((e = keep_going(pages(app, conn, "3.0/banking/accounts?limit=$&offset=$",
                                    bank_account_one),
                       "bank_account")) != NoError) {
     return e;
   }
-  if ((e = keep_going(bx_walk_list(app, conn, "2.0/company_profile", company_one),
+  if ((e = keep_going(pages(app, conn, "2.0/company_profile", company_one),
                       "company_profile")) != NoError) {
     return e;
   }
   if ((e = keep_going(
-           bx_walk_list(app, conn,
+           pages(app, conn,
                         "3.0/accounting/calendar_years?limit=$&offset=$",
                         calendar_one),
            "calendar_year")) != NoError) {
     return e;
   }
-  if ((e = keep_going(bx_walk_list(app, conn, "3.0/accounting/business_years",
+  if ((e = keep_going(pages(app, conn, "3.0/accounting/business_years",
                                    business_year_one),
                       "business_year")) != NoError) {
     return e;
   }
-  if ((e = keep_going(bx_walk_list(app, conn, "3.0/accounting/vat_periods",
+  if ((e = keep_going(pages(app, conn, "3.0/accounting/vat_periods",
                                    vat_period_one),
                       "vat_period")) != NoError) {
     return e;
@@ -193,7 +204,7 @@ BXillError bx_lookups_walk_more(bXill *app, MYSQL *conn) {
   return NoError;
 }
 
-static BXillError relation_one(MYSQL *conn, json_t *item) {
+static BXillError relation_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT), F("contact_id", BX_F_UINT),
       F("contact_sub_id", BX_F_UINT), F("description", BX_F_STR),
@@ -201,7 +212,7 @@ static BXillError relation_one(MYSQL *conn, json_t *item) {
   return up(conn, "contact_relation", item, f, 5);
 }
 
-static BXillError article_one(MYSQL *conn, json_t *item) {
+static BXillError article_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT), F("user_id", BX_F_UINT),
       F("article_type_id", BX_F_UINT), F("contact_id", BX_F_UINT),
@@ -215,7 +226,7 @@ static BXillError article_one(MYSQL *conn, json_t *item) {
   return up(conn, "article", item, f, 19);
 }
 
-static BXillError note_one(MYSQL *conn, json_t *item) {
+static BXillError note_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT), F("user_id", BX_F_UINT), F("event_start", BX_F_STR),
       F("subject", BX_F_STR), F("info", BX_F_STR), F("contact_id", BX_F_UINT),
@@ -224,7 +235,7 @@ static BXillError note_one(MYSQL *conn, json_t *item) {
   return up(conn, "note", item, f, 9);
 }
 
-static BXillError task_one(MYSQL *conn, json_t *item) {
+static BXillError task_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT), F("user_id", BX_F_UINT), F("finish_date", BX_F_STR),
       F("subject", BX_F_STR), F("info", BX_F_STR), F("contact_id", BX_F_UINT),
@@ -234,7 +245,8 @@ static BXillError task_one(MYSQL *conn, json_t *item) {
   return up(conn, "task", item, f, 12);
 }
 
-static BXillError timesheet_one(MYSQL *conn, json_t *item) {
+static BXillError timesheet_one(bXill *app, MYSQL *conn, json_t *item,
+                                void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT), F("user_id", BX_F_UINT), F("status_id", BX_F_UINT),
       F("client_service_id", BX_F_UINT), F("text", BX_F_STR),
@@ -246,7 +258,8 @@ static BXillError timesheet_one(MYSQL *conn, json_t *item) {
   return up(conn, "timesheet", item, f, 15);
 }
 
-static BXillError purchase_order_one(MYSQL *conn, json_t *item) {
+static BXillError purchase_order_one(bXill *app, MYSQL *conn, json_t *item,
+                                     void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_UINT), F("document_nr", BX_F_STR), F("title", BX_F_STR),
       F("contact_id", BX_F_UINT), F("contact_sub_id", BX_F_UINT),
@@ -258,7 +271,7 @@ static BXillError purchase_order_one(MYSQL *conn, json_t *item) {
   return up(conn, "purchase_order", item, f, 14);
 }
 
-static BXillError bill_one(MYSQL *conn, json_t *item) {
+static BXillError bill_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_STR), F("created_at", BX_F_STR), F("document_no", BX_F_STR),
       F("status", BX_F_STR), F("vendor_ref", BX_F_STR), F("vendor", BX_F_STR),
@@ -269,7 +282,7 @@ static BXillError bill_one(MYSQL *conn, json_t *item) {
   return up(conn, "purchase_bill", item, f, 14);
 }
 
-static BXillError expense_one(MYSQL *conn, json_t *item) {
+static BXillError expense_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   static const BXJsonField f[] = {
       F("id", BX_F_STR), F("created_at", BX_F_STR), F("document_no", BX_F_STR),
       F("status", BX_F_STR), F("vendor", BX_F_STR), F("title", BX_F_STR),
@@ -279,7 +292,7 @@ static BXillError expense_one(MYSQL *conn, json_t *item) {
   return up(conn, "expense", item, f, 12);
 }
 
-static BXillError manual_one(MYSQL *conn, json_t *item) {
+static BXillError manual_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   static const BXJsonField head[] = {
       F("id", BX_F_UINT), F("type", BX_F_STR), F("date", BX_F_STR),
       F("reference_nr", BX_F_STR), F("created_by_user_id", BX_F_UINT),
@@ -314,50 +327,50 @@ BXillError bx_records_walk_more(bXill *app, MYSQL *conn) {
   BXillError e;
   bx_log_debug("BX Walk extra records");
   if ((e = keep_going(
-           bx_walk_list(app, conn, "2.0/contact_relation?limit=$&offset=$",
+           pages(app, conn, "2.0/contact_relation?limit=$&offset=$",
                         relation_one),
            "contact_relation")) != NoError) {
     return e;
   }
-  if ((e = keep_going(bx_walk_list(app, conn, "2.0/article?limit=$&offset=$",
+  if ((e = keep_going(pages(app, conn, "2.0/article?limit=$&offset=$",
                                    article_one),
                       "article")) != NoError) {
     return e;
   }
-  if ((e = keep_going(bx_walk_list(app, conn, "2.0/note?limit=$&offset=$",
+  if ((e = keep_going(pages(app, conn, "2.0/note?limit=$&offset=$",
                                    note_one),
                       "note")) != NoError) {
     return e;
   }
-  if ((e = keep_going(bx_walk_list(app, conn, "2.0/task?limit=$&offset=$",
+  if ((e = keep_going(pages(app, conn, "2.0/task?limit=$&offset=$",
                                    task_one),
                       "task")) != NoError) {
     return e;
   }
-  if ((e = keep_going(bx_walk_list(app, conn, "2.0/timesheet?limit=$&offset=$",
+  if ((e = keep_going(pages(app, conn, "2.0/timesheet?limit=$&offset=$",
                                    timesheet_one),
                       "timesheet")) != NoError) {
     return e;
   }
   if ((e = keep_going(
-           bx_walk_list(app, conn, "3.0/purchase_orders?limit=$&offset=$",
+           pages(app, conn, "3.0/purchase_orders?limit=$&offset=$",
                         purchase_order_one),
            "purchase_order")) != NoError) {
     return e;
   }
-  if ((e = keep_going(bx_walk_list(app, conn,
+  if ((e = keep_going(pages(app, conn,
                                    "4.0/purchase/bills?limit=$&page=$",
                                    bill_one),
                       "purchase_bill")) != NoError) {
     return e;
   }
-  if ((e = keep_going(bx_walk_list(app, conn, "4.0/expenses?limit=$&page=$",
+  if ((e = keep_going(pages(app, conn, "4.0/expenses?limit=$&page=$",
                                    expense_one),
                       "expense")) != NoError) {
     return e;
   }
   if ((e = keep_going(
-           bx_walk_list(app, conn,
+           pages(app, conn,
                         "3.0/accounting/manual_entries?limit=$&offset=$",
                         manual_one),
            "manual_entry")) != NoError) {
@@ -479,21 +492,21 @@ static BXillError kb_doc_one(bXill *app, MYSQL *conn, json_t *item,
   return e;
 }
 
-static BXillError quote_one(bXill *app, MYSQL *conn, json_t *item) {
+static BXillError quote_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   return kb_doc_one(app, conn, item, "kb_quote", "2.0/kb_offer/$",
                     kb_quote_fields,
                     sizeof(kb_quote_fields) / sizeof(kb_quote_fields[0]),
                     "quote_position", "_quote_id");
 }
 
-static BXillError order_one(bXill *app, MYSQL *conn, json_t *item) {
+static BXillError order_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   return kb_doc_one(app, conn, item, "kb_order", "2.0/kb_order/$",
                     kb_order_fields,
                     sizeof(kb_order_fields) / sizeof(kb_order_fields[0]),
                     "order_position", "_order_id");
 }
 
-static BXillError delivery_one(bXill *app, MYSQL *conn, json_t *item) {
+static BXillError delivery_one(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   return kb_doc_one(app, conn, item, "kb_delivery", "2.0/kb_delivery/$",
                     kb_delivery_fields,
                     sizeof(kb_delivery_fields) / sizeof(kb_delivery_fields[0]),
@@ -504,19 +517,19 @@ BXillError bx_kb_sales_walk_items(bXill *app, MYSQL *conn) {
   BXillError e;
   bx_log_debug("BX Walk quotes/orders/deliveries");
   if ((e = keep_going(
-           bx_walk_list_app(app, conn, "2.0/kb_offer?limit=$&offset=$",
+           pages(app, conn, "2.0/kb_offer?limit=$&offset=$",
                             quote_one),
            "kb_quote")) != NoError) {
     return e;
   }
   if ((e = keep_going(
-           bx_walk_list_app(app, conn, "2.0/kb_order?limit=$&offset=$",
+           pages(app, conn, "2.0/kb_order?limit=$&offset=$",
                             order_one),
            "kb_order")) != NoError) {
     return e;
   }
   if ((e = keep_going(
-           bx_walk_list_app(app, conn, "2.0/kb_delivery?limit=$&offset=$",
+           pages(app, conn, "2.0/kb_delivery?limit=$&offset=$",
                             delivery_one),
            "kb_delivery")) != NoError) {
     return e;
