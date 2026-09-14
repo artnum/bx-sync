@@ -40,24 +40,6 @@ CacheState cache_check_item(Cache *c, BXGeneric *item_id, uint64_t checksum);
 CacheItem *cache_get(Cache *c, uint32_t id);
 void cache_stats(Cache *c, const char *name);
 /**
- * Store the cache into a file.
- *
- * @param[in] c        Cache to store.
- * @param[in] filename Filename of the cache file. The directory is set in the
- *                     configuration file.
- */
-void cache_store(Cache *c, const char *filename);
-/**
- * Load cache from a file.
- *
- * @param[in] c        Cache to load.
- * @param[in] filename Filename of the cache file. The directory is set in the
- *                     configuration file.
- *
- * @return True if success false otherwise.
- */
-bool cache_load(Cache *c, const char *filename);
-/**
  * Invalidate (last seen to 0) all item that have drifted
  *
  * @param[in] c     Cache to Invalidate.

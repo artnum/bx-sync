@@ -78,7 +78,5 @@ void bx_log_end();
 bool bx_string_compare(const char *str1, const char *str2, size_t max);
 void *bx_log_out_thread(void *arg);
 
-char *bx_utils_cache_filename(bXill *app, const char *filename);
-int bx_utils_cache_checkpoint(bXill *app);
 void bx_walker_cycle_mark(time_t *ts, const char *name);
 #endif /* BX_UTILS_H__ */

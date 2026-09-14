@@ -252,7 +252,6 @@ void *contact_sector_thread(void *arg) {
   return (void *)(intptr_t)RetVal;
 }
 
-#define CACHE_FILE_CONTACT "contact.bin"
 void *contact_thread(void *arg) {
   bXill *app = (bXill *)arg;
   int RetVal = EXIT_SUCCESS;
@@ -267,28 +266,15 @@ void *contact_thread(void *arg) {
     bx_log_error("Cannot set up MYSQL");
     return (void *)EXIT_FAILURE;
   }
-  /* filename for cache */
-  char *filename = bx_utils_cache_filename(app, CACHE_FILE_CONTACT);
-  if (!filename) {
-    thread_teardown_mysql(conn);
-    bx_log_debug("Failed allocation of cache filename %s", CACHE_FILE_CONTACT);
-    return (void *)EXIT_FAILURE;
-  }
 
-  /* init cache */
+  /* init cache from database */
   Cache *my_cache;
   my_cache = cache_create();
   if (my_cache == NULL) {
     bx_log_error("Cache init failed");
     thread_teardown_mysql(conn);
-    free(filename);
     return (void *)EXIT_FAILURE;
   }
-  if (!cache_load(my_cache, filename)) {
-    /* loading failed, empty just in case */
-    cache_empty(my_cache);
-  }
-  /* validate cache with database */
   PruningParameters prune_one_source_of_truth = {
       .cache = my_cache,
       .query =
@@ -297,7 +283,6 @@ void *contact_thread(void *arg) {
   if (bx_prune_from_db(app, &prune_one_source_of_truth) == ErrorSQLReconnect) {
     conn = thread_reconnect(conn, app);
     if (!conn) {
-      free(filename);
       cache_destroy(my_cache);
       bx_database_free_query(prune_one_source_of_truth.query);
       thread_teardown_mysql(conn);
@@ -307,13 +292,10 @@ void *contact_thread(void *arg) {
   }
   bx_database_free_query(prune_one_source_of_truth.query);
 
-  int cache_checkpoint = bx_utils_cache_checkpoint(app);
-
   /* load language */
   if (bx_language_load(app, conn) == ErrorSQLReconnect) {
     conn = thread_reconnect(conn, app);
     if (!conn) {
-      free(filename);
       cache_destroy(my_cache);
       thread_teardown_mysql(conn);
       bx_log_error("Cannot set up MYSQL");
@@ -326,7 +308,6 @@ void *contact_thread(void *arg) {
           bx_database_new_query(conn, "DELETE FROM contact WHERE id = :id"),
       .cache = my_cache};
   bx_log_debug("Contact data thread %lx", pthread_self());
-  time_t start = time(NULL);
   time_t cycle_ts = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
     while (atomic_load(&app->queue->standby)) {
@@ -355,20 +336,12 @@ void *contact_thread(void *arg) {
       }
     }
 
-    time_t current = time(NULL);
-    if (current - start > cache_checkpoint) {
-      cache_stats(my_cache, "contact");
-      cache_store(my_cache, filename);
-      start = current;
-    }
     cache_next_version(my_cache);
 
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
   bx_database_free_query(contact_prune.query);
   thread_teardown_mysql(conn);
-  cache_store(my_cache, filename);
-  free(filename);
   cache_destroy(my_cache);
   sync_order_advance(&contact_cycle);
   return (void *)(intptr_t)RetVal;
@@ -377,7 +350,6 @@ void *contact_thread(void *arg) {
 /**
  * Thread to synchronize pr_project endpoint
  */
-#define CACHE_FILE_PROJECT "project.bin"
 void *project_thread(void *arg) {
   bXill *app = (bXill *)arg;
   int RetVal = EXIT_SUCCESS;
@@ -389,24 +361,13 @@ void *project_thread(void *arg) {
   if (!conn) {
     return (void *)EXIT_FAILURE;
   }
-  /* cache filename */
-  char *filename = bx_utils_cache_filename(app, CACHE_FILE_PROJECT);
-  if (!filename) {
-    bx_log_error("Failed allocation of cache filename %s", CACHE_FILE_PROJECT);
-    thread_teardown_mysql(conn);
-    return 0;
-  }
 
-  /* init cache */
+  /* init cache from database */
   Cache *my_cache = cache_create();
   if (!my_cache) {
     bx_log_error("Cache init failed");
-    free(filename);
     thread_teardown_mysql(conn);
     return 0;
-  }
-  if (!cache_load(my_cache, filename)) {
-    cache_empty(my_cache);
   }
 
   PruningParameters prune_one_source_of_truth = {
@@ -417,7 +378,6 @@ void *project_thread(void *arg) {
   if (bx_prune_from_db(app, &prune_one_source_of_truth) == ErrorSQLReconnect) {
     conn = thread_reconnect(conn, app);
     if (!conn) {
-      free(filename);
       cache_destroy(my_cache);
       bx_database_free_query(prune_one_source_of_truth.query);
       thread_teardown_mysql(conn);
@@ -427,15 +387,12 @@ void *project_thread(void *arg) {
   }
   bx_database_free_query(prune_one_source_of_truth.query);
 
-  int cache_checkpoint = bx_utils_cache_checkpoint(app);
-
   PruningParameters project_prune = {
       .query =
           bx_database_new_query(conn, "DELETE FROM pr_project WHERE id = :id"),
       .cache = my_cache};
 
   bx_log_debug("Project data thread %ld", pthread_self());
-  time_t start = time(NULL);
   time_t cycle_ts = 0;
   unsigned seen_contact = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
@@ -469,26 +426,17 @@ void *project_thread(void *arg) {
       }
     }
 
-    time_t current = time(NULL);
-    if (current - start > cache_checkpoint) {
-      cache_stats(my_cache, "projects");
-      cache_store(my_cache, filename);
-      start = current;
-    }
     cache_next_version(my_cache);
 
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
   bx_database_free_query(project_prune.query);
   thread_teardown_mysql(conn);
-  cache_store(my_cache, filename);
-  free(filename);
   cache_destroy(my_cache);
   sync_order_advance(&project_cycle);
   return (void *)(intptr_t)RetVal;
 }
 
-#define CACHE_FILE_INVOICE "invoice.bin"
 void *invoice_thread(void *arg) {
   bXill *app = (bXill *)arg;
   MYSQL *conn = NULL;
@@ -501,25 +449,13 @@ void *invoice_thread(void *arg) {
     return (void *)EXIT_FAILURE;
   }
 
-  /* filename for cache */
-  char *filename = bx_utils_cache_filename(app, CACHE_FILE_INVOICE);
-  if (!filename) {
-    thread_teardown_mysql(conn);
-    bx_log_error("Failed allocation of cache filename %s", CACHE_FILE_INVOICE);
-    return 0;
-  }
-
-  /* init cache */
+  /* init cache from database */
   Cache *my_cache;
   my_cache = cache_create();
   if (my_cache == NULL) {
     bx_log_error("Cache init failed");
-    free(filename);
     thread_teardown_mysql(conn);
     return (void *)EXIT_FAILURE;
-  }
-  if (!cache_load(my_cache, filename)) {
-    cache_empty(my_cache);
   }
 
   PruningParameters prune_one_source_of_truth = {
@@ -530,7 +466,6 @@ void *invoice_thread(void *arg) {
   if (bx_prune_from_db(app, &prune_one_source_of_truth) == ErrorSQLReconnect) {
     conn = thread_reconnect(conn, app);
     if (!conn) {
-      free(filename);
       cache_destroy(my_cache);
       bx_database_free_query(prune_one_source_of_truth.query);
       thread_teardown_mysql(conn);
@@ -540,14 +475,12 @@ void *invoice_thread(void *arg) {
   }
   bx_database_free_query(prune_one_source_of_truth.query);
 
-  int cache_checkpoint = bx_utils_cache_checkpoint(app);
   PruningParameters invoice_prune = {
       .query =
           bx_database_new_query(conn, "DELETE FROM invoice WHERE id = :id"),
       .cache = my_cache};
 
   bx_log_debug("Invoice data thread %ld", pthread_self());
-  time_t start = time(NULL);
   time_t cycle_ts = 0;
   unsigned seen_project = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
@@ -581,19 +514,11 @@ void *invoice_thread(void *arg) {
       }
     }
 
-    time_t current = time(NULL);
-    if (current - start > cache_checkpoint) {
-      cache_stats(my_cache, "invoice");
-      cache_store(my_cache, filename);
-      start = current;
-    }
     cache_next_version(my_cache);
 
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
   bx_database_free_query(invoice_prune.query);
-  cache_store(my_cache, filename);
-  free(filename);
   cache_destroy(my_cache);
   thread_teardown_mysql(conn);
   return (void *)(intptr_t)RetVal;

@@ -381,30 +381,6 @@ bool bx_string_compare(const char *str1, const char *str2, size_t max) {
   return true;
 }
 
-char *bx_utils_cache_filename(bXill *app, const char *filename) {
-  const char *cdir = bx_conf_get_string(app->conf, "cache-directory");
-  if (cdir == NULL) {
-    cdir = BXILL_DEFAULT_CACHE_DIR;
-  }
-
-  size_t len = strlen(cdir) + strlen(filename) + 2;
-  char *f = calloc(len, sizeof(*filename));
-  if (!f) {
-    return NULL;
-  }
-  snprintf(f, len + 1, "%s/%s", cdir, filename);
-  bx_conf_release(app->conf, "cache-directory");
-  return f;
-}
-
-int bx_utils_cache_checkpoint(bXill *app) {
-  int cache_checkpoint = bx_conf_get_int(app->conf, "cache-checkpoint");
-  if (cache_checkpoint == 0) {
-    cache_checkpoint = BXILL_DEFAULT_CACHE_CHECKPOINT;
-  }
-  return cache_checkpoint;
-}
-
 void bx_walker_cycle_mark(time_t *ts, const char *name) {
   time_t now = time(NULL);
   if (now == (time_t)-1) {
