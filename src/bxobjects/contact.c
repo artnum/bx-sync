@@ -4,6 +4,7 @@
 #include "../include/bx_object.h"
 #include "../include/bx_object_value.h"
 #include "../include/bx_utils.h"
+#include "../include/bx_walk.h"
 #include "../include/bxill.h"
 #include "../include/bxobjects/country_code.h"
 #include "../include/bxobjects/user.h"
@@ -578,45 +579,35 @@ BXillError bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
 }
 
 #define WALK_CONTACT_PATH "2.0/contact?limit=$&offset=$&show_archived=$"
-BXillError bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c) {
-  bx_log_debug("BX Walk Contact Items");
-  BXInteger offset = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
-  const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
-  BXBool show_archived = {
-      .type = BX_OBJECT_TYPE_BOOL, .isset = true, .value = false};
 
-  size_t arr_len = 0;
-  for (int i = 0; i < 2; i++) {
-    do {
-      arr_len = 0;
-      BXNetRequest *request = bx_do_request(app->queue, NULL, WALK_CONTACT_PATH,
-                                            &limit, &offset, &show_archived);
-      if (request == NULL) {
-        return ErrorGeneric;
-      }
-      if (!json_is_array(request->decoded)) {
-        bx_net_request_free(request);
-        return ErrorGeneric;
-      }
+typedef struct {
+  Cache *cache;
+  BXBool archived;
+} contact_walk_ctx;
 
-      arr_len = json_array_size(request->decoded);
-      for (size_t j = 0; j < arr_len; j++) {
-        BXillError e = _bx_contact_sync_item(
-            app, conn, json_array_get(request->decoded, j), show_archived, c);
-        if (e == ErrorSQLReconnect) {
-          bx_net_request_free(request);
-          return e;
-        }
-      }
-      bx_net_request_free(request);
-      offset.value += limit.value;
-    } while (arr_len > 0);
-    /* alternate between archived and not archived, show_archived trigger "show
-     * only archived users" */
-    show_archived.value = true;
-    offset.value = 0;
+static BXillError contact_page_item(bXill *app, MYSQL *conn, json_t *item,
+                                    void *ctx) {
+  contact_walk_ctx *c = ctx;
+  BXillError e =
+      _bx_contact_sync_item(app, conn, item, c->archived, c->cache);
+  if (e == ErrorSQLReconnect) {
+    return e;
   }
   return NoError;
+}
+
+BXillError bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c) {
+  bx_log_debug("BX Walk Contact Items");
+  contact_walk_ctx ctx = {
+      .cache = c,
+      .archived = {.type = BX_OBJECT_TYPE_BOOL, .isset = true, .value = false}};
+  BXillError e =
+      bx_walk_pages(app, conn, WALK_CONTACT_PATH, (BXGeneric *)&ctx.archived,
+                    NULL, contact_page_item, &ctx);
+  if (e != NoError) {
+    return e;
+  }
+  ctx.archived.value = true;
+  return bx_walk_pages(app, conn, WALK_CONTACT_PATH, (BXGeneric *)&ctx.archived,
+                       NULL, contact_page_item, &ctx);
 }

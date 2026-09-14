@@ -3,6 +3,7 @@
 #include "include/bx_object.h"
 #include "include/bx_object_value.h"
 #include "include/bx_utils.h"
+#include "include/bx_walk.h"
 #include <jansson.h>
 #include <string.h>
 #include <time.h>
@@ -79,51 +80,31 @@ static BXillError upsert_named(MYSQL *conn, const char *table, BXUInteger *id,
   return NoError;
 }
 
+static BXillError named_list_item(bXill *app, MYSQL *conn, json_t *item,
+                                  void *ctx) {
+  (void)app;
+  const char *table = ctx;
+  XXH3_state_t *hash = XXH3_createState();
+  if (hash == NULL) {
+    return ErrorGeneric;
+  }
+  XXH3_64bits_reset(hash);
+  BXUInteger id = bx_object_get_json_uint(item, "id", hash);
+  BXString name = bx_object_get_json_string(item, "name", hash);
+  uint64_t checksum = XXH3_64bits_digest(hash);
+  XXH3_freeState(hash);
+  BXillError e = upsert_named(conn, table, &id, &name, checksum);
+  bx_object_free_value(&name);
+  return e;
+}
+
 BXillError bx_named_list_walk(bXill *app, MYSQL *conn, const char *path_fmt,
                               const char *table) {
   if (app == NULL || conn == NULL || !table_ok(table) || path_fmt == NULL) {
     return ErrorGeneric;
   }
-  BXInteger offset = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
-  const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
-  size_t arr_len = 0;
-  do {
-    arr_len = 0;
-    BXNetRequest *request =
-        bx_do_request(app->queue, NULL, (char *)path_fmt, &limit, &offset);
-    if (request == NULL) {
-      return ErrorNet;
-    }
-    if (!json_is_array(request->decoded)) {
-      bx_net_request_free(request);
-      return ErrorJSON;
-    }
-    arr_len = json_array_size(request->decoded);
-    for (size_t i = 0; i < arr_len; i++) {
-      json_t *item = json_array_get(request->decoded, i);
-      XXH3_state_t *hash = XXH3_createState();
-      if (hash == NULL) {
-        bx_net_request_free(request);
-        return ErrorGeneric;
-      }
-      XXH3_64bits_reset(hash);
-      BXUInteger id = bx_object_get_json_uint(item, "id", hash);
-      BXString name = bx_object_get_json_string(item, "name", hash);
-      uint64_t checksum = XXH3_64bits_digest(hash);
-      XXH3_freeState(hash);
-      BXillError e = upsert_named(conn, table, &id, &name, checksum);
-      bx_object_free_value(&name);
-      if (e != NoError) {
-        bx_net_request_free(request);
-        return e;
-      }
-    }
-    bx_net_request_free(request);
-    offset.value += limit.value;
-  } while (arr_len > 0);
-  return NoError;
+  return bx_walk_pages(app, conn, path_fmt, NULL, NULL, named_list_item,
+                       (void *)table);
 }
 
 BXillError bx_unit_walk_items(bXill *app, MYSQL *conn) {

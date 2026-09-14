@@ -4,6 +4,7 @@
 #include "../include/bx_object.h"
 #include "../include/bx_object_value.h"
 #include "../include/bx_utils.h"
+#include "../include/bx_walk.h"
 #include "../include/bxill.h"
 #include "../include/bx_sync_more.h"
 #include "../include/bxobjects/contact.h"
@@ -308,42 +309,14 @@ BXillError bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
 }
 
 #define WALK_PROJECT_PATH "2.0/pr_project?limit=$&offset=$"
+
+static BXillError project_page_item(bXill *app, MYSQL *conn, json_t *item,
+                                    void *ctx) {
+  return _bx_project_sync_item(app, conn, item, ctx);
+}
+
 BXillError bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
   bx_log_debug("BX Walk Project Items");
-  int len0hit_count = 0;
-  BXInteger offset = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
-  const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
-  size_t arr_len = 0;
-  do {
-    arr_len = 0;
-    BXNetRequest *request =
-        bx_do_request(app->queue, NULL, WALK_PROJECT_PATH, &limit, &offset);
-    if (request == NULL) {
-      return ErrorNet;
-    }
-    if (!json_is_array(request->decoded)) {
-      bx_net_request_free(request);
-      return ErrorJSON;
-    }
-
-    arr_len = json_array_size(request->decoded);
-    if (arr_len == 0) {
-      len0hit_count++;
-    } else {
-      len0hit_count = 0;
-    }
-    for (size_t i = 0; i < arr_len; i++) {
-      BXillError e = _bx_project_sync_item(
-          app, conn, json_array_get(request->decoded, i), cache);
-      if (e != NoError) {
-        bx_net_request_free(request);
-        return e;
-      }
-    }
-    bx_net_request_free(request);
-    offset.value += limit.value;
-  } while (arr_len > 0);
-  return NoError;
+  return bx_walk_pages(app, conn, WALK_PROJECT_PATH, NULL, NULL,
+                       project_page_item, cache);
 }

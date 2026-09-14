@@ -2,6 +2,7 @@
 #include "../include/bx_database.h"
 #include "../include/bx_object.h"
 #include "../include/bx_utils.h"
+#include "../include/bx_walk.h"
 #include <jansson.h>
 #include <time.h>
 
@@ -95,41 +96,22 @@ static BXillError persist(MYSQL *conn, BXObjectAccount *account) {
   return NoError;
 }
 
+static BXillError account_page_item(bXill *app, MYSQL *conn, json_t *item,
+                                    void *ctx) {
+  (void)app;
+  (void)ctx;
+  BXObjectAccount *account = decode_object(item);
+  if (account == NULL) {
+    return ErrorGeneric;
+  }
+  BXillError e = persist(conn, account);
+  free_content(account);
+  free(account);
+  return e;
+}
+
 BXillError bx_account_walk_items(bXill *app, MYSQL *conn) {
   bx_log_debug("BX Walk Account Items");
-  BXInteger offset = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
-  const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
-  size_t arr_len = 0;
-  do {
-    BXNetRequest *request = bx_do_request(
-        app->queue, NULL, "2.0/accounts?limit=$&offset=$", &limit, &offset);
-    if (request == NULL) {
-      return ErrorNet;
-    }
-    if (!json_is_array(request->decoded)) {
-      bx_net_request_free(request);
-      return ErrorJSON;
-    }
-    arr_len = json_array_size(request->decoded);
-    for (size_t i = 0; i < arr_len; i++) {
-      BXObjectAccount *account =
-          decode_object(json_array_get(request->decoded, i));
-      if (account == NULL) {
-        bx_net_request_free(request);
-        return ErrorGeneric;
-      }
-      BXillError e = persist(conn, account);
-      free_content(account);
-      free(account);
-      if (e != NoError) {
-        bx_net_request_free(request);
-        return e;
-      }
-    }
-    bx_net_request_free(request);
-    offset.value += limit.value;
-  } while (arr_len > 0);
-  return NoError;
+  return bx_walk_pages(app, conn, "2.0/accounts?limit=$&offset=$", NULL, NULL,
+                       account_page_item, NULL);
 }

@@ -3,6 +3,7 @@
 #include "../include/bx_object.h"
 #include "../include/bx_object_value.h"
 #include "../include/bx_utils.h"
+#include "../include/bx_walk.h"
 #include "../include/bxill.h"
 #include <jansson.h>
 #include <stdbool.h>
@@ -232,49 +233,28 @@ BXillError bx_user_sync_item(bXill *app, MYSQL *conn, BXGeneric *item) {
   return last;
 }
 
-static BXillError walk_user_path(bXill *app, MYSQL *conn, const char *path) {
-  BXInteger offset = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
-  const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
-  size_t arr_len = 0;
-  do {
-    BXNetRequest *request =
-        bx_do_request(app->queue, NULL, (char *)path, &limit, &offset);
-    if (request == NULL) {
-      return ErrorNet;
-    }
-    json_t *arr = request->decoded;
-    if (json_is_object(arr)) {
-      json_t *data = json_object_get(arr, "data");
-      if (json_is_array(data)) {
-        arr = data;
-      }
-    }
-    if (!json_is_array(arr)) {
-      bx_net_request_free(request);
-      return ErrorJSON;
-    }
-    arr_len = json_array_size(arr);
-    for (size_t i = 0; i < arr_len; i++) {
-      BXObjectUser *user = decode_user_json(json_array_get(arr, i));
-      if (user == NULL) {
-        continue;
-      }
-      BXillError e = persist_user(conn, user);
-      free_object(user);
-      if (e == ErrorSQLReconnect) {
-        bx_net_request_free(request);
-        return e;
-      }
-      if (e != NoError) {
-        bx_log_error("Failed persist user from %s", path);
-      }
-    }
-    bx_net_request_free(request);
-    offset.value += limit.value;
-  } while (arr_len > 0);
+static BXillError user_page_item(bXill *app, MYSQL *conn, json_t *item,
+                                 void *ctx) {
+  (void)app;
+  const char *path = ctx;
+  BXObjectUser *user = decode_user_json(item);
+  if (user == NULL) {
+    return NoError;
+  }
+  BXillError e = persist_user(conn, user);
+  free_object(user);
+  if (e == ErrorSQLReconnect) {
+    return e;
+  }
+  if (e != NoError) {
+    bx_log_error("Failed persist user from %s", path);
+  }
   return NoError;
+}
+
+static BXillError walk_user_path(bXill *app, MYSQL *conn, const char *path) {
+  return bx_walk_pages(app, conn, path, NULL, NULL, user_page_item,
+                       (void *)path);
 }
 
 BXillError bx_user_walk_items(bXill *app, MYSQL *conn) {

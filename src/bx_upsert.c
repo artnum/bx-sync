@@ -2,6 +2,7 @@
 #include "include/bx_database.h"
 #include "include/bx_object.h"
 #include "include/bx_utils.h"
+#include "include/bx_walk.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -269,114 +270,35 @@ BXillError bx_json_upsert(MYSQL *conn, const char *table, json_t *obj,
   return NoError;
 }
 
-static json_t *as_array(json_t *root) {
-  if (json_is_array(root)) {
-    return root;
-  }
-  if (json_is_object(root)) {
-    json_t *data = json_object_get(root, "data");
-    if (json_is_array(data)) {
-      return data;
-    }
-  }
-  return NULL;
+typedef struct {
+  BXillError (*sync)(MYSQL *conn, json_t *item);
+} walk_list_ctx;
+
+typedef struct {
+  BXillError (*sync)(bXill *app, MYSQL *conn, json_t *item);
+} walk_list_app_ctx;
+
+static BXillError walk_list_adapt(bXill *app, MYSQL *conn, json_t *item,
+                                  void *ctx) {
+  (void)app;
+  return ((walk_list_ctx *)ctx)->sync(conn, item);
 }
 
-static int path_uses_page(const char *path_fmt) {
-  return strstr(path_fmt, "page=$") != NULL;
+static BXillError walk_list_app_adapt(bXill *app, MYSQL *conn, json_t *item,
+                                      void *ctx) {
+  return ((walk_list_app_ctx *)ctx)->sync(app, conn, item);
 }
 
 BXillError bx_walk_list(bXill *app, MYSQL *conn, const char *path_fmt,
                         BXillError (*sync)(MYSQL *conn, json_t *item)) {
-  int use_page = path_uses_page(path_fmt);
-  BXInteger offset = {.type = BX_OBJECT_TYPE_INTEGER,
-                      .isset = true,
-                      .value = use_page ? 1 : 0};
-  const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
-  size_t arr_len = 0;
-  int paged = (strstr(path_fmt, "$") != NULL);
-  do {
-    BXNetRequest *request = NULL;
-    if (paged) {
-      request =
-          bx_do_request(app->queue, NULL, (char *)path_fmt, &limit, &offset);
-    } else {
-      request = bx_do_request(app->queue, NULL, (char *)path_fmt);
-    }
-    if (request == NULL) {
-      return ErrorNet;
-    }
-    json_t *arr = as_array(request->decoded);
-    if (arr == NULL) {
-      bx_net_request_free(request);
-      return ErrorJSON;
-    }
-    arr_len = json_array_size(arr);
-    for (size_t i = 0; i < arr_len; i++) {
-      BXillError e = sync(conn, json_array_get(arr, i));
-      if (e != NoError) {
-        bx_net_request_free(request);
-        return e;
-      }
-    }
-    bx_net_request_free(request);
-    if (!paged) {
-      break;
-    }
-    if (use_page) {
-      offset.value += 1;
-    } else {
-      offset.value += limit.value;
-    }
-  } while (arr_len > 0);
-  return NoError;
+  walk_list_ctx ctx = {.sync = sync};
+  return bx_walk_pages(app, conn, path_fmt, NULL, NULL, walk_list_adapt, &ctx);
 }
 
 BXillError bx_walk_list_app(bXill *app, MYSQL *conn, const char *path_fmt,
                             BXillError (*sync)(bXill *app, MYSQL *conn,
                                                json_t *item)) {
-  int use_page = path_uses_page(path_fmt);
-  BXInteger offset = {.type = BX_OBJECT_TYPE_INTEGER,
-                      .isset = true,
-                      .value = use_page ? 1 : 0};
-  const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
-  size_t arr_len = 0;
-  int paged = (strstr(path_fmt, "$") != NULL);
-  do {
-    BXNetRequest *request = NULL;
-    if (paged) {
-      request =
-          bx_do_request(app->queue, NULL, (char *)path_fmt, &limit, &offset);
-    } else {
-      request = bx_do_request(app->queue, NULL, (char *)path_fmt);
-    }
-    if (request == NULL) {
-      return ErrorNet;
-    }
-    json_t *arr = as_array(request->decoded);
-    if (arr == NULL) {
-      bx_net_request_free(request);
-      return ErrorJSON;
-    }
-    arr_len = json_array_size(arr);
-    for (size_t i = 0; i < arr_len; i++) {
-      BXillError e = sync(app, conn, json_array_get(arr, i));
-      if (e != NoError) {
-        bx_net_request_free(request);
-        return e;
-      }
-    }
-    bx_net_request_free(request);
-    if (!paged) {
-      break;
-    }
-    if (use_page) {
-      offset.value += 1;
-    } else {
-      offset.value += limit.value;
-    }
-  } while (arr_len > 0);
-  return NoError;
+  walk_list_app_ctx ctx = {.sync = sync};
+  return bx_walk_pages(app, conn, path_fmt, NULL, NULL, walk_list_app_adapt,
+                       &ctx);
 }

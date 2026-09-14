@@ -2,6 +2,7 @@
 #include "../include/bx_database.h"
 #include "../include/bx_object.h"
 #include "../include/bx_utils.h"
+#include "../include/bx_walk.h"
 #include <assert.h>
 #include <jansson.h>
 #include <stdlib.h>
@@ -216,45 +217,27 @@ BXillError _bx_sync_item(MYSQL *conn, json_t *item) {
 
 const struct timespec TAXES_SLEEP = {.tv_nsec = 0, .tv_sec = 5};
 #define WALK_TAXES_PATH "3.0/taxes?limit=$&offset=$&scope=$"
+
+static BXillError taxes_page_item(bXill *app, MYSQL *conn, json_t *item,
+                                  void *ctx) {
+  (void)app;
+  (void)ctx;
+  return _bx_sync_item(conn, item);
+}
+
 BXillError bx_taxes_walk_item(bXill *app, MYSQL *conn) {
-  BXInteger offset = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = 0};
-  const BXInteger limit = {
-      .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
   BXString scope = {.type = BX_OBJECT_TYPE_STRING,
                     .isset = true,
                     .value = "active",
                     .value_len = sizeof("active")};
-
-  for (int i = 0; i < 2; i++) {
-    size_t arr_len = 0;
-    do {
-      arr_len = 0;
-      BXNetRequest *request = bx_do_request(app->queue, NULL, WALK_TAXES_PATH,
-                                            &limit, &offset, &scope);
-      if (request == NULL) {
-        bx_log_debug("Failed request allocation");
-        return ErrorNet;
-      }
-      bx_log_debug("WALK TAXES %s", request->response->data);
-      if (!json_is_array(request->decoded)) {
-        bx_net_request_free(request);
-        return ErrorJSON;
-      }
-      arr_len = json_array_size(request->decoded);
-      for (size_t j = 0; j < arr_len; j++) {
-        BXillError e = _bx_sync_item(conn, json_array_get(request->decoded, j));
-        if (e != NoError) {
-          bx_net_request_free(request);
-          return e;
-        }
-      }
-      bx_net_request_free(request);
-      offset.value += limit.value;
-      thrd_sleep(&TAXES_SLEEP, NULL);
-    } while (arr_len > 0);
-    scope.value = "inactive";
-    scope.value_len = sizeof("inactive");
+  BXillError e =
+      bx_walk_pages(app, conn, WALK_TAXES_PATH, (BXGeneric *)&scope,
+                    &TAXES_SLEEP, taxes_page_item, NULL);
+  if (e != NoError) {
+    return e;
   }
-  return NoError;
+  scope.value = "inactive";
+  scope.value_len = sizeof("inactive");
+  return bx_walk_pages(app, conn, WALK_TAXES_PATH, (BXGeneric *)&scope,
+                       &TAXES_SLEEP, taxes_page_item, NULL);
 }
