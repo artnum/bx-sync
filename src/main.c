@@ -13,6 +13,7 @@
 #include "include/bxobjects/contact_sector.h"
 #include "include/bxobjects/country_code.h"
 #include "include/bxobjects/currency.h"
+#include "include/bxobjects/file.h"
 #include "include/bxobjects/invoice.h"
 #include "include/bxobjects/language.h"
 #include "include/bxobjects/project.h"
@@ -249,6 +250,79 @@ void *contact_sector_thread(void *arg) {
     thrd_sleep(&THREAD_SLEEP_TIME, NULL);
   }
   thread_teardown_mysql(conn);
+  return (void *)(intptr_t)RetVal;
+}
+
+void *file_thread(void *arg) {
+  bXill *app = (bXill *)arg;
+  int RetVal = EXIT_SUCCESS;
+  int error_counter = 0;
+
+  thread_blocks_signals();
+  MYSQL *conn = thread_setup_mysql(app);
+  if (!conn) {
+    thread_teardown_mysql(conn);
+    bx_log_error("Cannot set up MYSQL");
+    return (void *)EXIT_FAILURE;
+  }
+
+  Cache *my_cache = cache_create();
+  if (my_cache == NULL) {
+    bx_log_error("Cache init failed");
+    thread_teardown_mysql(conn);
+    return (void *)EXIT_FAILURE;
+  }
+  PruningParameters hydrate = {
+      .cache = my_cache,
+      .query = bx_database_new_query(conn, "SELECT id, _checksum FROM bx_file")};
+  if (bx_cache_hydrate(app, &hydrate) == ErrorSQLReconnect) {
+    conn = thread_reconnect(conn, app);
+    if (!conn) {
+      cache_destroy(my_cache);
+      bx_database_free_query(hydrate.query);
+      thread_teardown_mysql(conn);
+      bx_log_error("Cannot set up MYSQL");
+      return (void *)EXIT_FAILURE;
+    }
+  }
+  bx_database_free_query(hydrate.query);
+
+  PruningParameters file_prune = {
+      .query = bx_database_new_query(conn, "DELETE FROM bx_file WHERE id = :id"),
+      .cache = my_cache};
+  bx_log_debug("File data thread %lx", pthread_self());
+  time_t cycle_ts = 0;
+  while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
+    while (atomic_load(&app->queue->standby)) {
+      sleep(BXILL_STANDBY_SECONDS);
+    }
+    bx_walker_cycle_mark(&cycle_ts, "file");
+    BXillError e = NoError;
+    MYSQL *prev_conn = conn;
+    (void)((e = bx_file_walk_items(app, conn, my_cache)) == NoError &&
+           (e = bx_prune_items(app, &file_prune)) == NoError);
+    if (thread_handle_error(e, app, &conn)) {
+      error_counter = 0;
+      if (conn != prev_conn &&
+          !rebuild_prune_query(&file_prune, conn,
+                               "DELETE FROM bx_file WHERE id = :id")) {
+        bx_log_error("Cannot rebuild prune query after reconnect");
+        RetVal = EXIT_FAILURE;
+        break;
+      }
+    } else {
+      if (error_counter++ > BXILL_THREAD_EXIT_MAX_COUNT) {
+        bx_log_error("Too much error, exiting");
+        RetVal = EXIT_FAILURE;
+        break;
+      }
+    }
+    cache_next_version(my_cache);
+    thrd_sleep(&THREAD_SLEEP_TIME, NULL);
+  }
+  bx_database_free_query(file_prune.query);
+  thread_teardown_mysql(conn);
+  cache_destroy(my_cache);
   return (void *)(intptr_t)RetVal;
 }
 
@@ -776,6 +850,7 @@ int main(int argc, char **argv) {
                  (void *)&app);
   pthread_create(&threads[RANDOM_ITEM_THREAD], NULL, random_item_thread,
                  (void *)&app);
+  pthread_create(&threads[FILE_THREAD], NULL, file_thread, (void *)&app);
   while (atomic_load_explicit(&kill_signal, memory_order_acquire) == false) {
     if (atomic_load_explicit(&reload_signal, memory_order_acquire) == true) {
         bx_log_reopen();

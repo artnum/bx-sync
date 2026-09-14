@@ -177,17 +177,14 @@ char *bx_item_to_path(const char *fmt, ...) {
   return ret;
 }
 
-BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
-                            char *path_fmt, ...) {
+static BXNetRequest *bx_do_request_wait(BXNetRequestList *queue, json_t *body,
+                                        char *path_fmt, va_list ap) {
+  (void)body;
   BXNetRequest *request = NULL;
   assert(path_fmt != NULL);
   assert(queue != NULL);
 
-  va_list ap;
-  va_start(ap, path_fmt);
   char *path = _bx_item_to_path(path_fmt, ap);
-  va_end(ap);
-
   if (path == NULL) {
     bx_log_debug("Request parsing faile %s", path_fmt);
     return NULL;
@@ -214,12 +211,33 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
     bx_net_request_free(request);
     return NULL;
   }
+  return request;
+}
+
+BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
+                            char *path_fmt, ...) {
+  va_list ap;
+  va_start(ap, path_fmt);
+  BXNetRequest *request = bx_do_request_wait(queue, body, path_fmt, ap);
+  va_end(ap);
+  if (request == NULL) {
+    return NULL;
+  }
   json_t *json = bx_decode_net(request);
   if (json == NULL) {
     bx_net_request_free(request);
     return NULL;
   }
   request->decoded = json;
+  return request;
+}
+
+BXNetRequest *bx_do_request_raw(BXNetRequestList *queue, json_t *body,
+                                char *path_fmt, ...) {
+  va_list ap;
+  va_start(ap, path_fmt);
+  BXNetRequest *request = bx_do_request_wait(queue, body, path_fmt, ap);
+  va_end(ap);
   return request;
 }
 

@@ -7,5 +7,6 @@
   "mysql-database": "bxill",
   "log-file": "path/to/log.log",
   "log-level": 255,
-  "prune-drift": 10
+  "prune-drift": 10,
+  "cache-directory": "/var/cache/bxsync/files"
 }

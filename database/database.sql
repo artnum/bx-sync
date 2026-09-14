@@ -880,3 +880,24 @@ CREATE TABLE IF NOT EXISTS manual_entry_line (
     _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
     PRIMARY KEY (id, _entry_id)
 );
+
+CREATE TABLE IF NOT EXISTS bx_file (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    uuid VARCHAR(36) DEFAULT NULL,
+    name TEXT,
+    size_in_bytes BIGINT UNSIGNED DEFAULT NULL,
+    extension VARCHAR(16) DEFAULT NULL,
+    mime_type VARCHAR(127) DEFAULT NULL,
+    uploader_email TEXT,
+    user_id BIGINT UNSIGNED DEFAULT NULL,
+    is_archived BOOLEAN DEFAULT NULL,
+    source_id BIGINT UNSIGNED DEFAULT NULL,
+    source_type VARCHAR(64) DEFAULT NULL,
+    is_referenced BOOLEAN DEFAULT NULL,
+    created_at VARCHAR(40) DEFAULT NULL,
+    _checksum BIGINT UNSIGNED NOT NULL,
+    _last_updated BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    _deleted BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    INDEX USING HASH (_checksum),
+    INDEX USING HASH (_deleted)
+);
