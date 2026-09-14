@@ -127,20 +127,6 @@ void cache_tombstone(Cache *c, uint64_t id) {
   }
 }
 
-void cache_invalidate(Cache *c, uint64_t drift) {
-  CacheItem *item = NULL;
-  if (c->version <= drift) {
-    return;
-  }
-  uint32_t i = 0;
-  while ((item = cache_get(c, i)) != NULL) {
-    if (item->last_seen > 0 && item->last_seen <= c->version - drift) {
-      item->last_seen = 0;
-    }
-    i++;
-  }
-}
-
 void cache_prune(Cache *c) {
   uint32_t j = 0;
   for (uint32_t i = 0; i < c->count; i++) {

@@ -42,7 +42,6 @@ BXillError bx_prune_from_db(bXill *app, PruningParameters *param) {
     return ErrorGeneric;
   }
   if (bx_database_execute(param->query) && bx_database_results(param->query)) {
-    cache_next_version(param->cache);
     for (BXDatabaseRow *current = param->query->results; current;
          current = current->next) {
       if (current->column_count != 2) {
@@ -58,8 +57,5 @@ BXillError bx_prune_from_db(bXill *app, PruningParameters *param) {
     return e;
   }
   bx_database_free_result(param->query);
-
-  cache_invalidate(param->cache, 1);
-  cache_prune(param->cache);
   return NoError;
 }

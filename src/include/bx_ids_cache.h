@@ -40,13 +40,6 @@ CacheState cache_check_item(Cache *c, uint64_t id, uint64_t checksum);
 CacheItem *cache_get(Cache *c, uint32_t idx);
 void cache_stats(Cache *c, const char *name);
 /**
- * Invalidate (last seen to 0) all item that have drifted
- *
- * @param[in] c     Cache to Invalidate.
- * @param[in] drift Minimal drift to Invalidate.
- */
-void cache_invalidate(Cache *c, uint64_t drift);
-/**
  * Init a cache iterator. The cache iterator is set at the cache version
  * on init so any operation involving versionning will be at a stable
  * value.
