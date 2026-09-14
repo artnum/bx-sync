@@ -66,17 +66,20 @@ const uint64_t *cache_iter_next_id(CacheIter *iter);
 
 /**
  * Get the next ID that is prunable (last_seen drifted away from version too
- * much)
+ * much). Does not mutate the item; call cache_tombstone after a successful
+ * DELETE, then cache_prune to compact.
  *
- * @param[in] iter  A cache iterator
- * @param[in] drift The minimal dift to be considered prunable.
- * @param[in] del   Delete the item from the cache. Deletion just set "last
- * seen" to 0, you need to call cache_prune to remove from the cache.
+ * @param[in]  iter  A cache iterator
+ * @param[in]  drift The minimal drift to be considered prunable.
+ * @param[out] id    The prunable id
  *
- * @return A pointer to the ID, or NULL at the end
+ * @return true if an id was written, false at the end
  */
-const uint64_t *cache_iter_next_prunable_id(CacheIter *iter, uint64_t drift,
-                                            bool del);
+bool cache_iter_next_prunable_id(CacheIter *iter, uint64_t drift, uint64_t *id);
+/**
+ * Mark an id as deleted (last_seen = 0). Call cache_prune to remove it.
+ */
+void cache_tombstone(Cache *c, uint64_t id);
 /**
  * Prune the cache phyisically removing deleted value
  *

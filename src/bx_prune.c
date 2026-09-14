@@ -18,10 +18,10 @@ BXillError bx_prune_items(bXill *app, PruningParameters *param) {
   if (param->query == NULL) {
     return ErrorGeneric;
   }
-  const uint64_t *id;
-  while ((id = cache_iter_next_prunable_id(&iter, drift, true)) != NULL) {
-    bx_log_debug("Prunning %lu\n", (unsigned long)*id);
-    if (!bx_database_add_param_uint64(param->query, ":id", (void *)id) ||
+  uint64_t id;
+  while (cache_iter_next_prunable_id(&iter, drift, &id)) {
+    bx_log_debug("Prunning %lu\n", (unsigned long)id);
+    if (!bx_database_add_param_uint64(param->query, ":id", &id) ||
         !bx_database_execute(param->query))
     {
       bx_log_debug("Query failed %s", param->query);
@@ -30,6 +30,7 @@ BXillError bx_prune_items(bXill *app, PruningParameters *param) {
       bx_database_free_result(param->query);
       return e;
     }
+    cache_tombstone(param->cache, id);
   }
   bx_database_free_result(param->query);
   cache_prune(param->cache);

@@ -103,24 +103,28 @@ const uint64_t *cache_iter_next_id(CacheIter *iter) {
   return &item->id;
 }
 
-const uint64_t *cache_iter_next_prunable_id(CacheIter *iter, uint64_t drift,
-                                            bool del) {
+bool cache_iter_next_prunable_id(CacheIter *iter, uint64_t drift,
+                                 uint64_t *id) {
   CacheItem *item = NULL;
-  if (iter->version <= drift) {
-    return NULL;
+  if (iter == NULL || id == NULL || iter->version <= drift) {
+    return false;
   }
   while ((item = cache_get(iter->c, iter->current)) != NULL) {
-    if (item->last_seen > 0 && item->last_seen <= iter->version - drift) {
-      iter->current++;
-      if (del) {
-        item->last_seen = 0;
-      }
-      return &item->id;
-    }
     iter->current++;
+    if (item->last_seen > 0 && item->last_seen <= iter->version - drift) {
+      *id = item->id;
+      return true;
+    }
   }
 
-  return NULL;
+  return false;
+}
+
+void cache_tombstone(Cache *c, uint64_t id) {
+  CacheItem *item = _find_item(c, id);
+  if (item != NULL) {
+    item->last_seen = 0;
+  }
 }
 
 void cache_invalidate(Cache *c, uint64_t drift) {
@@ -179,7 +183,7 @@ bool cache_set_item(Cache *c, uint64_t id, uint64_t checksum) {
 
 CacheState cache_check_item(Cache *c, uint64_t id, uint64_t checksum) {
   CacheItem *current = _find_item(c, id);
-  if (current == NULL) {
+  if (current == NULL || current->last_seen == 0) {
     return CacheNotSet;
   }
   /* Observed this cycle, even if the checksum is dirty. Otherwise prune
