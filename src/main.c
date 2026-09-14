@@ -275,22 +275,22 @@ void *contact_thread(void *arg) {
     thread_teardown_mysql(conn);
     return (void *)EXIT_FAILURE;
   }
-  PruningParameters prune_one_source_of_truth = {
+  PruningParameters hydrate = {
       .cache = my_cache,
       .query =
           bx_database_new_query(conn, "SELECT id, _checksum FROM contact")};
   /* sync */
-  if (bx_prune_from_db(app, &prune_one_source_of_truth) == ErrorSQLReconnect) {
+  if (bx_cache_hydrate(app, &hydrate) == ErrorSQLReconnect) {
     conn = thread_reconnect(conn, app);
     if (!conn) {
       cache_destroy(my_cache);
-      bx_database_free_query(prune_one_source_of_truth.query);
+      bx_database_free_query(hydrate.query);
       thread_teardown_mysql(conn);
       bx_log_error("Cannot set up MYSQL");
       return (void *)EXIT_FAILURE;
     }
   }
-  bx_database_free_query(prune_one_source_of_truth.query);
+  bx_database_free_query(hydrate.query);
 
   /* load language */
   if (bx_language_load(app, conn) == ErrorSQLReconnect) {
@@ -370,22 +370,22 @@ void *project_thread(void *arg) {
     return 0;
   }
 
-  PruningParameters prune_one_source_of_truth = {
+  PruningParameters hydrate = {
       .cache = my_cache,
       .query =
           bx_database_new_query(conn, "SELECT id, _checksum FROM pr_project")};
   /* sync */
-  if (bx_prune_from_db(app, &prune_one_source_of_truth) == ErrorSQLReconnect) {
+  if (bx_cache_hydrate(app, &hydrate) == ErrorSQLReconnect) {
     conn = thread_reconnect(conn, app);
     if (!conn) {
       cache_destroy(my_cache);
-      bx_database_free_query(prune_one_source_of_truth.query);
+      bx_database_free_query(hydrate.query);
       thread_teardown_mysql(conn);
       bx_log_error("Cannot set up MYSQL");
       return (void *)EXIT_FAILURE;
     }
   }
-  bx_database_free_query(prune_one_source_of_truth.query);
+  bx_database_free_query(hydrate.query);
 
   PruningParameters project_prune = {
       .query =
@@ -458,22 +458,22 @@ void *invoice_thread(void *arg) {
     return (void *)EXIT_FAILURE;
   }
 
-  PruningParameters prune_one_source_of_truth = {
+  PruningParameters hydrate = {
       .cache = my_cache,
       .query =
           bx_database_new_query(conn, "SELECT id, _checksum FROM invoice")};
   /* sync */
-  if (bx_prune_from_db(app, &prune_one_source_of_truth) == ErrorSQLReconnect) {
+  if (bx_cache_hydrate(app, &hydrate) == ErrorSQLReconnect) {
     conn = thread_reconnect(conn, app);
     if (!conn) {
       cache_destroy(my_cache);
-      bx_database_free_query(prune_one_source_of_truth.query);
+      bx_database_free_query(hydrate.query);
       thread_teardown_mysql(conn);
       bx_log_error("Cannot set up MYSQL");
       return (void *)EXIT_FAILURE;
     }
   }
-  bx_database_free_query(prune_one_source_of_truth.query);
+  bx_database_free_query(hydrate.query);
 
   PruningParameters invoice_prune = {
       .query =

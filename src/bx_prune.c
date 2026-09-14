@@ -37,7 +37,7 @@ BXillError bx_prune_items(bXill *app, PruningParameters *param) {
   return NoError;
 }
 
-BXillError bx_prune_from_db(bXill *app, PruningParameters *param) {
+BXillError bx_cache_hydrate(bXill *app, PruningParameters *param) {
   if (param->query == NULL) {
     return ErrorGeneric;
   }
