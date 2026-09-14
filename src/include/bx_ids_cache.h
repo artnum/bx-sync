@@ -4,18 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef struct {
-  uint64_t id;
-  uint64_t checksum;
-  uint64_t last_seen;
-} CacheItem;
-
-typedef struct {
-  uint32_t size;
-  uint32_t count;
-  uint64_t version;
-  CacheItem *items;
-} Cache;
+typedef struct Cache Cache;
 
 typedef struct {
   Cache *c;
@@ -25,20 +14,13 @@ typedef struct {
 
 typedef enum { CacheOk = 0, CacheNotSet, CacheNotSync } CacheState;
 
-/**
- * Allocate memory for cache object.
- *
- * @return A cache object
- */
-Cache *cache_create();
-void cache_print(Cache *c);
-bool cache_set_item(Cache *c, uint64_t id, uint64_t checksum);
+Cache *cache_create(void);
 void cache_destroy(Cache *c);
+bool cache_set_item(Cache *c, uint64_t id, uint64_t checksum);
 /* Marks the id seen this cycle when it is already in the cache. */
 CacheState cache_check_item(Cache *c, uint64_t id, uint64_t checksum);
+void cache_next_version(Cache *c);
 
-CacheItem *cache_get(Cache *c, uint32_t idx);
-void cache_stats(Cache *c, const char *name);
 /**
  * Init a cache iterator. The cache iterator is set at the cache version
  * on init so any operation involving versionning will be at a stable
@@ -48,15 +30,6 @@ void cache_stats(Cache *c, const char *name);
  * @param[out] iter Iterator to init, it is not allocated.
  */
 void cache_iter_init(Cache *c, CacheIter *iter);
-/**
- * Get next id in cache.
- *
- * @param[in] A cache iterator
- *
- * @return A pointer to the ID, or NULL at the end
- */
-const uint64_t *cache_iter_next_id(CacheIter *iter);
-
 /**
  * Get the next ID that is prunable (last_seen drifted away from version too
  * much). Does not mutate the item; call cache_tombstone after a successful
@@ -79,23 +52,5 @@ void cache_tombstone(Cache *c, uint64_t id);
  * @param[in] c The cache object to prunable
  */
 void cache_prune(Cache *c);
-
-/**
- * Empty the cache, freeing item memory
- *
- * @param[in] c Cache to empty
- */
-void cache_empty(Cache *c);
-void cache_reset_version(Cache *c);
-
-#define cache_next_version(c)                                                  \
-  do {                                                                         \
-    if (c) {                                                                   \
-      c->version++;                                                            \
-      if (c->version == UINT64_MAX) {                                          \
-        cache_reset_version(c);                                                \
-      }                                                                        \
-    }                                                                          \
-  } while (0)
 
 #endif /* BX_IDS_CACHE */

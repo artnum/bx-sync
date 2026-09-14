@@ -1,10 +1,21 @@
 #include "include/bx_ids_cache.h"
-#include "include/bx_utils.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define CACHE_CHUNK_SIZE 1000
+
+typedef struct {
+  uint64_t id;
+  uint64_t checksum;
+  uint64_t last_seen;
+} CacheItem;
+
+struct Cache {
+  uint32_t size;
+  uint32_t count;
+  uint64_t version;
+  CacheItem *items;
+};
 
 static bool _grow_cache(Cache *c) {
   if (!c) {
@@ -47,38 +58,37 @@ static CacheItem *_find_item(Cache *c, uint64_t id) {
   return NULL;
 }
 
-Cache *cache_create() {
+static CacheItem *_cache_get(Cache *c, uint32_t idx) {
+  if (c == NULL || idx >= c->count) {
+    return NULL;
+  }
+  return &c->items[idx];
+}
+
+static void _cache_empty(Cache *c) {
+  if (c == NULL) {
+    return;
+  }
+  free(c->items);
+  c->items = NULL;
+  c->count = 0;
+  c->size = 0;
+}
+
+static void _cache_reset_version(Cache *c) {
+  for (uint32_t i = 0; i < c->count; i++) {
+    c->items[i].last_seen = 1;
+  }
+  c->version = 1;
+}
+
+Cache *cache_create(void) {
   Cache *c = calloc(1, sizeof(*c));
   if (!c) {
     return NULL;
   }
   c->version = 1;
   return c;
-}
-
-void cache_stats(Cache *c, const char *name) {
-#ifndef NO_LOG
-  float cs = (float)c->count * sizeof(CacheItem) / 1024;
-  bx_log_info("Cache %s : %.2f size [kb], %lu items, %lu total, %lu version",
-              name, cs, c->count, c->size, c->version);
-#endif
-}
-
-void cache_print(Cache *c) {
-  if (c == NULL) {
-    return;
-  }
-  for (uint32_t i = 0; i < c->count; i++) {
-    printf("ID %lu CHECKSUM %lX\n", (unsigned long)c->items[i].id,
-           (unsigned long)c->items[i].checksum);
-  }
-}
-
-CacheItem *cache_get(Cache *c, uint32_t idx) {
-  if (c == NULL || idx >= c->count) {
-    return NULL;
-  }
-  return &c->items[idx];
 }
 
 void cache_iter_init(Cache *c, CacheIter *iter) {
@@ -90,26 +100,13 @@ void cache_iter_init(Cache *c, CacheIter *iter) {
   iter->version = c ? c->version : 0;
 }
 
-const uint64_t *cache_iter_next_id(CacheIter *iter) {
-  CacheItem *item = NULL;
-  do {
-    item = cache_get(iter->c, iter->current);
-    if (item == NULL) {
-      iter->current = 0;
-      return NULL;
-    }
-    iter->current++;
-  } while (item->last_seen == 0);
-  return &item->id;
-}
-
 bool cache_iter_next_prunable_id(CacheIter *iter, uint64_t drift,
                                  uint64_t *id) {
   CacheItem *item = NULL;
   if (iter == NULL || id == NULL || iter->version <= drift) {
     return false;
   }
-  while ((item = cache_get(iter->c, iter->current)) != NULL) {
+  while ((item = _cache_get(iter->c, iter->current)) != NULL) {
     iter->current++;
     if (item->last_seen > 0 && item->last_seen <= iter->version - drift) {
       *id = item->id;
@@ -178,27 +175,20 @@ CacheState cache_check_item(Cache *c, uint64_t id, uint64_t checksum) {
   return current->checksum != checksum ? CacheNotSync : CacheOk;
 }
 
-void cache_empty(Cache *c) {
+void cache_next_version(Cache *c) {
   if (c == NULL) {
     return;
   }
-  free(c->items);
-  c->items = NULL;
-  c->count = 0;
-  c->size = 0;
+  c->version++;
+  if (c->version == UINT64_MAX) {
+    _cache_reset_version(c);
+  }
 }
 
 void cache_destroy(Cache *c) {
   if (c == NULL) {
     return;
   }
-  cache_empty(c);
+  _cache_empty(c);
   free(c);
-}
-
-void cache_reset_version(Cache *c) {
-  for (uint32_t i = 0; i < c->count; i++) {
-    c->items[i].last_seen = 1;
-  }
-  c->version = 1;
 }
