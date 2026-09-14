@@ -182,11 +182,10 @@ CacheState cache_check_item(Cache *c, uint64_t id, uint64_t checksum) {
   if (current == NULL) {
     return CacheNotSet;
   }
-  if (current->checksum != checksum) {
-    return CacheNotSync;
-  }
+  /* Observed this cycle, even if the checksum is dirty. Otherwise prune
+   * treats skipped updates (missing FK, persist failure) as vanished ids. */
   current->last_seen = c->version;
-  return CacheOk;
+  return current->checksum != checksum ? CacheNotSync : CacheOk;
 }
 
 void cache_empty(Cache *c) {

@@ -34,6 +34,7 @@ Cache *cache_create();
 void cache_print(Cache *c);
 bool cache_set_item(Cache *c, uint64_t id, uint64_t checksum);
 void cache_destroy(Cache *c);
+/* Marks the id seen this cycle when it is already in the cache. */
 CacheState cache_check_item(Cache *c, uint64_t id, uint64_t checksum);
 
 CacheItem *cache_get(Cache *c, uint32_t idx);
