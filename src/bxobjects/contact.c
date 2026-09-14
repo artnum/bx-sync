@@ -428,7 +428,7 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
   }
 
   CacheState state =
-      cache_check_item(c, (BXGeneric *)&contact->id, contact->checksum);
+      cache_check_item(c, contact->id.value, contact->checksum);
   if (state == CacheOk) {
     bx_object_contact_free(contact);
     return NoError;
@@ -538,7 +538,7 @@ BXillError _bx_contact_sync_item(bXill *app, MYSQL *conn, json_t *item,
     bx_object_contact_free(contact);
     return NoError;
   }
-  cache_set_item(c, (BXGeneric *)&contact->id, contact->checksum);
+  cache_set_item(c, contact->id.value, contact->checksum);
   bx_database_free_query(query);
   query = NULL;
   {

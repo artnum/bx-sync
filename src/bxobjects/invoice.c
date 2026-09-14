@@ -245,7 +245,7 @@ BXillError _bx_invoice_sync_item(bXill *app, MYSQL *conn, json_t *item,
     goto fail_and_return;
   }
   CacheState cacheItemState =
-      cache_check_item(cache, (BXGeneric *)&invoice->id, invoice->checksum);
+      cache_check_item(cache, invoice->id.value, invoice->checksum);
   /* 0 means in database with same hash */
   if (cacheItemState == CacheOk) {
     bx_object_invoice_free(invoice);
@@ -417,7 +417,7 @@ BXillError _bx_invoice_sync_item(bXill *app, MYSQL *conn, json_t *item,
 
   RetVal = bx_invoice_positions_store(conn, invoice->id.value, positions);
   if (RetVal == NoError) {
-    cache_set_item(cache, (BXGeneric *)&invoice->id, invoice->checksum);
+    cache_set_item(cache, invoice->id.value, invoice->checksum);
     RetVal = bx_invoice_extra_sync(app, conn, invoice->id.value);
     if (RetVal != ErrorSQLReconnect && RetVal != NoError) {
       RetVal = NoError;

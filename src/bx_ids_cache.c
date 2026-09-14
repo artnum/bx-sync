@@ -1,12 +1,12 @@
 #include "include/bx_ids_cache.h"
-#include "include/bx_object.h"
-#include "include/bx_object_value.h"
 #include "include/bx_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define CACHE_CHUNK_SIZE 1000
-bool _grow_cache(Cache *c) {
+
+static bool _grow_cache(Cache *c) {
   if (!c) {
     return false;
   }
@@ -15,97 +15,36 @@ bool _grow_cache(Cache *c) {
   if (!new) {
     return false;
   }
-  memset((void *)(new + c->size), 0, CACHE_CHUNK_SIZE * sizeof(*new));
+  memset(new + c->size, 0, CACHE_CHUNK_SIZE * sizeof(*new));
   c->items = new;
   c->size += CACHE_CHUNK_SIZE;
   return true;
 }
 
-CacheItem *_find_item(Cache *c, BXGeneric *item_id) {
-  if (c == NULL || item_id == NULL) {
-    return NULL;
-  }
-  int64_t left = 0;
-  int64_t right = c->count - 1;
-  int64_t middle = 0;
-  if (c->count <= 0) {
-    return NULL;
-  }
-  while (left <= right) {
-    middle = left + ((right - left) / 2);
-    int compare = bx_object_value_compare(&c->items[middle].id, item_id);
-    if (compare < 0) {
+/* First index with id >= key, or c->count if all ids are smaller. */
+static uint32_t _lower_bound(const Cache *c, uint64_t id) {
+  uint32_t left = 0;
+  uint32_t right = c->count;
+  while (left < right) {
+    uint32_t middle = left + ((right - left) / 2);
+    if (c->items[middle].id < id) {
       left = middle + 1;
-    } else if (compare > 0) {
-      right = middle - 1;
     } else {
-      return &c->items[middle];
+      right = middle;
     }
   }
+  return left;
+}
+
+static CacheItem *_find_item(Cache *c, uint64_t id) {
+  if (c == NULL || c->count == 0) {
+    return NULL;
+  }
+  uint32_t i = _lower_bound(c, id);
+  if (i < c->count && c->items[i].id == id) {
+    return &c->items[i];
+  }
   return NULL;
-}
-
-void _swap_items(CacheItem *a, CacheItem *b) {
-  BXAny tmp = a->id;
-  a->id = b->id;
-  b->id = tmp;
-  uint64_t tck = a->checksum;
-  a->checksum = b->checksum;
-  b->checksum = tck;
-  uint64_t version = a->last_seen;
-  a->last_seen = b->last_seen;
-  b->last_seen = version;
-}
-
-int _cmp(BXAny *a, BXAny *b) {
-  switch (*(uint8_t *)b) {
-  case BX_OBJECT_TYPE_INTEGER:
-    return bx_object_value_compare(a, (BXGeneric *)&b->__int);
-  case BX_OBJECT_TYPE_UINTEGER:
-    return bx_object_value_compare(a, (BXGeneric *)&b->__uint);
-  case BX_OBJECT_TYPE_FLOAT:
-    return bx_object_value_compare(a, (BXGeneric *)&b->__float);
-  case BX_OBJECT_TYPE_UUID:
-    return bx_object_value_compare(a, (BXGeneric *)&b->__uuid);
-  case BX_OBJECT_TYPE_STRING:
-    return bx_object_value_compare(a, (BXGeneric *)&b->__string);
-  case BX_OBJECT_TYPE_BOOL:
-    return bx_object_value_compare(a, (BXGeneric *)&b->__bool);
-  case BX_OBJECT_TYPE_BYTES:
-    return bx_object_value_compare(a, (BXGeneric *)&b->__bytes);
-  }
-  return 0;
-}
-
-void _heapify(Cache *c, uint32_t n, uint32_t i) {
-  uint32_t largest = i;
-  uint32_t left = 2 * i + 1;
-  uint32_t right = 2 * i + 2;
-
-  if (left < n && _cmp(&c->items[left].id, &c->items[largest].id) > 0) {
-    largest = left;
-  }
-  if (right < n && _cmp(&c->items[right].id, &c->items[largest].id) > 0) {
-    largest = right;
-  }
-  if (largest != i) {
-    _swap_items(&c->items[i], &c->items[largest]);
-    _heapify(c, n, largest);
-  }
-}
-
-void _heapsort_cache(Cache *c) {
-  if (c->count < 2) {
-    return;
-  }
-  for (int32_t i = c->count / 2 - 1; i >= 0; i--) {
-    _heapify(c, c->count, i);
-  }
-
-  for (uint32_t i = c->count - 1; i > 0; i--) {
-    _swap_items(&c->items[0], &c->items[i]);
-    _heapify(c, i, 0);
-  }
 }
 
 Cache *cache_create() {
@@ -125,64 +64,21 @@ void cache_stats(Cache *c, const char *name) {
 #endif
 }
 
-BXGeneric *_item_to_id(CacheItem *item) {
-  switch (*(uint8_t *)item) {
-  case BX_OBJECT_TYPE_INTEGER:
-    return (BXGeneric *)&item->id.__int;
-  case BX_OBJECT_TYPE_UINTEGER:
-    return (BXGeneric *)&item->id.__uint;
-  case BX_OBJECT_TYPE_FLOAT:
-    return (BXGeneric *)&item->id.__float;
-  case BX_OBJECT_TYPE_UUID:
-    return (BXGeneric *)&item->id.__uuid;
-  case BX_OBJECT_TYPE_STRING:
-    return (BXGeneric *)&item->id.__string;
-  case BX_OBJECT_TYPE_BYTES:
-    return (BXGeneric *)&item->id.__bytes;
-  case BX_OBJECT_TYPE_BOOL:
-    return (BXGeneric *)&item->id.__bool;
-  }
-  return NULL;
-}
-
 void cache_print(Cache *c) {
+  if (c == NULL) {
+    return;
+  }
   for (uint32_t i = 0; i < c->count; i++) {
-    switch (*(uint8_t *)&c->items[i].id) {
-    case BX_OBJECT_TYPE_INTEGER:
-      _bx_dump_any("ID", &c->items[i].id.__int, 1);
-      break;
-    case BX_OBJECT_TYPE_UINTEGER:
-      _bx_dump_any("ID", &c->items[i].id.__uint, 1);
-      break;
-    case BX_OBJECT_TYPE_FLOAT:
-      _bx_dump_any("ID", &c->items[i].id.__float, 1);
-      break;
-    case BX_OBJECT_TYPE_UUID:
-      _bx_dump_any("ID", &c->items[i].id.__uuid, 1);
-      break;
-    case BX_OBJECT_TYPE_STRING:
-      _bx_dump_any("ID", &c->items[i].id.__string, 1);
-      break;
-    case BX_OBJECT_TYPE_BYTES:
-      _bx_dump_any("ID", &c->items[i].id.__bytes, 1);
-      break;
-    case BX_OBJECT_TYPE_BOOL:
-      _bx_dump_any("ID", &c->items[i].id.__bool, 1);
-      break;
-    }
-    printf("CHECKSUM %lX\n", c->items[i].checksum);
+    printf("ID %lu CHECKSUM %lX\n", (unsigned long)c->items[i].id,
+           (unsigned long)c->items[i].checksum);
   }
 }
 
-CacheItem *cache_get_by_id(Cache *c, BXGeneric *item_id) {
-  return _find_item(c, item_id);
-}
-
-CacheItem *cache_get(Cache *c, uint32_t id) {
-  if (id >= c->count) {
+CacheItem *cache_get(Cache *c, uint32_t idx) {
+  if (c == NULL || idx >= c->count) {
     return NULL;
   }
-  return &c->items[id];
+  return &c->items[idx];
 }
 
 void cache_iter_init(Cache *c, CacheIter *iter) {
@@ -191,10 +87,10 @@ void cache_iter_init(Cache *c, CacheIter *iter) {
   }
   iter->current = 0;
   iter->c = c;
-  iter->version = c->version;
+  iter->version = c ? c->version : 0;
 }
 
-const BXGeneric *cache_iter_next_id(CacheIter *iter) {
+const uint64_t *cache_iter_next_id(CacheIter *iter) {
   CacheItem *item = NULL;
   do {
     item = cache_get(iter->c, iter->current);
@@ -203,24 +99,23 @@ const BXGeneric *cache_iter_next_id(CacheIter *iter) {
       return NULL;
     }
     iter->current++;
-  } while (item != NULL && item->last_seen == 0);
-  return _item_to_id(item);
+  } while (item->last_seen == 0);
+  return &item->id;
 }
 
-const BXGeneric *cache_iter_next_prunable_id(CacheIter *iter, uint64_t drift,
-                                             bool del) {
+const uint64_t *cache_iter_next_prunable_id(CacheIter *iter, uint64_t drift,
+                                            bool del) {
   CacheItem *item = NULL;
   if (iter->version <= drift) {
     return NULL;
   }
   while ((item = cache_get(iter->c, iter->current)) != NULL) {
-
     if (item->last_seen > 0 && item->last_seen <= iter->version - drift) {
       iter->current++;
       if (del) {
         item->last_seen = 0;
       }
-      return _item_to_id(item);
+      return &item->id;
     }
     iter->current++;
   }
@@ -256,51 +151,34 @@ void cache_prune(Cache *c) {
   c->count = j;
 }
 
-void cache_delete_idx(Cache *c, uint32_t idx) {
-  CacheItem *item = NULL;
-  item = cache_get(c, idx);
-  if (item != NULL) {
-    item->last_seen = 0;
-  }
-}
-
-bool cache_set_item(Cache *c, BXGeneric *item_id, uint64_t checksum) {
-  CacheItem *current = _find_item(c, item_id);
-  bool need_sort = true;
-  if (item_id == NULL || c == NULL) {
+bool cache_set_item(Cache *c, uint64_t id, uint64_t checksum) {
+  if (c == NULL) {
     return false;
   }
-  if (current && current->checksum == checksum) {
-    current->last_seen = c->version;
+  uint32_t i = _lower_bound(c, id);
+  if (i < c->count && c->items[i].id == id) {
+    c->items[i].checksum = checksum;
+    c->items[i].last_seen = c->version;
     return true;
   }
-  if (current == NULL) {
-    if (c->count >= c->size) {
-      if (!_grow_cache(c)) {
-        return false;
-      }
+  if (c->count >= c->size) {
+    if (!_grow_cache(c)) {
+      return false;
     }
-    bx_object_value_copy(&c->items[c->count].id, item_id);
-    c->items[c->count].checksum = checksum;
-    c->items[c->count].last_seen = c->version;
-    if (c->count > 1 &&
-        _cmp(&c->items[c->count - 1].id, &c->items[c->count].id) <= 0) {
-      need_sort = false;
-    }
-    c->count++;
-    if (need_sort) {
-      _heapsort_cache(c);
-    }
-    return true;
   }
-
-  current->checksum = checksum;
-  current->last_seen = c->version;
+  if (i < c->count) {
+    memmove(&c->items[i + 1], &c->items[i],
+            (c->count - i) * sizeof(*c->items));
+  }
+  c->items[i].id = id;
+  c->items[i].checksum = checksum;
+  c->items[i].last_seen = c->version;
+  c->count++;
   return true;
 }
 
-CacheState cache_check_item(Cache *c, BXGeneric *item_id, uint64_t checksum) {
-  CacheItem *current = _find_item(c, item_id);
+CacheState cache_check_item(Cache *c, uint64_t id, uint64_t checksum) {
+  CacheItem *current = _find_item(c, id);
   if (current == NULL) {
     return CacheNotSet;
   }
@@ -315,14 +193,12 @@ void cache_empty(Cache *c) {
   if (c == NULL) {
     return;
   }
-  for (uint32_t i = 0; i < c->count; i++) {
-    bx_object_free_value(&c->items[i].id);
-  }
   free(c->items);
   c->items = NULL;
   c->count = 0;
   c->size = 0;
 }
+
 void cache_destroy(Cache *c) {
   if (c == NULL) {
     return;
@@ -333,8 +209,7 @@ void cache_destroy(Cache *c) {
 
 void cache_reset_version(Cache *c) {
   for (uint32_t i = 0; i < c->count; i++) {
-    CacheItem *item = cache_get(c, i);
-    item->last_seen = 1;
+    c->items[i].last_seen = 1;
   }
   c->version = 1;
 }

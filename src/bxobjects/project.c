@@ -226,7 +226,7 @@ BXillError _bx_project_sync_item(bXill *app, MYSQL *conn, json_t *item,
     return ErrorGeneric;
   }
   CacheState ProjectState =
-      cache_check_item(cache, (BXGeneric *)&project->id, project->checksum);
+      cache_check_item(cache, project->id.value, project->checksum);
   if (ProjectState == CacheOk) {
     bx_project_free(project);
     return NoError;
@@ -272,7 +272,7 @@ BXillError _bx_project_sync_item(bXill *app, MYSQL *conn, json_t *item,
       return NoError;
     }
   }
-  cache_set_item(cache, (BXGeneric *)&project->id, project->checksum);
+  cache_set_item(cache, project->id.value, project->checksum);
   if (app != NULL) {
     BXillError e = bx_project_extra_sync(app, conn, project->id.value);
     if (e == ErrorSQLReconnect) {

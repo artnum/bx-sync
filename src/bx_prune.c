@@ -2,7 +2,6 @@
 #include "include/bx_conf.h"
 #include "include/bx_database.h"
 #include "include/bx_ids_cache.h"
-#include "include/bx_object_value.h"
 #include "include/bx_utils.h"
 #include "include/bxill.h"
 #include <mysql/mysql.h>
@@ -19,10 +18,10 @@ BXillError bx_prune_items(bXill *app, PruningParameters *param) {
   if (param->query == NULL) {
     return ErrorGeneric;
   }
-  const BXGeneric *id;
+  const uint64_t *id;
   while ((id = cache_iter_next_prunable_id(&iter, drift, true)) != NULL) {
-    bx_log_debug("Prunning %lu\n", ((const BXUInteger *)id)->value);
-    if (!bx_database_add_bxtype(param->query, ":id", id) ||
+    bx_log_debug("Prunning %lu\n", (unsigned long)*id);
+    if (!bx_database_add_param_uint64(param->query, ":id", (void *)id) ||
         !bx_database_execute(param->query))
     {
       bx_log_debug("Query failed %s", param->query);
@@ -48,10 +47,7 @@ BXillError bx_prune_from_db(bXill *app, PruningParameters *param) {
       if (current->column_count != 2) {
         continue;
       }
-      BXUInteger item = {.type = BX_OBJECT_TYPE_UINTEGER,
-                         .value = (uint64_t)current->columns[0].i_value,
-                         .isset = true};
-      cache_set_item(param->cache, (BXGeneric *)&item,
+      cache_set_item(param->cache, (uint64_t)current->columns[0].i_value,
                      (uint64_t)current->columns[1].i_value);
     }
   } else {

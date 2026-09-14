@@ -2,7 +2,6 @@
 #define BX_PRUNE_H__
 #include "bx_database.h"
 #include "bx_ids_cache.h"
-#include "bx_object_value.h"
 #include "bxill.h"
 #include <mysql/mysql.h>
 
