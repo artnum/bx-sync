@@ -12,6 +12,35 @@ they end up like Winbiz (which I am more and more confident that they will).
  - Continuous, you are backing up in near real time
  - Use MySQL to store in a relationnal fashion with foreign key and all
 
+## Authentication
+
+Bexio access is OAuth 2.0 authorization code, through liboauth2. Put
+`oauth-client-id`, `oauth-client-secret`, and `oauth-redirect-uri` in the
+config (see `conf.example.json`). Register that redirect URI on the Bexio app.
+The default is `http://127.0.0.1:8765/callback`.
+
+The sync runs on a server without a desktop. Log in once over SSH, as the user
+that will read the token file:
+
+```
+bxsync --login /usr/local/etc/bxsync.json
+```
+
+The command prints an authorize URL. On your laptop, forward the callback port
+and open the URL in a browser:
+
+```
+ssh -L 8765:127.0.0.1:8765 user@the-server
+```
+
+If the browser cannot reach the forwarded port, copy the full address-bar URL
+(it still contains `?code=...`) and paste it into the SSH session. Tokens are
+written to `oauth-token-file` (mode 0600). After that, the daemon only
+refreshes them. `--login` is not a systemd command. If a refresh is rejected,
+stop the service, run `--login` again, then start it. `oauth-scope` is
+optional; when omitted, the read scopes used by the sync are requested,
+including `offline_access`.
+
 ## Todo
  
  - Add proxy support : you can request like if it is Bexio, goes to local
@@ -57,6 +86,36 @@ des données sur votre serveur, ou machine, local n'est pas du luxe.
  - Sauvegarde en temps quasi-réel.
  - Stoque les données dans une base de données relationnelles en respectant la
    structure (MySQL), permet donc une meilleure intégration à votre ERP.
+
+## Authentification
+
+L'accès Bexio passe par OAuth 2.0 (authorization code) via liboauth2. Le
+fichier de config contient `oauth-client-id`, `oauth-client-secret` et
+`oauth-redirect-uri` (voir `conf.example.json`). Cette URI de redirection doit
+être enregistrée sur l'application Bexio. Par défaut :
+`http://127.0.0.1:8765/callback`.
+
+La synchro tourne sur un serveur sans bureau. La connexion se fait une fois,
+en SSH, avec l'utilisateur qui lira le fichier de jetons :
+
+```
+bxsync --login /usr/local/etc/bxsync.json
+```
+
+La commande affiche une URL d'autorisation. Depuis le portable, ouvrir un
+tunnel puis cette URL dans un navigateur :
+
+```
+ssh -L 8765:127.0.0.1:8765 user@le-serveur
+```
+
+Si le navigateur ne joint pas le port transféré, copier l'URL complète de la
+barre d'adresse (elle contient `?code=...`) et la coller dans la session SSH.
+Les jetons sont écrits dans `oauth-token-file` (mode 0600). Ensuite le
+démon ne fait que les renouveler. `--login` ne se lance pas via systemd. Si un
+renouvellement est refusé, arrêter le service, relancer `--login`, puis
+redémarrer. `oauth-scope` est optionnel ; sans cette clé, les scopes de
+lecture utilisés par la synchro sont demandés, y compris `offline_access`.
 
 ## À faire
 

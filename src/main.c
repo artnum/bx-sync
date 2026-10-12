@@ -3,6 +3,7 @@
 #include "include/bx_ids_cache.h"
 #include "include/bx_mutex.h"
 #include "include/bx_net.h"
+#include "include/bx_oauth.h"
 #include "include/bx_prune.h"
 #include "include/bx_utils.h"
 #include "include/bxill.h"
@@ -698,20 +699,52 @@ int write_pid(const char *pid_file) {
   return fd;
 }
 
+static void usage(void) {
+  fprintf(stderr, "Usage: bxsync <config>\n");
+  fprintf(stderr, "       bxsync --login <config>\n");
+}
+
 /* ENTRY POINT */
 int main(int argc, char **argv) {
   BXConf *conf = NULL;
   bXill app;
+  bool do_login = false;
+  const char *config_path = NULL;
 
-  if (argc < 2) {
-    printf("Missing config file as first argument");
+  if (argc >= 2 && strcmp(argv[1], "--login") == 0) {
+    do_login = true;
+    if (argc < 3) {
+      usage();
+      exit(EXIT_FAILURE);
+    }
+    config_path = argv[2];
+  } else if (argc >= 2) {
+    config_path = argv[1];
+  } else {
+    usage();
     exit(EXIT_FAILURE);
   }
 
   conf = bx_conf_init();
-  if (!bx_conf_loadfile(conf, argv[1])) {
+  if (!bx_conf_loadfile(conf, config_path)) {
     bx_conf_destroy(&conf);
     exit(EXIT_FAILURE);
+  }
+
+  if (do_login) {
+    BXOAuth *oauth = NULL;
+    BXOauthStatus st = BX_OAUTH_FAILED;
+    if (!bx_log_init(&app, bx_conf_get_string(conf, "log-file"),
+                     bx_conf_get_int(conf, "log-level"))) {
+      fprintf(stderr, "Could not open the log file\n");
+    }
+    oauth = bx_oauth_init(conf, config_path);
+    if (oauth != NULL) {
+      st = bx_oauth_login(oauth);
+      bx_oauth_destroy(&oauth);
+    }
+    bx_conf_destroy(&conf);
+    return st == BX_OAUTH_OK ? EXIT_SUCCESS : EXIT_FAILURE;
   }
 
   bx_log_init(&app, bx_conf_get_string(conf, "log-file"),
@@ -778,10 +811,11 @@ int main(int argc, char **argv) {
   pthread_t log_thread;
   pthread_create(&log_thread, NULL, bx_log_out_thread, (void *)&app);
 
-  BXNet *net = bx_net_init(conf);
+  BXNet *net = bx_net_init(conf, config_path);
   if (net == NULL) {
     bx_log_error("Net configuration failed");
-    exit(0);
+    usleep(100000);
+    exit(EXIT_FAILURE);
   }
   app.net = net;
   /* START NET THREAD, REQUEST CAN BE DONE AFTER THAT */

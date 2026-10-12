@@ -1,6 +1,9 @@
 {
   "bexio-endpoint": "https://api.bexio.com/",
-  "bexio-token": " ... your « Personnal Access Token »...",
+  "oauth-client-id": "the Bexio app client id",
+  "oauth-client-secret": "the Bexio app client secret",
+  "oauth-redirect-uri": "http://127.0.0.1:8765/callback",
+  "oauth-token-file": "/var/lib/bxsync/bxsync-oauth.json",
   "mysql-host": "localhost",
   "mysql-user": "the mysql user",
   "mysql-password": "the mysql password",

@@ -3,6 +3,7 @@
 
 #include "bx_conf.h"
 #include "bx_mutex.h"
+#include "bx_oauth.h"
 #include "bx_object.h"
 #include <curl/curl.h>
 #include <jansson.h>
@@ -22,8 +23,7 @@ typedef struct s_BXNet BXNet;
 struct s_BXNet {
   CURL *curl;
   BXMutex mutex;
-  char *auth_token;
-  size_t auth_token_len;
+  BXOAuth *oauth;
   char *endpoint;
   size_t endpoint_len;
   BXMutex mutex_limit;
@@ -74,7 +74,7 @@ struct s_BXNetRequestList {
 };
 
 BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params);
-BXNet *bx_net_init(BXConf *conf);
+BXNet *bx_net_init(BXConf *conf, const char *config_path);
 void bx_net_destroy(BXNet **net);
 pthread_t bx_net_loop(BXNetRequestList *list);
 

@@ -18,32 +18,16 @@
 
 #define BX_API_AUTH_HEADER "Authorization: Bearer "
 
-BXNet *bx_net_init(BXConf *conf) {
+BXNet *bx_net_init(BXConf *conf, const char *config_path) {
   BXNet *net = NULL;
-
-  const char *t = bx_conf_get_string(conf, "bexio-token");
-  if (t == NULL) {
-    return NULL;
-  }
-  size_t slen = strlen(t);
-  char *token = calloc(slen + 1, sizeof(*token));
-  if (token == NULL) {
-    bx_conf_release(conf, "bexio-token");
-    return NULL;
-  }
-  memcpy(token, t, slen);
-  bx_conf_release(conf, "bexio-token");
 
   const char *e = bx_conf_get_string(conf, "bexio-endpoint");
   if (e == NULL) {
-    free(token);
     return NULL;
   }
   size_t elen = strlen(e);
   char *endpoint = calloc(elen + 1, sizeof(*endpoint));
   if (endpoint == NULL) {
-    bx_conf_release(conf, "bexio-endpoint");
-    free(token);
     return NULL;
   }
   memcpy(endpoint, e, elen);
@@ -51,17 +35,13 @@ BXNet *bx_net_init(BXConf *conf) {
 
   net = calloc(1, sizeof(*net));
   if (net == NULL) {
-    free(token);
     free(endpoint);
     return NULL;
   }
-  net->auth_token = token;
-  net->auth_token_len = slen;
   net->endpoint = endpoint;
   net->endpoint_len = elen;
   net->curl = curl_easy_init();
   if (!net->curl) {
-    free(token);
     free(endpoint);
     free(net);
     return NULL;
@@ -69,6 +49,15 @@ BXNet *bx_net_init(BXConf *conf) {
 
   bx_mutex_init(&net->mutex);
   bx_mutex_init(&net->mutex_limit);
+  net->oauth = bx_oauth_init(conf, config_path);
+  if (net->oauth == NULL) {
+    bx_net_destroy(&net);
+    return NULL;
+  }
+  if (bx_oauth_startup(net->oauth) != BX_OAUTH_OK) {
+    bx_net_destroy(&net);
+    return NULL;
+  }
   return net;
 }
 
@@ -97,11 +86,12 @@ void bx_net_destroy(BXNet **net) {
   if ((*net)->endpoint != NULL) {
     free((*net)->endpoint);
   }
-  if ((*net)->auth_token != NULL) {
-    free((*net)->auth_token);
-  }
   if ((*net)->curl != NULL) {
     curl_easy_cleanup((*net)->curl);
+    (*net)->curl = NULL;
+  }
+  if ((*net)->oauth != NULL) {
+    bx_oauth_destroy(&(*net)->oauth);
   }
   free(*net);
   *net = NULL;
@@ -254,6 +244,30 @@ static inline size_t bx_header_callback(char *buffer, size_t size,
   return size * item_count;
 }
 
+static char *bx_auth_header(BXNet *net, bool force) {
+  const char *tok = NULL;
+  size_t slen = 0;
+  char *auth_token = NULL;
+
+  if (!bx_oauth_ensure(net->oauth, force)) {
+    return NULL;
+  }
+  tok = bx_oauth_access_token(net->oauth);
+  if (tok == NULL) {
+    return NULL;
+  }
+  slen = strlen(tok) + sizeof(BX_API_AUTH_HEADER) + 1;
+  auth_token = calloc(slen, sizeof(*auth_token));
+  if (auth_token == NULL) {
+    return NULL;
+  }
+  if (snprintf(auth_token, slen, "%s%s", BX_API_AUTH_HEADER, tok) < 0) {
+    free(auth_token);
+    return NULL;
+  }
+  return auth_token;
+}
+
 BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params) {
   assert(net != NULL);
   assert(path != NULL);
@@ -264,119 +278,105 @@ BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params) {
     bx_mutex_unlock(&net->mutex);
     return NULL;
   }
-  bx_mutex_unlock(&net->mutex);
-  /* read data structure setup */
-  BXNetRData *net_rdata = NULL;
-  net_rdata = calloc(1, sizeof(*net_rdata));
+  BXNetRData *net_rdata = calloc(1, sizeof(*net_rdata));
   if (net_rdata == NULL) {
-    free(url);
-    return NULL;
-  }
-  net_rdata->data_len = 0;
-  net_rdata->data = NULL;
-
-  /* auth token setup */
-  size_t slen = 0;
-  slen = strlen(net->auth_token) + sizeof(BX_API_AUTH_HEADER) + 1;
-  char *auth_token = calloc(slen, sizeof(*auth_token));
-  if (auth_token == NULL) {
-    free(net_rdata);
-    free(url);
-    return NULL;
-  }
-  if (snprintf(auth_token, slen, "%s%s", BX_API_AUTH_HEADER, net->auth_token) <
-      0) {
-    free(net_rdata);
-    free(auth_token);
+    bx_mutex_unlock(&net->mutex);
     free(url);
     return NULL;
   }
 
-  /* header setup */
   struct curl_slist *header_list = NULL;
-  struct curl_slist *tmp = NULL;
-  tmp = curl_slist_append(tmp, auth_token);
-  if (tmp == NULL) {
-    free(net_rdata);
+  char *auth_token = NULL;
+  for (int attempt = 0; attempt < 2; attempt++) {
+    struct curl_slist *tmp = NULL;
     free(auth_token);
-    free(url);
-    return NULL;
-  }
-  header_list = tmp;
-  tmp = curl_slist_append(header_list, "Accept: application/json");
-  if (tmp == NULL) {
-    curl_slist_free_all(header_list);
-    free(net_rdata);
-    free(auth_token);
-    free(url);
-    return NULL;
-  }
-  header_list = tmp;
-  tmp = curl_slist_append(
-      header_list, "User-Agent: bx-sync/dev "
-                   "(https://github.com/artnum/bx-sync; etienne@artnum.ch)");
-  if (tmp == NULL) {
-    curl_slist_free_all(header_list);
-    free(net_rdata);
-    free(auth_token);
-    free(url);
-    return NULL;
-  }
-  header_list = tmp;
+    auth_token = NULL;
+    if (header_list != NULL) {
+      curl_slist_free_all(header_list);
+      header_list = NULL;
+    }
+    if (net_rdata->data != NULL) {
+      free(net_rdata->data);
+      net_rdata->data = NULL;
+      net_rdata->data_len = 0;
+    }
+    net_rdata->http_code = 0;
 
-  /* critical section */
-  assert(bx_mutex_lock(&net->mutex) != false);
-  if (curl_easy_setopt(net->curl, CURLOPT_HEADERFUNCTION, bx_header_callback) !=
-      CURLE_OK) {
-    goto failUnlockFreeAndReturn;
-  }
-  if (curl_easy_setopt(net->curl, CURLOPT_HEADERDATA, (void *)net) !=
-      CURLE_OK) {
-    goto failUnlockFreeAndReturn;
-  }
-  if (curl_easy_setopt(net->curl, CURLOPT_WRITEFUNCTION, _bx_write_cb) !=
-      CURLE_OK) {
-    goto failUnlockFreeAndReturn;
-  }
-  if (curl_easy_setopt(net->curl, CURLOPT_WRITEDATA, (void *)net_rdata) !=
-      CURLE_OK) {
-    goto failUnlockFreeAndReturn;
-  }
-  if (curl_easy_setopt(net->curl, CURLOPT_HTTPHEADER, header_list) !=
-      CURLE_OK) {
-    goto failUnlockFreeAndReturn;
-  }
-  if (curl_easy_setopt(net->curl, CURLOPT_URL, url) != CURLE_OK) {
-    goto failUnlockFreeAndReturn;
-  }
-  if (curl_easy_setopt(net->curl, CURLOPT_SSL_VERIFYPEER, 1) != CURLE_OK) {
-    goto failUnlockFreeAndReturn;
-  }
-  clock_t start = clock();
-  if (curl_easy_perform(net->curl) != CURLE_OK) {
-    goto failUnlockFreeAndReturn;
-  }
-  clock_t stop = clock();
-  net->request_count++;
-  net->average_request_time =
-      ((stop - start) + net->average_request_time * net->request_count) /
-      (net->request_count);
-  bx_log_debug("[NET TIME] Immediate : %ld us With Average %ld us",
-               stop - start, net->average_request_time);
-  curl_easy_getinfo(net->curl, CURLINFO_RESPONSE_CODE, &net_rdata->http_code);
+    auth_token = bx_auth_header(net, attempt > 0);
+    if (auth_token == NULL) {
+      goto failUnlockFreeAndReturn;
+    }
+    tmp = curl_slist_append(NULL, auth_token);
+    if (tmp == NULL) {
+      goto failUnlockFreeAndReturn;
+    }
+    header_list = tmp;
+    tmp = curl_slist_append(header_list, "Accept: application/json");
+    if (tmp == NULL) {
+      goto failUnlockFreeAndReturn;
+    }
+    header_list = tmp;
+    tmp = curl_slist_append(
+        header_list, "User-Agent: bx-sync/dev "
+                     "(https://github.com/artnum/bx-sync; etienne@artnum.ch)");
+    if (tmp == NULL) {
+      goto failUnlockFreeAndReturn;
+    }
+    header_list = tmp;
 
-  curl_slist_free_all(header_list);
-  curl_easy_reset(net->curl);
-  bx_mutex_unlock(&net->mutex);
+    if (curl_easy_setopt(net->curl, CURLOPT_HEADERFUNCTION,
+                         bx_header_callback) != CURLE_OK) {
+      goto failUnlockFreeAndReturn;
+    }
+    if (curl_easy_setopt(net->curl, CURLOPT_HEADERDATA, (void *)net) !=
+        CURLE_OK) {
+      goto failUnlockFreeAndReturn;
+    }
+    if (curl_easy_setopt(net->curl, CURLOPT_WRITEFUNCTION, _bx_write_cb) !=
+        CURLE_OK) {
+      goto failUnlockFreeAndReturn;
+    }
+    if (curl_easy_setopt(net->curl, CURLOPT_WRITEDATA, (void *)net_rdata) !=
+        CURLE_OK) {
+      goto failUnlockFreeAndReturn;
+    }
+    if (curl_easy_setopt(net->curl, CURLOPT_HTTPHEADER, header_list) !=
+        CURLE_OK) {
+      goto failUnlockFreeAndReturn;
+    }
+    if (curl_easy_setopt(net->curl, CURLOPT_URL, url) != CURLE_OK) {
+      goto failUnlockFreeAndReturn;
+    }
+    if (curl_easy_setopt(net->curl, CURLOPT_SSL_VERIFYPEER, 1) != CURLE_OK) {
+      goto failUnlockFreeAndReturn;
+    }
+    clock_t start = clock();
+    if (curl_easy_perform(net->curl) != CURLE_OK) {
+      goto failUnlockFreeAndReturn;
+    }
+    clock_t stop = clock();
+    net->request_count++;
+    net->average_request_time =
+        ((stop - start) + net->average_request_time * net->request_count) /
+        (net->request_count);
+    bx_log_debug("[NET TIME] Immediate : %ld us With Average %ld us",
+                 stop - start, net->average_request_time);
+    curl_easy_getinfo(net->curl, CURLINFO_RESPONSE_CODE, &net_rdata->http_code);
+    curl_easy_reset(net->curl);
+    if (net_rdata->http_code != 401 || attempt == 1) {
+      curl_slist_free_all(header_list);
+      bx_mutex_unlock(&net->mutex);
+      free(auth_token);
+      free(url);
+      return net_rdata;
+    }
+    bx_log_info("Bexio returned 401, refreshing the access token");
+  }
 
-  free(auth_token);
-  free(url);
-
-  return net_rdata;
-
-/* fail handling */
 failUnlockFreeAndReturn:
-  curl_slist_free_all(header_list);
+  if (header_list != NULL) {
+    curl_slist_free_all(header_list);
+  }
   curl_easy_reset(net->curl);
   bx_mutex_unlock(&net->mutex);
   if (net_rdata->data) {
