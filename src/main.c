@@ -731,6 +731,12 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
+  mysql_library_init(argc, argv, NULL);
+  if (!bx_conf_load_database(conf)) {
+    fprintf(stderr, "Database configuration was not loaded; keeping the file "
+                    "values\n");
+  }
+
   if (do_login) {
     BXOAuth *oauth = NULL;
     BXOauthStatus st = BX_OAUTH_FAILED;
@@ -738,12 +744,13 @@ int main(int argc, char **argv) {
                      bx_conf_get_int(conf, "log-level"))) {
       fprintf(stderr, "Could not open the log file\n");
     }
-    oauth = bx_oauth_init(conf, config_path);
+    oauth = bx_oauth_init(conf);
     if (oauth != NULL) {
       st = bx_oauth_login(oauth);
       bx_oauth_destroy(&oauth);
     }
     bx_conf_destroy(&conf);
+    mysql_library_end();
     return st == BX_OAUTH_OK ? EXIT_SUCCESS : EXIT_FAILURE;
   }
 
@@ -752,7 +759,7 @@ int main(int argc, char **argv) {
 
   int pid_file_fd = -1;
   if (bx_conf_get_int(conf, "no-deamon") == 0) {
-    if (deamon(bx_conf_get_int(conf, "fork-once")) != 0) {
+    if (deamon(bx_conf_get_int(conf, "fork-single")) != 0) {
       bx_log_write("Error going deamon");
       bx_conf_destroy(&conf);
       bx_log_close();
@@ -799,8 +806,6 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  mysql_library_init(argc, argv, NULL);
-
   bx_conf_release(conf, "log-file");
   if(!bx_utils_init()) {
     printf("Failed setup bx_utils_init\n");
@@ -811,7 +816,7 @@ int main(int argc, char **argv) {
   pthread_t log_thread;
   pthread_create(&log_thread, NULL, bx_log_out_thread, (void *)&app);
 
-  BXNet *net = bx_net_init(conf, config_path);
+  BXNet *net = bx_net_init(conf);
   if (net == NULL) {
     bx_log_error("Net configuration failed");
     usleep(100000);

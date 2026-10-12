@@ -12,10 +12,10 @@ typedef enum e_BXOauthStatus {
   BX_OAUTH_FAILED
 } BXOauthStatus;
 
-BXOAuth *bx_oauth_init(BXConf *conf, const char *config_path);
+BXOAuth *bx_oauth_init(BXConf *conf);
 void bx_oauth_destroy(BXOAuth **oauth);
 
-/* Load the token file and refresh when the access token is due. */
+/* Load tokens from _configuration and refresh when the access token is due. */
 BXOauthStatus bx_oauth_startup(BXOAuth *oauth);
 
 /* Interactive authorization-code login. Prints the URL and waits. */

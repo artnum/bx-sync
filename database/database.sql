@@ -1,3 +1,15 @@
+-- ** Process configuration. The MySQL connection stays in the JSON file. **
+CREATE TABLE IF NOT EXISTS _configuration (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    name VARCHAR(191) NOT NULL,
+    type VARCHAR(32) NOT NULL,
+    ival INTEGER NULL,
+    cval TEXT NULL,
+    bval BLOB NULL,
+    fval DOUBLE NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY configuration_name (name)
+);
 
 -- ** Contact related table **
 CREATE TABLE IF NOT EXISTS contact_group (

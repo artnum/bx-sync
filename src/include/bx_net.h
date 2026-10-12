@@ -74,7 +74,7 @@ struct s_BXNetRequestList {
 };
 
 BXNetRData *bx_fetch(BXNet *net, const char *path, BXNetURLParams *params);
-BXNet *bx_net_init(BXConf *conf, const char *config_path);
+BXNet *bx_net_init(BXConf *conf);
 void bx_net_destroy(BXNet **net);
 pthread_t bx_net_loop(BXNetRequestList *list);
 

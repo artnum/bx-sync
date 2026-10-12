@@ -18,7 +18,7 @@
 
 #define BX_API_AUTH_HEADER "Authorization: Bearer "
 
-BXNet *bx_net_init(BXConf *conf, const char *config_path) {
+BXNet *bx_net_init(BXConf *conf) {
   BXNet *net = NULL;
 
   const char *e = bx_conf_get_string(conf, "bexio-endpoint");
@@ -49,7 +49,7 @@ BXNet *bx_net_init(BXConf *conf, const char *config_path) {
 
   bx_mutex_init(&net->mutex);
   bx_mutex_init(&net->mutex_limit);
-  net->oauth = bx_oauth_init(conf, config_path);
+  net->oauth = bx_oauth_init(conf);
   if (net->oauth == NULL) {
     bx_net_destroy(&net);
     return NULL;

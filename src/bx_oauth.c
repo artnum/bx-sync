@@ -4,8 +4,8 @@
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <jansson.h>
+#include <limits.h>
 #include <netinet/in.h>
 #include <oauth2/http.h>
 #include <oauth2/mem.h>
@@ -17,7 +17,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -41,7 +40,7 @@ struct s_BXOAuth {
   char *client_id;
   char *redirect_uri;
   char *scope;
-  char *token_path;
+  BXConf *conf;
   char *access_token;
   char *refresh_token;
   time_t expires_at;
@@ -84,148 +83,61 @@ static void oauth_fail(const char *msg) {
   fprintf(stderr, "%s\n", msg);
 }
 
-static char *default_token_path(const char *config_path) {
-  const char *slash = NULL;
-  const char *name = "/bxsync-oauth.json";
-  size_t dirlen = 0;
-  char *path = NULL;
-
-  if (config_path != NULL) {
-    slash = strrchr(config_path, '/');
-  }
-  if (slash == NULL) {
-    return dup_str("bxsync-oauth.json");
-  }
-  dirlen = (size_t)(slash - config_path);
-  path = malloc(dirlen + strlen(name) + 1);
-  if (path == NULL) {
-    return NULL;
-  }
-  memcpy(path, config_path, dirlen);
-  memcpy(path + dirlen, name, strlen(name) + 1);
-  return path;
-}
-
 static bool save_tokens(BXOAuth *oa) {
-  json_t *obj = NULL;
-  char *text = NULL;
-  char *tmpl = NULL;
-  int fd = -1;
-  size_t len = 0;
-  size_t off = 0;
-  bool ok = false;
+  int exp = 0;
 
-  if (oa->access_token == NULL || oa->refresh_token == NULL) {
+  if (oa->conf == NULL || oa->access_token == NULL || oa->refresh_token == NULL) {
     return false;
   }
-  obj = json_object();
-  if (obj == NULL) {
+  if (oa->expires_at < 0 || oa->expires_at > (time_t)INT_MAX) {
+    oauth_fail("OAuth expiry does not fit an integer configuration value");
     return false;
   }
-  json_object_set_new(obj, "access_token", json_string(oa->access_token));
-  json_object_set_new(obj, "refresh_token", json_string(oa->refresh_token));
-  json_object_set_new(obj, "expires_at", json_integer((json_int_t)oa->expires_at));
-  text = json_dumps(obj, JSON_INDENT(2));
-  json_decref(obj);
-  if (text == NULL) {
+  exp = (int)oa->expires_at;
+  /* Refresh token first: Keycloak invalidates the previous one on success. */
+  if (!bx_conf_put_database(oa->conf, "oauth-refresh-token", StringType,
+                            oa->refresh_token)) {
+    oauth_fail("Could not save the OAuth refresh token");
     return false;
   }
-
-  len = strlen(oa->token_path);
-  tmpl = malloc(len + 8);
-  if (tmpl == NULL) {
-    free(text);
+  if (!bx_conf_put_database(oa->conf, "oauth-access-token", StringType,
+                            oa->access_token)) {
+    oauth_fail("Could not save the OAuth access token");
     return false;
   }
-  memcpy(tmpl, oa->token_path, len);
-  memcpy(tmpl + len, ".XXXXXX", 8);
-  fd = mkstemp(tmpl);
-  if (fd < 0) {
-    oauth_fail("Could not create the OAuth token file");
-    free(tmpl);
-    free(text);
+  if (!bx_conf_put_database(oa->conf, "oauth-expires-at", IntegerType, &exp)) {
+    oauth_fail("Could not save the OAuth expiry");
     return false;
   }
-  if (fchmod(fd, 0600) != 0) {
-    oauth_fail("Could not set permissions on the OAuth token file");
-    close(fd);
-    unlink(tmpl);
-    free(tmpl);
-    free(text);
-    return false;
-  }
-  len = strlen(text);
-  while (off < len) {
-    ssize_t n = write(fd, text + off, len - off);
-    if (n < 0) {
-      if (errno == EINTR) {
-        continue;
-      }
-      break;
-    }
-    off += (size_t)n;
-  }
-  if (off == len) {
-    if (write(fd, "\n", 1) == 1 && fsync(fd) == 0) {
-      ok = true;
-    }
-  }
-  if (close(fd) != 0) {
-    ok = false;
-  }
-  if (!ok || rename(tmpl, oa->token_path) != 0) {
-    unlink(tmpl);
-    oauth_fail("Could not save the OAuth token file");
-    ok = false;
-  }
-  free(tmpl);
-  free(text);
-  return ok;
+  return true;
 }
 
 static BXOauthStatus load_tokens(BXOAuth *oa) {
-  json_error_t jerr;
-  json_t *root = NULL;
-  json_t *access_json = NULL;
-  json_t *refresh = NULL;
-  json_t *exp = NULL;
+  const char *access = NULL;
+  const char *refresh = NULL;
 
-  if (access(oa->token_path, R_OK) != 0) {
-    if (errno == ENOENT) {
-      return BX_OAUTH_NEED_LOGIN;
-    }
-    bx_log_error("Cannot read OAuth token file %s: %s", oa->token_path,
-                 strerror(errno));
-    fprintf(stderr, "Cannot read OAuth token file %s: %s\n", oa->token_path,
-            strerror(errno));
+  if (oa->conf == NULL) {
     return BX_OAUTH_FAILED;
   }
-  root = json_load_file(oa->token_path, 0, &jerr);
-  if (root == NULL || !json_is_object(root)) {
-    if (root != NULL) {
-      json_decref(root);
-    }
-    bx_log_error("OAuth token file %s is not valid JSON", oa->token_path);
-    fprintf(stderr, "OAuth token file %s is not valid JSON\n", oa->token_path);
-    return BX_OAUTH_FAILED;
-  }
-  access_json = json_object_get(root, "access_token");
-  refresh = json_object_get(root, "refresh_token");
-  exp = json_object_get(root, "expires_at");
-  if (json_is_string(access_json)) {
+  access = bx_conf_get_string(oa->conf, "oauth-access-token");
+  refresh = bx_conf_get_string(oa->conf, "oauth-refresh-token");
+  oa->expires_at = (time_t)bx_conf_get_int(oa->conf, "oauth-expires-at");
+  if (access != NULL && access[0] != '\0') {
     free(oa->access_token);
-    oa->access_token = dup_str(json_string_value(access_json));
+    oa->access_token = dup_str(access);
+    if (oa->access_token == NULL) {
+      oauth_fail("Out of memory while reading the OAuth access token");
+      return BX_OAUTH_FAILED;
+    }
   }
-  if (json_is_string(refresh)) {
+  if (refresh != NULL && refresh[0] != '\0') {
     free(oa->refresh_token);
-    oa->refresh_token = dup_str(json_string_value(refresh));
+    oa->refresh_token = dup_str(refresh);
+    if (oa->refresh_token == NULL) {
+      oauth_fail("Out of memory while reading the OAuth refresh token");
+      return BX_OAUTH_FAILED;
+    }
   }
-  if (json_is_integer(exp)) {
-    oa->expires_at = (time_t)json_integer_value(exp);
-  } else {
-    oa->expires_at = 0;
-  }
-  json_decref(root);
   if (oa->refresh_token == NULL || oa->refresh_token[0] == '\0') {
     return BX_OAUTH_NEED_LOGIN;
   }
@@ -595,7 +507,7 @@ static void print_login_help(const char *url, int port) {
   fflush(stdout);
 }
 
-BXOAuth *bx_oauth_init(BXConf *conf, const char *config_path) {
+BXOAuth *bx_oauth_init(BXConf *conf) {
   BXOAuth *oa = NULL;
   oauth2_nv_list_t *opts = NULL;
   char *err = NULL;
@@ -605,6 +517,7 @@ BXOAuth *bx_oauth_init(BXConf *conf, const char *config_path) {
   if (oa == NULL) {
     return NULL;
   }
+  oa->conf = conf;
   oa->log = oauth2_init(OAUTH2_LOG_ERROR, NULL);
   if (oa->log == NULL) {
     free(oa);
@@ -614,18 +527,14 @@ BXOAuth *bx_oauth_init(BXConf *conf, const char *config_path) {
   secret = conf_string(conf, "oauth-client-secret");
   oa->redirect_uri = conf_string(conf, "oauth-redirect-uri");
   oa->scope = conf_string(conf, "oauth-scope");
-  oa->token_path = conf_string(conf, "oauth-token-file");
   if (oa->redirect_uri == NULL) {
     oa->redirect_uri = dup_str(BX_OAUTH_REDIRECT_DEFAULT);
   }
   if (oa->scope == NULL) {
     oa->scope = dup_str(BX_OAUTH_DEFAULT_SCOPE);
   }
-  if (oa->token_path == NULL) {
-    oa->token_path = default_token_path(config_path);
-  }
   if (oa->client_id == NULL || secret == NULL || oa->redirect_uri == NULL ||
-      oa->scope == NULL || oa->token_path == NULL) {
+      oa->scope == NULL) {
     oauth_fail(
         "oauth-client-id and oauth-client-secret are required in the config");
     free(secret);
@@ -671,7 +580,6 @@ void bx_oauth_destroy(BXOAuth **oauth) {
   free(oa->client_id);
   free(oa->redirect_uri);
   free(oa->scope);
-  free(oa->token_path);
   if (oa->access_token != NULL) {
     memset(oa->access_token, 0, strlen(oa->access_token));
     free(oa->access_token);
@@ -697,8 +605,8 @@ BXOauthStatus bx_oauth_startup(BXOAuth *oauth) {
   st = load_tokens(oauth);
   if (st == BX_OAUTH_NEED_LOGIN) {
     snprintf(msg, sizeof(msg),
-             "No Bexio refresh token in %s. Run: bxsync --login <config>",
-             oauth->token_path);
+             "No Bexio refresh token in _configuration. Run: bxsync --login "
+             "<config>");
     oauth_fail(msg);
     return st;
   }
@@ -846,7 +754,7 @@ BXOauthStatus bx_oauth_login(BXOAuth *oa) {
     }
   }
   if (got && exchange_code(oa, code, verifier)) {
-    printf("Saved Bexio tokens to %s\n", oa->token_path);
+    printf("Saved Bexio tokens to _configuration\n");
     st = BX_OAUTH_OK;
   }
 done:
