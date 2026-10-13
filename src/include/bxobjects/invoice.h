@@ -51,7 +51,6 @@ struct s_BXObjectInvoice {
   BXUInteger payment_type_id;
   BXUInteger esr_id;
   BXUInteger qr_invoice_id;
-  BXUInteger tva_type;
   BXUInteger kb_item_status_id;
   BXUInteger mwst_type;
   BXUInteger mwst_is_net;
@@ -65,8 +64,6 @@ struct s_BXObjectInvoice {
   BXFloat total_remaining_payments;
   BXFloat total;
   BXFloat total_rounding_difference;
-
-  BXBool tva_is_net;
 
   BXString title;
   BXString reference;

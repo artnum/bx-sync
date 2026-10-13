@@ -103,7 +103,7 @@ void bx_object_invoice_dump(void *data) {
   _bx_dump_any("bank_account_id", &invoice->bank_account_id, 1);
   _bx_dump_any("currency_id", &invoice->currency_id, 1);
   _bx_dump_any("payment_type_id", &invoice->payment_type_id, 1);
-  _bx_dump_any("tva_id", &invoice->tva_type, 1);
+  _bx_dump_any("mwst_type", &invoice->mwst_type, 1);
   _bx_dump_any("kb_item_status_id", &invoice->kb_item_status_id, 1);
   _bx_dump_any("esr_id", &invoice->esr_id, 1);
   _bx_dump_any("qr_invoice_id", &invoice->qr_invoice_id, 1);
@@ -127,6 +127,21 @@ void bx_object_invoice_dump(void *data) {
   _bx_dump_any("reference", &invoice->reference, 1);
   _bx_dump_any("api_reference", &invoice->api_reference, 1);
   _bx_dump_any("viewed_by_client_at", &invoice->viewed_by_client_at, 1);
+}
+
+/* Bexio sends mwst_is_net as a JSON boolean. The uint reader leaves that at 0. */
+static BXUInteger invoice_read_mwst_is_net(json_t *object, XXH3_state_t *state) {
+  json_t *value = json_object_get(object, "mwst_is_net");
+  if (value != NULL && json_is_boolean(value)) {
+    BXUInteger net = {.type = BX_OBJECT_TYPE_UINTEGER,
+                      .isset = true,
+                      .value = json_is_true(value) ? 1 : 0};
+    if (state != NULL) {
+      XXH3_64bits_update(state, &net.value, sizeof(net.value));
+    }
+    return net;
+  }
+  return bx_object_get_json_uint(object, "mwst_is_net", state);
 }
 
 void *bx_object_invoice_decode(void *object) {
@@ -157,7 +172,6 @@ void *bx_object_invoice_decode(void *object) {
       bx_object_get_json_uint(jroot, "currency_id", hashState);
   invoice->payment_type_id =
       bx_object_get_json_uint(jroot, "payment_type_id", hashState);
-  invoice->tva_type = bx_object_get_json_uint(jroot, "mwst_type", hashState);
   invoice->kb_item_status_id =
       bx_object_get_json_uint(jroot, "kb_item_status_id", hashState);
   invoice->esr_id = bx_object_get_json_uint(jroot, "esr_id", hashState);
@@ -168,24 +182,9 @@ void *bx_object_invoice_decode(void *object) {
   invoice->mwst_type = bx_object_get_json_uint(jroot, "mwst_type", hashState);
   invoice->show_position_taxes =
       bx_object_get_json_uint(jroot, "show_position_taxes", hashState);
-  invoice->mwst_is_net =
-      bx_object_get_json_uint(jroot, "mwst_is_net", hashState);
+  invoice->mwst_is_net = invoice_read_mwst_is_net(jroot, hashState);
 
   /* double */
-  invoice->total_gross =
-      bx_object_get_json_double(jroot, "total_gross", hashState);
-  invoice->total_net = bx_object_get_json_double(jroot, "total_net", hashState);
-  invoice->total_taxes =
-      bx_object_get_json_double(jroot, "total_taxes", hashState);
-  invoice->total_received_payments =
-      bx_object_get_json_double(jroot, "total_received_payments", hashState);
-  invoice->total_credit_vouchers =
-      bx_object_get_json_double(jroot, "total_credit_vouchers", hashState);
-  invoice->total_remaining_payments =
-      bx_object_get_json_double(jroot, "total_remaining_payments", hashState);
-  invoice->total = bx_object_get_json_double(jroot, "total", hashState);
-  invoice->total_rounding_difference =
-      bx_object_get_json_double(jroot, "total_rounding_difference", hashState);
   invoice->total_gross =
       bx_object_get_json_double(jroot, "total_gross", hashState);
   invoice->total_net = bx_object_get_json_double(jroot, "total_net", hashState);
@@ -224,7 +223,6 @@ void *bx_object_invoice_decode(void *object) {
   invoice->title = bx_object_get_json_string(jroot, "title", hashState);
   invoice->network_link =
       bx_object_get_json_string(jroot, "network_link", hashState);
-  invoice->tva_is_net = bx_object_get_json_bool(jroot, "tva_is_net", hashState);
 
   invoice->checksum = XXH3_64bits_digest(hashState);
 

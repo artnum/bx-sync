@@ -12,6 +12,8 @@ they end up like Winbiz (which I am more and more confident that they will).
  - Continuous, you are backing up in near real time
  - Use MySQL to store in a relationnal fashion with foreign key and all
 
+`make test` checks invoice JSON decoding without MySQL or the network.
+
 ## Configuration
 
 `mysql-host`, `mysql-user`, `mysql-password` and `mysql-database` stay in the
@@ -111,6 +113,8 @@ des données sur votre serveur, ou machine, local n'est pas du luxe.
  - Sauvegarde en temps quasi-réel.
  - Stoque les données dans une base de données relationnelles en respectant la
    structure (MySQL), permet donc une meilleure intégration à votre ERP.
+
+`make test` vérifie le décodage JSON des factures, sans MySQL ni réseau.
 
 ## Configuration
 
