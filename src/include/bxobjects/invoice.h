@@ -4,6 +4,7 @@
 #include "../bx_ids_cache.h"
 #include "../bx_object.h"
 #include "../bx_object_value.h"
+#include "../bx_walk.h"
 #include "../bxill.h"
 #include "position.h"
 
@@ -91,5 +92,10 @@ void bx_object_invoice_dump(void *data);
  * @param[in] cache Cache object for this endpoint.
  */
 BXillError bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache);
+/* List pages only. Does not GET missed ids. */
+BXillError bx_invoice_walk_list(bXill *app, MYSQL *conn, Cache *cache,
+                                int64_t start_offset, bx_walk_page_fn on_page,
+                                void *page_ctx);
+BXillError bx_invoice_fetch_missed(bXill *app, MYSQL *conn, Cache *cache);
 
 #endif /* BX_OBJECT_INVOICE_H__ */

@@ -12,7 +12,7 @@ they end up like Winbiz (which I am more and more confident that they will).
  - Continuous, you are backing up in near real time
  - Use MySQL to store in a relationnal fashion with foreign key and all
 
-`make test` checks invoice JSON decoding without MySQL or the network.
+`make test` checks invoice JSON decoding and chain resume without MySQL or the network.
 
 ## Configuration
 
@@ -68,6 +68,34 @@ stop the service, run `--login` again, then start it. `oauth-scope` is
 optional; when omitted, the read scopes used by the sync are requested,
 including `offline_access`.
 
+## Resume
+
+Contacts, projects, then invoices run in that order. The position is kept
+in `_configuration`, so a restart continues at the next page instead of
+listing every contact again.
+
+| name | meaning |
+| --- | --- |
+| `sync-chain-step` | `contact`, `project`, or `invoice` |
+| `sync-chain-offset` | next list offset to request (`0` is the first page) |
+| `sync-chain-cycle` | contact archive pass: `0` active, `1` archived. On invoices, `1` means the list finished and missed ids are not loaded yet. Other steps store `0` |
+
+These names are runtime progress, not settings. A `_configuration` row
+overrides the JSON file, so do not put them in the config. No migration:
+the table already exists (created at startup if it is missing).
+
+After each page whose rows all synced, the offset advances by the page
+size (500). A failed page does not move it. When invoices finish, the
+state returns to contact offset 0.
+
+A step resumed in the middle is not pruned. Rows from pages synced before
+the restart were not marked seen in this process, and prune would delete
+them. They are pruned on the next walk of that step that starts at offset
+0. A resumed invoice list also skips `invoice_fetch_missed`: that GET-by-id
+would request every cached invoice the skipped pages did not show. A list
+that starts at offset 0 still fetches missed ids, as before. Paths, limits,
+and sleeps are unchanged. No migration is required.
+
 ## Todo
  
  - Add proxy support : you can request like if it is Bexio, goes to local
@@ -114,7 +142,7 @@ des données sur votre serveur, ou machine, local n'est pas du luxe.
  - Stoque les données dans une base de données relationnelles en respectant la
    structure (MySQL), permet donc une meilleure intégration à votre ERP.
 
-`make test` vérifie le décodage JSON des factures, sans MySQL ni réseau.
+`make test` vérifie le décodage JSON des factures et la reprise de la chaîne, sans MySQL ni réseau.
 
 ## Configuration
 
@@ -166,6 +194,36 @@ renouveler. `--login` ne se lance pas via systemd. Si un
 renouvellement est refusé, arrêter le service, relancer `--login`, puis
 redémarrer. `oauth-scope` est optionnel ; sans cette clé, les scopes de
 lecture utilisés par la synchro sont demandés, y compris `offline_access`.
+
+## Reprise
+
+La chaîne contacts, puis projets, puis factures reprend là où elle s'est
+arrêtée. La position est dans `_configuration` : un redémarrage continue
+à la page suivante au lieu de relister tous les contacts.
+
+| nom | sens |
+| --- | --- |
+| `sync-chain-step` | `contact`, `project` ou `invoice` |
+| `sync-chain-offset` | prochain offset de liste (`0` = première page) |
+| `sync-chain-cycle` | passe d'archive des contacts : `0` actifs, `1` archivés. Pour les factures, `1` signifie que la liste est finie et que les ids manqués ne sont pas encore chargés. Les autres étapes stockent `0` |
+
+Ce ne sont pas des réglages. Une ligne de `_configuration` remplace le
+fichier JSON : ne pas y mettre ces noms. Aucune migration : la table
+existe déjà (créée au démarrage si besoin).
+
+Après chaque page dont toutes les lignes ont été synchronisées, l'offset
+avance de la taille de page (500). Une page en erreur ne le fait pas
+avancer. Quand les factures sont terminées, l'état revient à contact,
+offset 0.
+
+Une étape reprise au milieu n'est pas purgée. Les lignes des pages déjà
+faites avant l'arrêt n'ont pas été vues dans le cache de ce processus, et
+le prune les supprimerait. Elles le sont au prochain parcours de cette
+étape qui part de l'offset 0. Une liste de factures reprise saute aussi
+`invoice_fetch_missed` : ce GET par id demanderait chaque facture en cache
+que les pages sautées n'ont pas montrée. Une liste qui part de l'offset 0
+charge toujours les ids manqués, comme avant. Chemins, limites et pauses
+ne changent pas. Aucune migration n'est nécessaire.
 
 ## À faire
 

@@ -134,6 +134,24 @@ BXillError bx_walk_pages(bXill *app, MYSQL *conn, const char *path_fmt,
   return NoError;
 }
 
+BXillError bx_walk_pages_from(bXill *app, MYSQL *conn, const char *path_fmt,
+                              BXGeneric *extra, const struct timespec *page_sleep,
+                              bx_walk_sync_fn sync, void *ctx,
+                              int64_t start_offset, bx_walk_page_fn on_page,
+                              void *page_ctx) {
+  (void)app;
+  (void)conn;
+  (void)path_fmt;
+  (void)extra;
+  (void)page_sleep;
+  (void)sync;
+  (void)ctx;
+  (void)start_offset;
+  (void)on_page;
+  (void)page_ctx;
+  return NoError;
+}
+
 /* Same bytes the JSON readers mix into XXH3, and only when the field is set.
  * Order is the decode order. An extra pass over mwst_type, the totals, or
  * tva_is_net makes this differ from invoice->checksum. */

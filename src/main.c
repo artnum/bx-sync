@@ -1,3 +1,4 @@
+#include "include/bx_chain.h"
 #include "include/bx_conf.h"
 #include "include/bx_database.h"
 #include "include/bx_ids_cache.h"
@@ -391,8 +392,13 @@ void *contact_thread(void *arg) {
     bx_walker_cycle_mark(&cycle_ts, "contact");
     BXillError e = NoError;
     MYSQL *prev_conn = conn;
-    (void)((e = bx_contact_walk_items(app, conn, my_cache)) == NoError &&
-           (e = bx_prune_items(app, &contact_prune)) == NoError);
+    /* A resumed contact step did not see pages validated before this process.
+     * Prune would delete those rows. Skip it; the next full walk prunes. */
+    BXChainResult cr = bx_chain_sync_contact(app, conn, my_cache);
+    e = cr.error;
+    if (e == NoError && cr.allow_prune) {
+      e = bx_prune_items(app, &contact_prune);
+    }
     sync_order_advance(&contact_cycle);
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
@@ -481,8 +487,12 @@ void *project_thread(void *arg) {
     bx_walker_cycle_mark(&cycle_ts, "project");
     BXillError e = NoError;
     MYSQL *prev_conn = conn;
-    (void)((e = bx_project_walk_item(app, conn, my_cache)) == NoError &&
-           (e = bx_prune_items(app, &project_prune)) == NoError);
+    /* Same as contacts: do not prune a project step resumed mid-list. */
+    BXChainResult cr = bx_chain_sync_project(app, conn, my_cache);
+    e = cr.error;
+    if (e == NoError && cr.allow_prune) {
+      e = bx_prune_items(app, &project_prune);
+    }
     sync_order_advance(&project_cycle);
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
@@ -569,8 +579,13 @@ void *invoice_thread(void *arg) {
     bx_walker_cycle_mark(&cycle_ts, "invoice");
     BXillError e = NoError;
     MYSQL *prev_conn = conn;
-    (void)((e = bx_invoice_walk_items(app, conn, my_cache)) == NoError &&
-           (e = bx_prune_items(app, &invoice_prune)) == NoError);
+    /* A resumed invoice list skips fetch-by-id as well as prune: missed ids
+     * would GET every invoice from the pages this process did not see. */
+    BXChainResult cr = bx_chain_sync_invoice(app, conn, my_cache);
+    e = cr.error;
+    if (e == NoError && cr.allow_prune) {
+      e = bx_prune_items(app, &invoice_prune);
+    }
 
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
@@ -882,6 +897,10 @@ int main(int argc, char **argv) {
   }
 
   /* RUN CODE TO UPDATE DATABASE */
+  bx_chain_bind_default();
+  bx_chain_use_database(&app);
+  bx_chain_init();
+
   pthread_create(&threads[CONTACT_THREAD], NULL, contact_thread, (void *)&app);
   pthread_create(&threads[PROJECT_THREAD], NULL, project_thread, (void *)&app);
   pthread_create(&threads[INVOICE_THREAD], NULL, invoice_thread, (void *)&app);

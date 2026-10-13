@@ -17,17 +17,20 @@ static json_t *as_array(json_t *root) {
   return NULL;
 }
 
-BXillError bx_walk_pages(bXill *app, MYSQL *conn, const char *path_fmt,
-                         BXGeneric *extra, const struct timespec *page_sleep,
-                         bx_walk_sync_fn sync, void *ctx) {
+BXillError bx_walk_pages_from(bXill *app, MYSQL *conn, const char *path_fmt,
+                              BXGeneric *extra, const struct timespec *page_sleep,
+                              bx_walk_sync_fn sync, void *ctx,
+                              int64_t start_offset, bx_walk_page_fn on_page,
+                              void *page_ctx) {
   if (app == NULL || conn == NULL || path_fmt == NULL || sync == NULL) {
     return ErrorGeneric;
   }
 
   int use_page = strstr(path_fmt, "page=$") != NULL;
+  int64_t start = start_offset < 0 ? 0 : start_offset;
   BXInteger offset = {.type = BX_OBJECT_TYPE_INTEGER,
                       .isset = true,
-                      .value = use_page ? 1 : 0};
+                      .value = use_page ? (start > 0 ? start : 1) : start};
   const BXInteger limit = {
       .type = BX_OBJECT_TYPE_INTEGER, .isset = true, .value = BXILL_LIST_LIMIT};
   int paged = (strstr(path_fmt, "$") != NULL);
@@ -60,6 +63,13 @@ BXillError bx_walk_pages(bXill *app, MYSQL *conn, const char *path_fmt,
         return e;
       }
     }
+    if (arr_len > 0 && on_page != NULL) {
+      BXillError pe = on_page(page_ctx, offset.value);
+      if (pe != NoError) {
+        bx_net_request_free(request);
+        return pe;
+      }
+    }
     bx_net_request_free(request);
     if (!paged) {
       break;
@@ -74,4 +84,11 @@ BXillError bx_walk_pages(bXill *app, MYSQL *conn, const char *path_fmt,
     }
   } while (arr_len > 0);
   return NoError;
+}
+
+BXillError bx_walk_pages(bXill *app, MYSQL *conn, const char *path_fmt,
+                         BXGeneric *extra, const struct timespec *page_sleep,
+                         bx_walk_sync_fn sync, void *ctx) {
+  return bx_walk_pages_from(app, conn, path_fmt, extra, page_sleep, sync, ctx, 0,
+                            NULL, NULL);
 }

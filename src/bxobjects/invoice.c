@@ -512,12 +512,23 @@ static BXillError invoice_fetch_missed(bXill *app, MYSQL *conn, Cache *cache) {
   return NoError;
 }
 
-BXillError bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache) {
+BXillError bx_invoice_fetch_missed(bXill *app, MYSQL *conn, Cache *cache) {
+  return invoice_fetch_missed(app, conn, cache);
+}
+
+BXillError bx_invoice_walk_list(bXill *app, MYSQL *conn, Cache *cache,
+                                int64_t start_offset, bx_walk_page_fn on_page,
+                                void *page_ctx) {
   bx_log_debug("BX Walk Invoice Items");
-  BXillError e = bx_walk_pages(app, conn, WALK_INVOICE_PATH, NULL, NULL,
-                               invoice_page_item, cache);
+  return bx_walk_pages_from(app, conn, WALK_INVOICE_PATH, NULL, NULL,
+                            invoice_page_item, cache, start_offset, on_page,
+                            page_ctx);
+}
+
+BXillError bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache) {
+  BXillError e = bx_invoice_walk_list(app, conn, cache, 0, NULL, NULL);
   if (e != NoError) {
     return e;
   }
-  return invoice_fetch_missed(app, conn, cache);
+  return bx_invoice_fetch_missed(app, conn, cache);
 }

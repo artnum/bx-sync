@@ -315,8 +315,15 @@ static BXillError project_page_item(bXill *app, MYSQL *conn, json_t *item,
   return _bx_project_sync_item(app, conn, item, ctx);
 }
 
-BXillError bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
+BXillError bx_project_walk_item_from(bXill *app, MYSQL *conn, Cache *cache,
+                                     int64_t start_offset,
+                                     bx_walk_page_fn on_page, void *page_ctx) {
   bx_log_debug("BX Walk Project Items");
-  return bx_walk_pages(app, conn, WALK_PROJECT_PATH, NULL, NULL,
-                       project_page_item, cache);
+  return bx_walk_pages_from(app, conn, WALK_PROJECT_PATH, NULL, NULL,
+                            project_page_item, cache, start_offset, on_page,
+                            page_ctx);
+}
+
+BXillError bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache) {
+  return bx_project_walk_item_from(app, conn, cache, 0, NULL, NULL);
 }

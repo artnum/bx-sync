@@ -1,4 +1,7 @@
 -- ** Process configuration. The MySQL connection stays in the JSON file. **
+-- Runtime chain progress (not settings; do not put these names in the JSON
+-- file): sync-chain-step, sync-chain-offset, sync-chain-cycle.
+-- No extra migration: the rows live in this table.
 CREATE TABLE IF NOT EXISTS _configuration (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     name VARCHAR(191) NOT NULL,
