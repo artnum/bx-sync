@@ -470,15 +470,56 @@ BXillError bx_invoice_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
   return retVal;
 }
 
-#define WALK_INVOICE_PATH "2.0/kb_invoice?limit=$&offset=$"
+/* Pin id. A kb_item_status_id change rewrites updated_at; if the list is
+ * ordered by that, the row jumps toward offset 0 while later pages are still
+ * being read and the invoice falls out of the walk. */
+#define WALK_INVOICE_PATH "2.0/kb_invoice?limit=$&offset=$&order_by=id"
 
 static BXillError invoice_page_item(bXill *app, MYSQL *conn, json_t *item,
                                     void *ctx) {
   return _bx_invoice_sync_item(app, conn, item, ctx);
 }
 
+/* List paging can still skip a row that moved between two requests. Anything
+ * already cached and not seen in this walk is loaded by id before prune. */
+static BXillError invoice_fetch_missed(bXill *app, MYSQL *conn, Cache *cache) {
+  CacheIter iter;
+  cache_iter_init(cache, &iter);
+  uint64_t id = 0;
+  while (cache_iter_next_prunable_id(&iter, 1, &id)) {
+    BXUInteger item = {
+        .type = BX_OBJECT_TYPE_UINTEGER, .isset = true, .value = id};
+    BXNetRequest *request = bx_do_request(app->queue, NULL, GET_INVOICE_PATH,
+                                           (BXGeneric *)&item);
+    if (request == NULL || request->response == NULL) {
+      bx_net_request_free(request);
+      return ErrorNet;
+    }
+    if (request->response->http_code == 404) {
+      bx_net_request_free(request);
+      continue;
+    }
+    if (request->response->http_code != 200 || request->decoded == NULL) {
+      bx_net_request_free(request);
+      return ErrorNet;
+    }
+    bx_log_debug("Invoice %lu missed by list, fetching by id",
+                 (unsigned long)id);
+    BXillError e = _bx_invoice_sync_item(app, conn, request->decoded, cache);
+    bx_net_request_free(request);
+    if (e != NoError) {
+      return e;
+    }
+  }
+  return NoError;
+}
+
 BXillError bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache) {
   bx_log_debug("BX Walk Invoice Items");
-  return bx_walk_pages(app, conn, WALK_INVOICE_PATH, NULL, NULL,
-                       invoice_page_item, cache);
+  BXillError e = bx_walk_pages(app, conn, WALK_INVOICE_PATH, NULL, NULL,
+                               invoice_page_item, cache);
+  if (e != NoError) {
+    return e;
+  }
+  return invoice_fetch_missed(app, conn, cache);
 }
