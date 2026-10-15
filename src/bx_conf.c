@@ -5,11 +5,70 @@
 #include <jansson.h>
 #include <stdbool.h>
 #include <mysql/mysql.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <xxh3.h>
+
+/* Callers keep the pointer after the lock is released. A few calls in one
+ * expression (mysql connect uses four) must stay valid together. */
+#define BX_CONF_TLS_SLOTS 8
+
+typedef struct {
+  char *slot[BX_CONF_TLS_SLOTS];
+  int next;
+} BXConfTLS;
+
+static pthread_key_t conf_tls_key;
+static pthread_once_t conf_tls_once = PTHREAD_ONCE_INIT;
+
+static void conf_tls_free(void *p) {
+  BXConfTLS *tls = p;
+  int i = 0;
+
+  if (tls == NULL) {
+    return;
+  }
+  for (i = 0; i < BX_CONF_TLS_SLOTS; i++) {
+    free(tls->slot[i]);
+  }
+  free(tls);
+}
+
+static void conf_tls_init_key(void) {
+  pthread_key_create(&conf_tls_key, conf_tls_free);
+}
+
+static char *conf_tls_store(const char *s) {
+  BXConfTLS *tls = NULL;
+  char *copy = NULL;
+  size_t n = 0;
+
+  pthread_once(&conf_tls_once, conf_tls_init_key);
+  tls = pthread_getspecific(conf_tls_key);
+  if (tls == NULL) {
+    tls = calloc(1, sizeof(*tls));
+    if (tls == NULL) {
+      return NULL;
+    }
+    if (pthread_setspecific(conf_tls_key, tls) != 0) {
+      free(tls);
+      return NULL;
+    }
+  }
+  n = strlen(s);
+  copy = malloc(n + 1);
+  if (copy == NULL) {
+    return NULL;
+  }
+  memcpy(copy, s, n + 1);
+  free(tls->slot[tls->next]);
+  tls->slot[tls->next] = copy;
+  tls->next = (tls->next + 1) % BX_CONF_TLS_SLOTS;
+  return copy;
+}
 
 static const char BX_CONF_TABLE_SQL[] =
     "CREATE TABLE IF NOT EXISTS _configuration ("
@@ -98,11 +157,15 @@ BXConf *bx_conf_init() {
   }
 
   conf->head = NULL;
+  bx_mutex_init(&conf->mutex);
   return conf;
 }
 
 void bx_conf_dump(BXConf *conf) {
   assert(conf != NULL);
+  if (!bx_mutex_lock(&conf->mutex)) {
+    return;
+  }
 
   printf("=== BXCONF ===\n");
   BXConfValue *current = conf->head;
@@ -131,6 +194,7 @@ void bx_conf_dump(BXConf *conf) {
     printf("\n");
     current = current->next;
   }
+  bx_mutex_unlock(&conf->mutex);
 }
 
 void bx_conf_destroy(BXConf **conf) {
@@ -138,19 +202,24 @@ void bx_conf_destroy(BXConf **conf) {
   assert(*conf != NULL);
 
   BXConf *c = *conf;
-  BXConfValue *current = c->head;
-  while (current != NULL) {
-    BXConfValue *next = current->next;
+  if (bx_mutex_lock(&c->mutex)) {
+    BXConfValue *current = c->head;
+    while (current != NULL) {
+      BXConfValue *next = current->next;
 
-    if (current->s_value != NULL) {
-      free(current->s_value);
+      if (current->s_value != NULL) {
+        free(current->s_value);
+      }
+      if (current->b_value != NULL) {
+        free(current->b_value);
+      }
+      free(current);
+      current = next;
     }
-    if (current->b_value != NULL) {
-      free(current->b_value);
-    }
-    free(current);
-    current = next;
+    c->head = NULL;
+    bx_mutex_unlock(&c->mutex);
   }
+  bx_mutex_destroy(&c->mutex);
   free(c);
   *conf = NULL;
 }
@@ -166,9 +235,48 @@ static void clear_value(BXConfValue *v) {
 }
 
 static bool fill_value(BXConfValue *v, void *value, enum e_BXConfValueType type) {
+  char *new_s = NULL;
+  void *new_b = NULL;
+  size_t new_blen = 0;
   size_t slen = 0;
+  BXConfValue retired;
 
-  clear_value(v);
+  if (type == StringType) {
+    slen = strlen((char *)value);
+    new_s = calloc(slen + 1, sizeof(*new_s));
+    if (new_s == NULL) {
+      return false;
+    }
+    memcpy(new_s, (char *)value, slen);
+  } else if (type == BlobType) {
+    BXConfBlob *blob = value;
+    if (blob->data != NULL && blob->len > 0) {
+      new_b = malloc(blob->len);
+      if (new_b == NULL) {
+        return false;
+      }
+      memcpy(new_b, blob->data, blob->len);
+      new_blen = blob->len;
+    }
+  }
+
+  /* The new buffer is installed before the old one is freed. A failed
+   * alloc returned above and left the previous value in place. */
+  retired = *v;
+  v->i_value = 0;
+  v->f_value = 0.0;
+  v->b_len = 0;
+  if (type == StringType) {
+    v->s_value = new_s;
+  } else {
+    v->s_value = NULL;
+  }
+  if (type == BlobType) {
+    v->b_value = new_b;
+    v->b_len = new_blen;
+  } else {
+    v->b_value = NULL;
+  }
   v->type = type;
   switch (type) {
   case BoolType:
@@ -177,47 +285,29 @@ static bool fill_value(BXConfValue *v, void *value, enum e_BXConfValueType type)
   case IntegerType:
     v->i_value = *(int *)value;
     break;
-  case StringType:
-    slen = strlen((char *)value);
-    v->s_value = calloc(slen + 1, sizeof(*v->s_value));
-    if (v->s_value == NULL) {
-      return false;
-    }
-    memcpy(v->s_value, (char *)value, slen);
-    break;
   case FloatType:
     v->f_value = *(double *)value;
     break;
   case ByteType:
     v->i_value = *(unsigned char *)value;
     break;
-  case BlobType: {
-    BXConfBlob *blob = value;
-    if (blob->data == NULL || blob->len == 0) {
-      break;
-    }
-    v->b_value = malloc(blob->len);
-    if (v->b_value == NULL) {
-      return false;
-    }
-    memcpy(v->b_value, blob->data, blob->len);
-    v->b_len = blob->len;
+  case StringType:
+  case BlobType:
     break;
   }
-  }
+  clear_value(&retired);
   return true;
 }
 
-bool bx_conf_set(BXConf *conf, const char *key, void *value,
-                 enum e_BXConfValueType type) {
-  assert(conf != NULL);
-  assert(key != NULL);
-  assert(value != NULL);
+static bool bx_conf_set_unlocked(BXConf *conf, const char *key, void *value,
+                                 enum e_BXConfValueType type) {
   size_t slen = strlen(key);
-  assert(slen > 0);
+  BXConfValue *v = NULL;
+  bool existing = false;
 
-  BXConfValue *v = _bx_conf_get(conf, key);
-  bool existing = v != NULL;
+  assert(slen > 0);
+  v = _bx_conf_get(conf, key);
+  existing = v != NULL;
   if (!existing) {
     v = calloc(1, sizeof(*v));
     if (v == NULL) {
@@ -246,34 +336,98 @@ bool bx_conf_set(BXConf *conf, const char *key, void *value,
   return true;
 }
 
+bool bx_conf_set(BXConf *conf, const char *key, void *value,
+                 enum e_BXConfValueType type) {
+  bool ok = false;
+
+  assert(conf != NULL);
+  assert(key != NULL);
+  assert(value != NULL);
+  if (!bx_mutex_lock(&conf->mutex)) {
+    return false;
+  }
+  ok = bx_conf_set_unlocked(conf, key, value, type);
+  bx_mutex_unlock(&conf->mutex);
+  return ok;
+}
+
 void bx_conf_release(BXConf *conf, const char *key) { return; }
 
 const char *bx_conf_get_string(BXConf *conf, const char *key) {
+  BXConfValue *v = NULL;
+  const char *out = NULL;
+
   assert(conf != NULL);
   assert(key != NULL);
-
-  BXConfValue *v = NULL;
-  v = _bx_conf_get(conf, key);
-  if (v == NULL || v->type != StringType) {
+  if (!bx_mutex_lock(&conf->mutex)) {
     return NULL;
   }
-
-  return v->s_value;
+  v = _bx_conf_get(conf, key);
+  if (v != NULL && v->type == StringType && v->s_value != NULL) {
+    out = conf_tls_store(v->s_value);
+  }
+  bx_mutex_unlock(&conf->mutex);
+  return out;
 }
 
 int bx_conf_get_int(BXConf *conf, const char *key) {
+  BXConfValue *v = NULL;
+  int out = 0;
+
   assert(conf != NULL);
   assert(key != NULL);
+  if (!bx_mutex_lock(&conf->mutex)) {
+    return 0;
+  }
+  v = _bx_conf_get(conf, key);
+  if (v != NULL && (v->type == IntegerType || v->type == BoolType)) {
+    out = v->i_value;
+  }
+  bx_mutex_unlock(&conf->mutex);
+  return out;
+}
 
+bool bx_conf_has(BXConf *conf, const char *key) {
+  bool found = false;
+
+  assert(conf != NULL);
+  assert(key != NULL);
+  if (!bx_mutex_lock(&conf->mutex)) {
+    return false;
+  }
+  found = _bx_conf_get(conf, key) != NULL;
+  bx_mutex_unlock(&conf->mutex);
+  return found;
+}
+
+int bx_conf_read_string(BXConf *conf, const char *key, char *buf,
+                        size_t buflen) {
   BXConfValue *v = NULL;
+  size_t n = 0;
+  int rc = -1;
+
+  assert(conf != NULL);
+  assert(key != NULL);
+  if (!bx_mutex_lock(&conf->mutex)) {
+    return -1;
+  }
   v = _bx_conf_get(conf, key);
   if (v == NULL) {
-    return 0;
+    rc = 0;
+  } else if (v->type != StringType || v->s_value == NULL || buf == NULL ||
+             buflen == 0) {
+    rc = -1;
+  } else {
+    n = strlen(v->s_value);
+    if (n + 1 > buflen) {
+      rc = -1;
+    } else {
+      memcpy(buf, v->s_value, n + 1);
+      rc = 1;
+    }
   }
-  if (v->type != IntegerType && v->type != BoolType) {
-    return 0;
-  }
-  return v->i_value;
+  bx_mutex_unlock(&conf->mutex);
+  return rc;
 }
 
 static bool type_is(const char *type, const char *a, const char *b) {

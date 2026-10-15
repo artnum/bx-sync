@@ -343,8 +343,8 @@ static void test_decode(void) {
   CHECK(cur.offset == 1000);
 
   bx_chain_decode("nope", "contact", 500, 1, &cur);
-  CHECK(cur.phase == BX_CHAIN_CONTACT_ARCHIVED);
-  CHECK(cur.offset == 500);
+  CHECK(cur.phase == BX_CHAIN_CONTACT_ACTIVE);
+  CHECK(cur.offset == 0);
 
   bx_chain_decode(NULL, "project", 250, 1, &cur);
   CHECK(cur.phase == BX_CHAIN_PROJECT);

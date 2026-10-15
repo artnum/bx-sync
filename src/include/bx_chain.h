@@ -49,7 +49,8 @@ BXChainResult bx_chain_sync(bXill *app, MYSQL *conn, Cache *contacts,
                             Cache *projects, Cache *invoices);
 
 const char *bx_chain_phase_name(BXChainPhase phase);
-/* sync_chain wins when it parses. legacy_step NULL skips the old rows. */
+/* Non-NULL sync_chain is the row, even when it does not parse. Legacy is
+ * used only when sync_chain is NULL. legacy_step NULL skips the old rows. */
 void bx_chain_decode(const char *sync_chain, const char *legacy_step,
                      int legacy_offset, int legacy_pass, BXChainCursor *out);
 
