@@ -25,40 +25,47 @@ run: clean all
 $(NAME): $(OBJFILES)
 	$(CC) $^ -o $(NAME) $(LIBS)
 
-build/%.o: src/%.c
+build:
+	mkdir -p build
+
+build/%.o: src/%.c | build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/%.o: src/*/%.c
+build/%.o: src/*/%.c | build
 	$(CC) $(CFLAGS) -c $< -o $@
 
 
 TEST_BIN=build/test_invoice_decode
 TEST_CHAIN=build/test_sync_chain
+TEST_RESUME=build/test_chain_resume
 TEST_LIBS=`pkg-config --libs jansson libxxhash` -lpthread
 TEST_OBJ=$(filter-out build/main.o,$(OBJFILES))
 
 .PHONY: test
-test: $(TEST_BIN) $(TEST_CHAIN) build/test_oauth_decide
+test: $(TEST_BIN) $(TEST_CHAIN) build/test_oauth_decide $(TEST_RESUME)
 	./$(TEST_BIN)
 	./$(TEST_CHAIN)
 	./build/test_oauth_decide
+	./$(TEST_RESUME)
 
 $(TEST_BIN): tests/test_invoice_decode.c src/bxobjects/invoice.c src/bx_object.c \
-		src/include/bxobjects/invoice.h
-	mkdir -p build
+		src/include/bxobjects/invoice.h | build
 	$(CC) $(CFLAGS) -o $@ tests/test_invoice_decode.c src/bxobjects/invoice.c \
 		src/bx_object.c $(TEST_LIBS)
 
 $(TEST_CHAIN): tests/test_sync_chain.c src/bx_chain.c src/bx_walk.c \
-		src/include/bx_chain.h src/include/bx_walk.h
-	mkdir -p build
+		src/include/bx_chain.h src/include/bx_walk.h | build
 	$(CC) $(CFLAGS) -o $@ tests/test_sync_chain.c src/bx_chain.c src/bx_walk.c \
 		$(TEST_LIBS)
 
-build/test_oauth_decide: test/oauth_decide.c $(TEST_OBJ)
-	mkdir -p build
+build/test_oauth_decide: test/oauth_decide.c $(TEST_OBJ) | build
 	$(CC) $(CFLAGS) -Isrc test/oauth_decide.c $(TEST_OBJ) -o $@ $(LIBS)
 
+$(TEST_RESUME): tests/test_chain_resume.c src/bx_chain.c src/bx_chain_db.c \
+		src/bx_conf.c src/include/bx_chain.h src/include/bx_conf.h | build
+	$(CC) $(CFLAGS) -o $@ tests/test_chain_resume.c src/bx_chain.c \
+		src/bx_chain_db.c src/bx_conf.c $(LIBS)
+
 clean:
-	$(RM) $(wildcard $(OBJFILES) $(NAME) $(TEST_BIN) $(TEST_CHAIN) \
-		build/test_oauth_decide)
+	$(RM) -f $(OBJFILES) $(NAME) $(TEST_BIN) $(TEST_CHAIN) \
+		$(TEST_RESUME) build/test_oauth_decide

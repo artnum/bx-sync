@@ -134,7 +134,12 @@ void bx_chain_decode(const char *sync_chain, const char *legacy_step,
   }
   out->phase = BX_CHAIN_CONTACT_ACTIVE;
   out->offset = 0;
-  if (parse_stored(sync_chain, out)) {
+  /* A present row must not fall through to the old keys, even if unreadable. */
+  if (sync_chain != NULL) {
+    if (!parse_stored(sync_chain, out)) {
+      out->phase = BX_CHAIN_CONTACT_ACTIVE;
+      out->offset = 0;
+    }
     return;
   }
   if (!parse_legacy(legacy_step, legacy_offset, legacy_pass, out)) {

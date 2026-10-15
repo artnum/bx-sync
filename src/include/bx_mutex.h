@@ -37,6 +37,11 @@ static inline void bx_mutex_init(BXMutex *mutex) {
   assert(mutex != NULL);
   atomic_store(mutex, false);
 }
+
+static inline void bx_mutex_destroy(BXMutex *mutex) {
+  assert(mutex != NULL);
+  atomic_store(mutex, false);
+}
 #else
 #include <pthread.h>
 
@@ -52,6 +57,10 @@ static inline void bx_mutex_unlock(BXMutex *mutex) {
 
 static inline void bx_mutex_init(BXMutex *mutex) {
   pthread_mutex_init(mutex, NULL);
+}
+
+static inline void bx_mutex_destroy(BXMutex *mutex) {
+  pthread_mutex_destroy(mutex);
 }
 
 #endif /* MUTEX_USE_ATOMIC */

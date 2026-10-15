@@ -36,6 +36,7 @@ struct s_BXConfValue {
 
 struct s_BXConf {
   BXConfValue *head;
+  BXMutex mutex;
 };
 
 BXConf *bx_conf_init();
@@ -46,6 +47,10 @@ bool bx_conf_set(BXConf *conf, const char *key, void *value,
 void bx_conf_release(BXConf *conf, const char *key);
 const char *bx_conf_get_string(BXConf *conf, const char *key);
 int bx_conf_get_int(BXConf *conf, const char *key);
+bool bx_conf_has(BXConf *conf, const char *key);
+/* 1 copied, 0 absent, -1 present but not a usable string. */
+int bx_conf_read_string(BXConf *conf, const char *key, char *buf,
+                        size_t buflen);
 bool bx_conf_loadfile(BXConf *conf, const char *filepath);
 /* Overlay _configuration. mysql-* names stay as loaded from the file. */
 bool bx_conf_load_database(BXConf *conf);

@@ -88,6 +88,8 @@ This is runtime progress, not a setting. A `_configuration` row overrides
 the JSON file, so do not put `sync-chain` in the config. Rows named
 `sync-chain-step`, `sync-chain-offset`, and `sync-chain-cycle` are read
 only when `sync-chain` is absent, then the next save writes `sync-chain`.
+Once `sync-chain` is set, those three older keys are ignored and can be
+deleted.
 No migration: the table already exists (created at startup if it is missing).
 
 After each page whose rows all synced, the offset becomes the next request.
@@ -222,6 +224,8 @@ Ce n'est pas un réglage. Une ligne de `_configuration` remplace le fichier
 JSON : ne pas y mettre `sync-chain`. Les lignes `sync-chain-step`,
 `sync-chain-offset` et `sync-chain-cycle` sont lues seulement si
 `sync-chain` est absent ; l'enregistrement suivant écrit `sync-chain`.
+Une fois `sync-chain` présent, ces trois anciennes clés sont ignorées et
+peuvent être supprimées.
 Aucune migration : la table existe déjà (créée au démarrage si besoin).
 
 Après chaque page dont toutes les lignes ont été synchronisées, l'offset
