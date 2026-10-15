@@ -70,31 +70,32 @@ including `offline_access`.
 
 ## Resume
 
-Contacts, projects, then invoices run in that order. The position is kept
-in `_configuration`, so a restart continues at the next page instead of
-listing every contact again.
+One thread runs active contacts, archived contacts, projects, the invoice
+list, then missed invoice ids. The position is one `_configuration` value,
+`sync-chain`, so a restart continues at the next page instead of listing
+every contact again. The value is `phase:offset`, for example
+`invoice-list:500`. Phases are `contact-active`, `contact-archived`,
+`project`, `invoice-list`, and `invoice-missed`. Offset `0` is the first
+page. Missed-ids keep offset `0`.
 
-| name | meaning |
-| --- | --- |
-| `sync-chain-step` | `contact`, `project`, or `invoice` |
-| `sync-chain-offset` | next list offset to request (`0` is the first page) |
-| `sync-chain-cycle` | contact archive pass: `0` active, `1` archived. On invoices, `1` means the list finished and missed ids are not loaded yet. Other steps store `0` |
+This is runtime progress, not a setting. A `_configuration` row overrides
+the JSON file, so do not put `sync-chain` in the config. Rows named
+`sync-chain-step`, `sync-chain-offset`, and `sync-chain-cycle` are read
+only when `sync-chain` is absent, then the next save writes `sync-chain`.
+No migration: the table already exists (created at startup if it is missing).
 
-These names are runtime progress, not settings. A `_configuration` row
-overrides the JSON file, so do not put them in the config. No migration:
-the table already exists (created at startup if it is missing).
+After each page whose rows all synced, the offset becomes the next request.
+A failed page does not move it. When missed invoice ids finish, the state
+returns to `contact-active:0`. The thread sleeps 250 ms after archived
+contacts, after projects, and after invoices.
 
-After each page whose rows all synced, the offset advances by the page
-size (500). A failed page does not move it. When invoices finish, the
-state returns to contact offset 0.
-
-A step resumed in the middle is not pruned. Rows from pages synced before
+A phase resumed in the middle is not pruned. Rows from pages synced before
 the restart were not marked seen in this process, and prune would delete
-them. They are pruned on the next walk of that step that starts at offset
-0. A resumed invoice list also skips `invoice_fetch_missed`: that GET-by-id
+them. They are pruned on the next walk of that resource that starts at
+offset 0. A resumed invoice list also skips missed-id fetches: that GET
 would request every cached invoice the skipped pages did not show. A list
-that starts at offset 0 still fetches missed ids, as before. Paths, limits,
-and sleeps are unchanged. No migration is required.
+that starts at offset 0 still fetches missed ids. Paths and limits are
+unchanged.
 
 ## Todo
  
@@ -197,33 +198,34 @@ lecture utilisés par la synchro sont demandés, y compris `offline_access`.
 
 ## Reprise
 
-La chaîne contacts, puis projets, puis factures reprend là où elle s'est
-arrêtée. La position est dans `_configuration` : un redémarrage continue
-à la page suivante au lieu de relister tous les contacts.
+Un thread enchaîne les contacts actifs, les contacts archivés, les
+projets, la liste des factures, puis les ids de facture manqués. La
+position est une valeur de `_configuration`, `sync-chain` : un redémarrage
+continue à la page suivante au lieu de relister tous les contacts. La
+valeur est `phase:offset`, par exemple `invoice-list:500`. Les phases sont
+`contact-active`, `contact-archived`, `project`, `invoice-list` et
+`invoice-missed`. L'offset `0` est la première page. Les ids manqués
+gardent l'offset `0`.
 
-| nom | sens |
-| --- | --- |
-| `sync-chain-step` | `contact`, `project` ou `invoice` |
-| `sync-chain-offset` | prochain offset de liste (`0` = première page) |
-| `sync-chain-cycle` | passe d'archive des contacts : `0` actifs, `1` archivés. Pour les factures, `1` signifie que la liste est finie et que les ids manqués ne sont pas encore chargés. Les autres étapes stockent `0` |
-
-Ce ne sont pas des réglages. Une ligne de `_configuration` remplace le
-fichier JSON : ne pas y mettre ces noms. Aucune migration : la table
-existe déjà (créée au démarrage si besoin).
+Ce n'est pas un réglage. Une ligne de `_configuration` remplace le fichier
+JSON : ne pas y mettre `sync-chain`. Les lignes `sync-chain-step`,
+`sync-chain-offset` et `sync-chain-cycle` sont lues seulement si
+`sync-chain` est absent ; l'enregistrement suivant écrit `sync-chain`.
+Aucune migration : la table existe déjà (créée au démarrage si besoin).
 
 Après chaque page dont toutes les lignes ont été synchronisées, l'offset
-avance de la taille de page (500). Une page en erreur ne le fait pas
-avancer. Quand les factures sont terminées, l'état revient à contact,
-offset 0.
+devient la prochaine requête. Une page en erreur ne le fait pas avancer.
+Quand les ids manqués sont chargés, l'état revient à `contact-active:0`.
+Le thread dort 250 ms après les contacts archivés, après les projets et
+après les factures.
 
-Une étape reprise au milieu n'est pas purgée. Les lignes des pages déjà
+Une phase reprise au milieu n'est pas purgée. Les lignes des pages déjà
 faites avant l'arrêt n'ont pas été vues dans le cache de ce processus, et
 le prune les supprimerait. Elles le sont au prochain parcours de cette
-étape qui part de l'offset 0. Une liste de factures reprise saute aussi
-`invoice_fetch_missed` : ce GET par id demanderait chaque facture en cache
-que les pages sautées n'ont pas montrée. Une liste qui part de l'offset 0
-charge toujours les ids manqués, comme avant. Chemins, limites et pauses
-ne changent pas. Aucune migration n'est nécessaire.
+ressource qui part de l'offset 0. Une liste de factures reprise saute aussi
+les ids manqués : ce GET demanderait chaque facture en cache que les pages
+sautées n'ont pas montrée. Une liste qui part de l'offset 0 charge toujours
+les ids manqués. Chemins et limites ne changent pas.
 
 ## À faire
 

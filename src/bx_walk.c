@@ -63,8 +63,16 @@ BXillError bx_walk_pages_from(bXill *app, MYSQL *conn, const char *path_fmt,
         return e;
       }
     }
+    int64_t next = offset.value;
+    if (paged) {
+      if (use_page) {
+        next += 1;
+      } else {
+        next += limit.value;
+      }
+    }
     if (arr_len > 0 && on_page != NULL) {
-      BXillError pe = on_page(page_ctx, offset.value);
+      BXillError pe = on_page(page_ctx, next);
       if (pe != NoError) {
         bx_net_request_free(request);
         return pe;
@@ -77,11 +85,7 @@ BXillError bx_walk_pages_from(bXill *app, MYSQL *conn, const char *path_fmt,
     if (page_sleep != NULL) {
       thrd_sleep(page_sleep, NULL);
     }
-    if (use_page) {
-      offset.value += 1;
-    } else {
-      offset.value += limit.value;
-    }
+    offset.value = next;
   } while (arr_len > 0);
   return NoError;
 }

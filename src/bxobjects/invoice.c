@@ -129,21 +129,6 @@ void bx_object_invoice_dump(void *data) {
   _bx_dump_any("viewed_by_client_at", &invoice->viewed_by_client_at, 1);
 }
 
-/* Bexio sends mwst_is_net as a JSON boolean. The uint reader leaves that at 0. */
-static BXUInteger invoice_read_mwst_is_net(json_t *object, XXH3_state_t *state) {
-  json_t *value = json_object_get(object, "mwst_is_net");
-  if (value != NULL && json_is_boolean(value)) {
-    BXUInteger net = {.type = BX_OBJECT_TYPE_UINTEGER,
-                      .isset = true,
-                      .value = json_is_true(value) ? 1 : 0};
-    if (state != NULL) {
-      XXH3_64bits_update(state, &net.value, sizeof(net.value));
-    }
-    return net;
-  }
-  return bx_object_get_json_uint(object, "mwst_is_net", state);
-}
-
 void *bx_object_invoice_decode(void *object) {
   json_t *jroot = (json_t *)object;
   BXObjectInvoice *invoice = NULL;
@@ -182,7 +167,8 @@ void *bx_object_invoice_decode(void *object) {
   invoice->mwst_type = bx_object_get_json_uint(jroot, "mwst_type", hashState);
   invoice->show_position_taxes =
       bx_object_get_json_uint(jroot, "show_position_taxes", hashState);
-  invoice->mwst_is_net = invoice_read_mwst_is_net(jroot, hashState);
+  invoice->mwst_is_net =
+      bx_object_get_json_uint(jroot, "mwst_is_net", hashState);
 
   /* double */
   invoice->total_gross =

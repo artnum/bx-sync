@@ -423,14 +423,13 @@ bool bx_conf_load_database(BXConf *conf) {
   return true;
 }
 
-bool bx_conf_put_database(BXConf *conf, const char *name,
-                          enum e_BXConfValueType type, void *value) {
+bool bx_conf_put_database_conn(BXConf *conf, MYSQL *conn, const char *name,
+                               enum e_BXConfValueType type, void *value) {
   static const char *sql =
       "INSERT INTO _configuration (name, type, ival, cval) "
       "VALUES (?, ?, ?, ?) "
       "ON DUPLICATE KEY UPDATE type = VALUES(type), ival = VALUES(ival), "
       "cval = VALUES(cval), bval = NULL, fval = NULL";
-  MYSQL *conn = NULL;
   MYSQL_STMT *stmt = NULL;
   MYSQL_BIND bind[4];
   const char *type_name = NULL;
@@ -446,6 +445,9 @@ bool bx_conf_put_database(BXConf *conf, const char *name,
   assert(conf != NULL);
   assert(name != NULL);
   assert(value != NULL);
+  if (conn == NULL) {
+    return false;
+  }
   if (strncmp(name, "mysql-", 6) == 0) {
     fprintf(stderr, "configuration: %s stays in the JSON file\n", name);
     return false;
@@ -471,10 +473,6 @@ bool bx_conf_put_database(BXConf *conf, const char *name,
     return false;
   }
 
-  conn = conf_connect(conf);
-  if (conn == NULL) {
-    return false;
-  }
   stmt = mysql_stmt_init(conn);
   if (stmt == NULL || mysql_stmt_prepare(stmt, sql, strlen(sql)) != 0) {
     fprintf(stderr, "configuration: %s\n",
@@ -482,7 +480,6 @@ bool bx_conf_put_database(BXConf *conf, const char *name,
     if (stmt != NULL) {
       mysql_stmt_close(stmt);
     }
-    mysql_close(conn);
     return false;
   }
   name_len = strlen(name);
@@ -516,6 +513,19 @@ bool bx_conf_put_database(BXConf *conf, const char *name,
     ok = true;
   }
   mysql_stmt_close(stmt);
+  return ok;
+}
+
+bool bx_conf_put_database(BXConf *conf, const char *name,
+                          enum e_BXConfValueType type, void *value) {
+  MYSQL *conn = NULL;
+  bool ok = false;
+
+  conn = conf_connect(conf);
+  if (conn == NULL) {
+    return false;
+  }
+  ok = bx_conf_put_database_conn(conf, conn, name, type, value);
   mysql_close(conn);
   return ok;
 }

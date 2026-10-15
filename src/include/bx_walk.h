@@ -11,9 +11,9 @@
 typedef BXillError (*bx_walk_sync_fn)(bXill *app, MYSQL *conn, json_t *item,
                                       void *ctx);
 
-/* Called after every row of a non-empty page synced. page_offset is the
- * offset (or page number) that was just requested. */
-typedef BXillError (*bx_walk_page_fn)(void *page_ctx, int64_t page_offset);
+/* Called after every row of a non-empty page synced. next_offset is the
+ * offset (or page number) the next request will use. */
+typedef BXillError (*bx_walk_page_fn)(void *page_ctx, int64_t next_offset);
 
 /**
  * Fetch path_fmt in pages and call sync for each item.
@@ -28,7 +28,8 @@ BXillError bx_walk_pages(bXill *app, MYSQL *conn, const char *path_fmt,
                          bx_walk_sync_fn sync, void *ctx);
 
 /* Same walk, starting at start_offset (0 matches bx_walk_pages). on_page, if
- * non-NULL, runs only after a non-empty page synced without error. */
+ * non-NULL, runs only after a non-empty page synced without error, and receives
+ * the next offset. */
 BXillError bx_walk_pages_from(bXill *app, MYSQL *conn, const char *path_fmt,
                               BXGeneric *extra, const struct timespec *page_sleep,
                               bx_walk_sync_fn sync, void *ctx,
