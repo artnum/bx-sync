@@ -2,10 +2,12 @@
 #include "include/bx_utils.h"
 
 #include <arpa/inet.h>
+#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <jansson.h>
 #include <limits.h>
+#include <mysql/mysql.h>
 #include <netinet/in.h>
 #include <oauth2/http.h>
 #include <oauth2/mem.h>
@@ -31,6 +33,9 @@
   "kb_expense_show kb_article_order_show accounting project_show "             \
   "article_show note_show task_show file bank_account_show"
 #define BX_OAUTH_SKEW_SEC 60
+#define BX_OAUTH_LOCK_NAME "bx-oauth-refresh"
+#define BX_OAUTH_LOCK_TIMEOUT_SEC 20
+#define BX_OAUTH_WRITE_ATTEMPTS 3
 #define BX_OAUTH_DEFAULT_TTL_SEC 300
 #define BX_OAUTH_LOGIN_TIMEOUT_MS (5 * 60 * 1000)
 
@@ -45,6 +50,9 @@ struct s_BXOAuth {
   char *refresh_token;
   time_t expires_at;
   bool refreshing;
+  MYSQL *lock_conn;
+  bool lock_held;
+  bool tokens_dirty;
 };
 
 static char *dup_str(const char *s) {
@@ -83,10 +91,157 @@ static void oauth_fail(const char *msg) {
   fprintf(stderr, "%s\n", msg);
 }
 
-static bool save_tokens(BXOAuth *oa) {
-  int exp = 0;
+static bool token_present(const char *s) {
+  return s != NULL && s[0] != '\0';
+}
 
-  if (oa->conf == NULL || oa->access_token == NULL || oa->refresh_token == NULL) {
+static void oauth_note(const char *msg) {
+  bx_log_info("%s", msg);
+}
+
+static bool access_usable(const char *access, time_t expires_at, time_t now) {
+  return token_present(access) && now + (time_t)BX_OAUTH_SKEW_SEC < expires_at;
+}
+
+static void free_result(MYSQL *conn) {
+  MYSQL_RES *result = NULL;
+
+  result = mysql_store_result(conn);
+  if (result != NULL) {
+    mysql_free_result(result);
+  }
+}
+
+static MYSQL *oauth_connect(BXOAuth *oa) {
+  const char *host = NULL;
+  const char *user = NULL;
+  const char *password = NULL;
+  const char *database = NULL;
+  MYSQL *conn = NULL;
+  unsigned int timeout = 5;
+
+  host = bx_conf_get_string(oa->conf, "mysql-host");
+  user = bx_conf_get_string(oa->conf, "mysql-user");
+  password = bx_conf_get_string(oa->conf, "mysql-password");
+  database = bx_conf_get_string(oa->conf, "mysql-database");
+  if (host == NULL || user == NULL || database == NULL) {
+    oauth_fail("mysql-host, mysql-user and mysql-database are required");
+    return NULL;
+  }
+  conn = mysql_init(NULL);
+  if (conn == NULL) {
+    oauth_fail("mysql_init failed");
+    return NULL;
+  }
+  mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
+  if (!mysql_real_connect(conn, host, user, password, database, 0, NULL, 0)) {
+    oauth_fail(mysql_error(conn));
+    mysql_close(conn);
+    return NULL;
+  }
+  mysql_set_character_set(conn, "utf8mb4");
+  return conn;
+}
+
+static void oauth_unlock(BXOAuth *oa) {
+  if (oa->lock_conn != NULL && oa->lock_held) {
+    mysql_query(oa->lock_conn, "SELECT RELEASE_LOCK('" BX_OAUTH_LOCK_NAME "')");
+    free_result(oa->lock_conn);
+    oa->lock_held = false;
+  }
+  if (oa->lock_conn != NULL) {
+    mysql_close(oa->lock_conn);
+    oa->lock_conn = NULL;
+  }
+}
+
+static bool oauth_lock(BXOAuth *oa) {
+  MYSQL_RES *result = NULL;
+  MYSQL_ROW row;
+  char sql[64];
+  bool got = false;
+
+  if (oa->lock_conn != NULL) {
+    oauth_unlock(oa);
+  }
+  oa->lock_conn = oauth_connect(oa);
+  if (oa->lock_conn == NULL) {
+    return false;
+  }
+  snprintf(sql, sizeof(sql), "SELECT GET_LOCK('%s', %d)", BX_OAUTH_LOCK_NAME,
+           BX_OAUTH_LOCK_TIMEOUT_SEC);
+  if (mysql_query(oa->lock_conn, sql) != 0) {
+    oauth_unlock(oa);
+    return false;
+  }
+  result = mysql_store_result(oa->lock_conn);
+  if (result == NULL) {
+    oauth_unlock(oa);
+    return false;
+  }
+  row = mysql_fetch_row(result);
+  got = row != NULL && row[0] != NULL && strcmp(row[0], "1") == 0;
+  mysql_free_result(result);
+  if (!got) {
+    oauth_unlock(oa);
+    return false;
+  }
+  oa->lock_held = true;
+  return true;
+}
+
+static bool oauth_upsert(MYSQL_STMT *stmt, const char *name,
+                         const char *type_name, int ival, my_bool ival_null,
+                         char *cval, my_bool cval_null) {
+  MYSQL_BIND bind[4];
+  unsigned long name_len = 0;
+  unsigned long type_len = 0;
+  unsigned long cval_len = 0;
+
+  name_len = strlen(name);
+  type_len = strlen(type_name);
+  if (cval == NULL) {
+    cval = (char *)"";
+    cval_len = 0;
+  } else {
+    cval_len = strlen(cval);
+  }
+  memset(bind, 0, sizeof(bind));
+  bind[0].buffer_type = MYSQL_TYPE_STRING;
+  bind[0].buffer = (char *)name;
+  bind[0].buffer_length = name_len;
+  bind[0].length = &name_len;
+  bind[1].buffer_type = MYSQL_TYPE_STRING;
+  bind[1].buffer = (char *)type_name;
+  bind[1].buffer_length = type_len;
+  bind[1].length = &type_len;
+  bind[2].buffer_type = MYSQL_TYPE_LONG;
+  bind[2].buffer = &ival;
+  bind[2].is_null = &ival_null;
+  bind[3].buffer_type = MYSQL_TYPE_STRING;
+  bind[3].buffer = cval;
+  bind[3].buffer_length = cval_len + 1;
+  bind[3].length = &cval_len;
+  bind[3].is_null = &cval_null;
+  if (mysql_stmt_bind_param(stmt, bind) != 0 || mysql_stmt_execute(stmt) != 0) {
+    return false;
+  }
+  return true;
+}
+
+static bool oauth_write_once(BXOAuth *oa) {
+  static const char *sql =
+      "INSERT INTO _configuration (name, type, ival, cval) "
+      "VALUES (?, ?, ?, ?) "
+      "ON DUPLICATE KEY UPDATE type = VALUES(type), ival = VALUES(ival), "
+      "cval = VALUES(cval), bval = NULL, fval = NULL";
+  MYSQL_STMT *stmt = NULL;
+  int exp = 0;
+  bool ok = false;
+
+  assert(oa->lock_conn != NULL);
+  assert(oa->lock_held);
+  if (oa->access_token == NULL || oa->refresh_token == NULL) {
     return false;
   }
   if (oa->expires_at < 0 || oa->expires_at > (time_t)INT_MAX) {
@@ -94,21 +249,152 @@ static bool save_tokens(BXOAuth *oa) {
     return false;
   }
   exp = (int)oa->expires_at;
-  /* Refresh token first: Keycloak invalidates the previous one on success. */
-  if (!bx_conf_put_database(oa->conf, "oauth-refresh-token", StringType,
-                            oa->refresh_token)) {
-    oauth_fail("Could not save the OAuth refresh token");
+  if (mysql_query(oa->lock_conn, "START TRANSACTION") != 0) {
     return false;
   }
-  if (!bx_conf_put_database(oa->conf, "oauth-access-token", StringType,
-                            oa->access_token)) {
-    oauth_fail("Could not save the OAuth access token");
+  stmt = mysql_stmt_init(oa->lock_conn);
+  if (stmt == NULL || mysql_stmt_prepare(stmt, sql, strlen(sql)) != 0) {
+    mysql_query(oa->lock_conn, "ROLLBACK");
+    if (stmt != NULL) {
+      mysql_stmt_close(stmt);
+    }
     return false;
   }
-  if (!bx_conf_put_database(oa->conf, "oauth-expires-at", IntegerType, &exp)) {
-    oauth_fail("Could not save the OAuth expiry");
+  /* Refresh token first. The transaction hides that order from other
+   * connections until COMMIT. */
+  if (oauth_upsert(stmt, "oauth-refresh-token", "string", 0, 1,
+                   oa->refresh_token, 0) &&
+      oauth_upsert(stmt, "oauth-access-token", "string", 0, 1, oa->access_token,
+                   0) &&
+      oauth_upsert(stmt, "oauth-expires-at", "integer", exp, 0, NULL, 1) &&
+      mysql_query(oa->lock_conn, "COMMIT") == 0) {
+    ok = true;
+  }
+  if (!ok) {
+    mysql_query(oa->lock_conn, "ROLLBACK");
+  }
+  mysql_stmt_close(stmt);
+  if (!ok) {
     return false;
   }
+  if (!bx_conf_set(oa->conf, "oauth-refresh-token", oa->refresh_token,
+                   StringType) ||
+      !bx_conf_set(oa->conf, "oauth-access-token", oa->access_token,
+                   StringType) ||
+      !bx_conf_set(oa->conf, "oauth-expires-at", &exp, IntegerType)) {
+    oauth_fail("Could not keep the OAuth tokens in memory");
+  }
+  return true;
+}
+
+static bool oauth_write_tokens(BXOAuth *oa) {
+  int attempt = 0;
+
+  for (attempt = 0; attempt < BX_OAUTH_WRITE_ATTEMPTS; attempt++) {
+    if (oauth_write_once(oa)) {
+      oa->tokens_dirty = false;
+      return true;
+    }
+  }
+  oa->tokens_dirty = true;
+  oauth_fail("Could not save the OAuth tokens");
+  return false;
+}
+
+static bool replace_token(char **slot, const char *value) {
+  char *copy = NULL;
+
+  if (token_present(value)) {
+    copy = dup_str(value);
+    if (copy == NULL) {
+      return false;
+    }
+  }
+  if (*slot != NULL) {
+    memset(*slot, 0, strlen(*slot));
+    free(*slot);
+  }
+  *slot = copy;
+  return true;
+}
+
+static bool oauth_read_tokens(BXOAuth *oa) {
+  static const char *sql =
+      "SELECT name, ival, cval FROM _configuration WHERE name IN "
+      "('oauth-access-token', 'oauth-refresh-token', 'oauth-expires-at')";
+  MYSQL_RES *result = NULL;
+  MYSQL_ROW row;
+  char *access = NULL;
+  char *refresh = NULL;
+  int expiry = 0;
+  bool saw_expiry = false;
+  bool ok = true;
+
+  assert(oa->lock_conn != NULL);
+  assert(oa->lock_held);
+  if (mysql_query(oa->lock_conn, sql) != 0) {
+    oauth_fail(mysql_error(oa->lock_conn));
+    return false;
+  }
+  result = mysql_store_result(oa->lock_conn);
+  if (result == NULL) {
+    oauth_fail(mysql_error(oa->lock_conn));
+    return false;
+  }
+  while ((row = mysql_fetch_row(result)) != NULL) {
+    if (row[0] == NULL) {
+      continue;
+    }
+    if (strcmp(row[0], "oauth-access-token") == 0) {
+      free(access);
+      access = row[2] != NULL ? dup_str(row[2]) : NULL;
+      if (row[2] != NULL && access == NULL) {
+        ok = false;
+      }
+    } else if (strcmp(row[0], "oauth-refresh-token") == 0) {
+      free(refresh);
+      refresh = row[2] != NULL ? dup_str(row[2]) : NULL;
+      if (row[2] != NULL && refresh == NULL) {
+        ok = false;
+      }
+    } else if (strcmp(row[0], "oauth-expires-at") == 0 && row[1] != NULL) {
+      expiry = atoi(row[1]);
+      saw_expiry = true;
+    }
+  }
+  mysql_free_result(result);
+  if (!ok) {
+    free(access);
+    free(refresh);
+    oauth_fail("Out of memory while reading the OAuth tokens");
+    return false;
+  }
+  if (token_present(access)) {
+    bx_conf_set(oa->conf, "oauth-access-token", access, StringType);
+  } else {
+    bx_conf_release(oa->conf, "oauth-access-token");
+  }
+  if (token_present(refresh)) {
+    bx_conf_set(oa->conf, "oauth-refresh-token", refresh, StringType);
+  } else {
+    bx_conf_release(oa->conf, "oauth-refresh-token");
+  }
+  if (saw_expiry) {
+    bx_conf_set(oa->conf, "oauth-expires-at", &expiry, IntegerType);
+  } else {
+    bx_conf_release(oa->conf, "oauth-expires-at");
+    expiry = 0;
+  }
+  if (!replace_token(&oa->access_token, access) ||
+      !replace_token(&oa->refresh_token, refresh)) {
+    free(access);
+    free(refresh);
+    oauth_fail("Out of memory while reading the OAuth tokens");
+    return false;
+  }
+  oa->expires_at = (time_t)expiry;
+  free(access);
+  free(refresh);
   return true;
 }
 
@@ -144,7 +430,13 @@ static BXOauthStatus load_tokens(BXOAuth *oa) {
   return BX_OAUTH_OK;
 }
 
-static bool post_token(BXOAuth *oa, oauth2_nv_list_t *form) {
+typedef enum e_PostResult {
+  POST_OK = 0,
+  POST_FAILED,
+  POST_UNSAVED
+} PostResult;
+
+static PostResult post_token(BXOAuth *oa, oauth2_nv_list_t *form) {
   oauth2_http_call_ctx_t *ctx = NULL;
   char *response = NULL;
   char *err = NULL;
@@ -160,7 +452,7 @@ static bool post_token(BXOAuth *oa, oauth2_nv_list_t *form) {
 
   ctx = oauth2_http_call_ctx_init(oa->log);
   if (ctx == NULL) {
-    return false;
+    return POST_FAILED;
   }
   oauth2_http_call_ctx_ssl_verify_set(oa->log, ctx, true);
   if (!oauth2_http_ctx_auth_add(oa->log, ctx,
@@ -168,7 +460,7 @@ static bool post_token(BXOAuth *oa, oauth2_nv_list_t *form) {
                                 form)) {
     oauth2_http_call_ctx_free(oa->log, ctx);
     oauth_fail("Could not set Bexio client authentication");
-    return false;
+    return POST_FAILED;
   }
   called = oauth2_http_post_form(oa->log, BX_OAUTH_TOKEN_URL, form, ctx,
                                  &response, &status);
@@ -178,7 +470,7 @@ static bool post_token(BXOAuth *oa, oauth2_nv_list_t *form) {
     if (response != NULL) {
       oauth2_mem_free(response);
     }
-    return false;
+    return POST_FAILED;
   }
   if (!oauth2_json_decode_object(oa->log, response, &json)) {
     oauth2_mem_free(response);
@@ -186,7 +478,7 @@ static bool post_token(BXOAuth *oa, oauth2_nv_list_t *form) {
              "Bexio token response was not a JSON object (HTTP %u)",
              (unsigned)status);
     oauth_fail(msg);
-    return false;
+    return POST_FAILED;
   }
   oauth2_mem_free(response);
 
@@ -204,10 +496,9 @@ static bool post_token(BXOAuth *oa, oauth2_nv_list_t *form) {
     json_decref(json);
     if (reauth && oa->refreshing) {
       oauth_fail("Refresh token was rejected. Run: bxsync --login <config>");
-      usleep(100000);
-      exit(EXIT_FAILURE);
+      oa->tokens_dirty = false;
     }
-    return false;
+    return POST_FAILED;
   }
 
   oauth2_json_string_get(oa->log, json, "access_token", &access, NULL);
@@ -222,7 +513,7 @@ static bool post_token(BXOAuth *oa, oauth2_nv_list_t *form) {
              "Bexio token response had no access_token (HTTP %u)",
              (unsigned)status);
     oauth_fail(msg);
-    return false;
+    return POST_FAILED;
   }
 
   free(oa->access_token);
@@ -233,38 +524,38 @@ static bool post_token(BXOAuth *oa, oauth2_nv_list_t *form) {
   }
   if (oa->access_token == NULL || oa->refresh_token == NULL) {
     oauth_fail("Out of memory while storing Bexio tokens");
-    return false;
+    return POST_FAILED;
   }
   if (expires_in <= 0) {
     expires_in = BX_OAUTH_DEFAULT_TTL_SEC;
   }
   oa->expires_at = time(NULL) + (time_t)expires_in;
-  if (!save_tokens(oa)) {
-    return false;
+  if (!oauth_write_tokens(oa)) {
+    return POST_UNSAVED;
   }
-  return true;
+  return POST_OK;
 }
 
-static bool refresh_tokens(BXOAuth *oa) {
+static PostResult refresh_tokens(BXOAuth *oa) {
   oauth2_nv_list_t *form = NULL;
-  bool ok = false;
+  PostResult posted = POST_FAILED;
 
   if (oa->refresh_token == NULL) {
-    return false;
+    return POST_FAILED;
   }
   form = oauth2_nv_list_init(oa->log);
   if (form == NULL) {
-    return false;
+    return POST_FAILED;
   }
   oauth2_nv_list_add(oa->log, form, "grant_type", "refresh_token");
   oauth2_nv_list_add(oa->log, form, "refresh_token", oa->refresh_token);
   oauth2_nv_list_add(oa->log, form, "client_id", oa->client_id);
   oauth2_nv_list_add(oa->log, form, "scope", oa->scope);
   oa->refreshing = true;
-  ok = post_token(oa, form);
+  posted = post_token(oa, form);
   oa->refreshing = false;
   oauth2_nv_list_free(oa->log, form);
-  return ok;
+  return posted;
 }
 
 static bool redirect_port(const char *uri, int *port) {
@@ -488,7 +779,16 @@ static bool exchange_code(BXOAuth *oa, const char *code, const char *verifier) {
   oauth2_nv_list_add(oa->log, form, "redirect_uri", oa->redirect_uri);
   oauth2_nv_list_add(oa->log, form, "client_id", oa->client_id);
   oauth2_nv_list_add(oa->log, form, "code_verifier", verifier);
-  ok = post_token(oa, form);
+  if (!oauth_lock(oa)) {
+    oauth_fail("OAuth refresh lock not acquired");
+    oauth2_nv_list_free(oa->log, form);
+    return false;
+  }
+  ok = post_token(oa, form) == POST_OK;
+  oauth_unlock(oa);
+  if (!ok) {
+    oa->tokens_dirty = false;
+  }
   oauth2_nv_list_free(oa->log, form);
   return ok;
 }
@@ -580,6 +880,7 @@ void bx_oauth_destroy(BXOAuth **oauth) {
   free(oa->client_id);
   free(oa->redirect_uri);
   free(oa->scope);
+  oauth_unlock(oa);
   if (oa->access_token != NULL) {
     memset(oa->access_token, 0, strlen(oa->access_token));
     free(oa->access_token);
@@ -593,6 +894,19 @@ void bx_oauth_destroy(BXOAuth **oauth) {
   }
   free(oa);
   *oauth = NULL;
+}
+
+bool bx_oauth_reload(BXOAuth *oauth) {
+  if (oauth == NULL || oauth->conf == NULL) {
+    return false;
+  }
+  if (oauth->tokens_dirty) {
+    return true;
+  }
+  if (!bx_conf_load_database(oauth->conf)) {
+    return false;
+  }
+  return load_tokens(oauth) == BX_OAUTH_OK;
 }
 
 BXOauthStatus bx_oauth_startup(BXOAuth *oauth) {
@@ -619,10 +933,6 @@ BXOauthStatus bx_oauth_startup(BXOAuth *oauth) {
   return BX_OAUTH_OK;
 }
 
-static bool token_present(const char *s) {
-  return s != NULL && s[0] != '\0';
-}
-
 BXOauthAction bx_oauth_decide(bool force, const char *rejected,
                               const char *access, const char *refresh,
                               time_t expires_at, time_t now) {
@@ -646,18 +956,78 @@ BXOauthAction bx_oauth_decide(bool force, const char *rejected,
 }
 
 bool bx_oauth_ensure(BXOAuth *oauth, bool force) {
+  char *rejected = NULL;
+  BXOauthAction action = BX_OAUTH_ACT_NEED_LOGIN;
+  PostResult posted = POST_FAILED;
+  bool ok = false;
+  time_t now = 0;
+
   if (oauth == NULL) {
     return false;
   }
-  if (!force && oauth->access_token != NULL &&
-      time(NULL) + BX_OAUTH_SKEW_SEC < oauth->expires_at) {
+  now = time(NULL);
+  if (!oauth->tokens_dirty && !force &&
+      access_usable(oauth->access_token, oauth->expires_at, now)) {
     return true;
   }
-  if (oauth->refresh_token == NULL) {
-    oauth_fail("No Bexio refresh token. Run: bxsync --login <config>");
+  rejected = token_present(oauth->access_token) ? dup_str(oauth->access_token)
+                                                : NULL;
+  if (token_present(oauth->access_token) && rejected == NULL) {
+    oauth_fail("Out of memory while refreshing the OAuth token");
     return false;
   }
-  return refresh_tokens(oauth);
+  if (!oauth_lock(oauth)) {
+    oauth_fail("OAuth refresh lock not acquired");
+    free(rejected);
+    return false;
+  }
+  if (oauth->tokens_dirty && !force &&
+      access_usable(oauth->access_token, oauth->expires_at, time(NULL))) {
+    oauth_write_tokens(oauth);
+    oauth_unlock(oauth);
+    free(rejected);
+    return true;
+  }
+  if (oauth->tokens_dirty) {
+    if (!token_present(oauth->refresh_token)) {
+      oauth_fail("No Bexio refresh token. Run: bxsync --login <config>");
+      oauth_unlock(oauth);
+      free(rejected);
+      return false;
+    }
+    posted = refresh_tokens(oauth);
+    ok = posted == POST_OK ||
+         (posted == POST_UNSAVED &&
+          access_usable(oauth->access_token, oauth->expires_at, time(NULL)));
+    oauth_unlock(oauth);
+    free(rejected);
+    return ok;
+  }
+  if (!oauth_read_tokens(oauth)) {
+    oauth_unlock(oauth);
+    free(rejected);
+    return false;
+  }
+  action = bx_oauth_decide(force, rejected, oauth->access_token,
+                           oauth->refresh_token, oauth->expires_at, time(NULL));
+  free(rejected);
+  rejected = NULL;
+  if (action == BX_OAUTH_ACT_USE) {
+    oauth_note("OAuth access token was refreshed by the other process");
+    oauth_unlock(oauth);
+    return true;
+  }
+  if (action == BX_OAUTH_ACT_NEED_LOGIN) {
+    oauth_fail("No Bexio refresh token. Run: bxsync --login <config>");
+    oauth_unlock(oauth);
+    return false;
+  }
+  posted = refresh_tokens(oauth);
+  ok = posted == POST_OK ||
+       (posted == POST_UNSAVED &&
+        access_usable(oauth->access_token, oauth->expires_at, time(NULL)));
+  oauth_unlock(oauth);
+  return ok;
 }
 
 const char *bx_oauth_access_token(const BXOAuth *oauth) {

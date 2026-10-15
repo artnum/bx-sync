@@ -32,6 +32,10 @@ void bx_oauth_destroy(BXOAuth **oauth);
 /* Load tokens from _configuration and refresh when the access token is due. */
 BXOauthStatus bx_oauth_startup(BXOAuth *oauth);
 
+/* Re-read _configuration, then the tokens, so a concurrent bxsync refresh wins.
+ * A process that still holds an uncommitted grant keeps that grant. */
+bool bx_oauth_reload(BXOAuth *oauth);
+
 /* Interactive authorization-code login. Prints the URL and waits. */
 BXOauthStatus bx_oauth_login(BXOAuth *oauth);
 

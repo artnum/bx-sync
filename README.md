@@ -37,7 +37,11 @@ INSERT INTO _configuration (name, type, fval)
 then the table, before logging, daemon setup and Bexio login. OAuth tokens
 live in the same table: `oauth-access-token`, `oauth-refresh-token` (`string`)
 and `oauth-expires-at` (`integer`). `--login` and each refresh write those
-rows.
+rows in one transaction. bx-sync and bx-proxy share them. A refresh takes
+the MariaDB named lock `bx-oauth-refresh` for up to 20 seconds, re-reads the
+rows, and posts only when the stored access token still needs replacing.
+The process that finds a token stored by the other one logs
+`OAuth access token was refreshed by the other process`.
 
 ## Authentication
 
@@ -63,8 +67,10 @@ ssh -L 8765:127.0.0.1:8765 user@the-server
 If the browser cannot reach the forwarded port, copy the full address-bar URL
 (it still contains `?code=...`) and paste it into the SSH session. Tokens are
 written to `_configuration`. After that, the daemon only refreshes them.
-`--login` is not a systemd command. If a refresh is rejected,
-stop the service, run `--login` again, then start it. `oauth-scope` is
+`--login` is not a systemd command. A rejected refresh is logged
+(`Refresh token was rejected. Run: bxsync --login <config>`) and the
+process keeps running. Run `--login` while the daemon is up. The daemon
+loads the new rows on its next refresh. `oauth-scope` is
 optional; when omitted, the read scopes used by the sync are requested,
 including `offline_access`.
 
@@ -190,10 +196,15 @@ ssh -L 8765:127.0.0.1:8765 user@le-serveur
 
 Si le navigateur ne joint pas le port transféré, copier l'URL complète de la
 barre d'adresse (elle contient `?code=...`) et la coller dans la session SSH.
-Les jetons sont écrits dans `_configuration`. Ensuite le démon ne fait que les
-renouveler. `--login` ne se lance pas via systemd. Si un
-renouvellement est refusé, arrêter le service, relancer `--login`, puis
-redémarrer. `oauth-scope` est optionnel ; sans cette clé, les scopes de
+Les jetons sont écrits dans `_configuration`. bx-sync et bx-proxy les
+partagent. Un renouvellement prend le verrou MariaDB `bx-oauth-refresh`
+(20 secondes), relit les lignes, et ne poste un nouveau jeton que si le
+jeton d'accès stocké doit encore être remplacé. `--login` ne se lance pas
+via systemd. Un renouvellement refusé est journalisé
+(`Refresh token was rejected. Run: bxsync --login <config>`) et le
+processus continue. Lancer `--login` pendant que le démon tourne. Il
+charge les nouvelles lignes à son prochain renouvellement. `oauth-scope`
+est optionnel ; sans cette clé, les scopes de
 lecture utilisés par la synchro sont demandés, y compris `offline_access`.
 
 ## Reprise
