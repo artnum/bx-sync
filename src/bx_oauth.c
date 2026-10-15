@@ -927,9 +927,8 @@ BXOauthStatus bx_oauth_startup(BXOAuth *oauth) {
   if (st != BX_OAUTH_OK) {
     return st;
   }
-  if (!bx_oauth_ensure(oauth, false)) {
-    return BX_OAUTH_FAILED;
-  }
+  /* Ensure already logged. A stored refresh token must not fail startup. */
+  (void)bx_oauth_ensure(oauth, false);
   return BX_OAUTH_OK;
 }
 
