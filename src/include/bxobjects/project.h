@@ -4,6 +4,7 @@
 #include "../bx_ids_cache.h"
 #include "../bx_object.h"
 #include "../bx_object_value.h"
+#include "../bx_walk.h"
 #include "../bxill.h"
 #include <stdbool.h>
 
@@ -32,6 +33,9 @@ struct s_BXObjectProject {
 };
 
 BXillError bx_project_walk_item(bXill *app, MYSQL *conn, Cache *cache);
+BXillError bx_project_walk_item_from(bXill *app, MYSQL *conn, Cache *cache,
+                                     int64_t start_offset,
+                                     bx_walk_page_fn on_page, void *page_ctx);
 BXillError bx_project_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
                                 Cache *cache);
 BXillError bx_project_is_in_database(MYSQL *conn, BXGeneric *item,

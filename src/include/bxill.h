@@ -25,9 +25,7 @@ enum e_ObjectState { Error = 0, NeedUpdate, NeedCreate, NeedNothing };
 typedef enum e_ObjectState ObjectState;
 
 enum e_ThreadList {
-  CONTACT_THREAD,
-  PROJECT_THREAD,
-  INVOICE_THREAD,
+  CHAIN_THREAD,
   CONTACT_SECTOR_THREAD,
   RANDOM_ITEM_THREAD,
   FILE_THREAD,

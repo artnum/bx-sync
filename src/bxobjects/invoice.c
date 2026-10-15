@@ -103,7 +103,7 @@ void bx_object_invoice_dump(void *data) {
   _bx_dump_any("bank_account_id", &invoice->bank_account_id, 1);
   _bx_dump_any("currency_id", &invoice->currency_id, 1);
   _bx_dump_any("payment_type_id", &invoice->payment_type_id, 1);
-  _bx_dump_any("tva_id", &invoice->tva_type, 1);
+  _bx_dump_any("mwst_type", &invoice->mwst_type, 1);
   _bx_dump_any("kb_item_status_id", &invoice->kb_item_status_id, 1);
   _bx_dump_any("esr_id", &invoice->esr_id, 1);
   _bx_dump_any("qr_invoice_id", &invoice->qr_invoice_id, 1);
@@ -157,7 +157,6 @@ void *bx_object_invoice_decode(void *object) {
       bx_object_get_json_uint(jroot, "currency_id", hashState);
   invoice->payment_type_id =
       bx_object_get_json_uint(jroot, "payment_type_id", hashState);
-  invoice->tva_type = bx_object_get_json_uint(jroot, "mwst_type", hashState);
   invoice->kb_item_status_id =
       bx_object_get_json_uint(jroot, "kb_item_status_id", hashState);
   invoice->esr_id = bx_object_get_json_uint(jroot, "esr_id", hashState);
@@ -172,20 +171,6 @@ void *bx_object_invoice_decode(void *object) {
       bx_object_get_json_uint(jroot, "mwst_is_net", hashState);
 
   /* double */
-  invoice->total_gross =
-      bx_object_get_json_double(jroot, "total_gross", hashState);
-  invoice->total_net = bx_object_get_json_double(jroot, "total_net", hashState);
-  invoice->total_taxes =
-      bx_object_get_json_double(jroot, "total_taxes", hashState);
-  invoice->total_received_payments =
-      bx_object_get_json_double(jroot, "total_received_payments", hashState);
-  invoice->total_credit_vouchers =
-      bx_object_get_json_double(jroot, "total_credit_vouchers", hashState);
-  invoice->total_remaining_payments =
-      bx_object_get_json_double(jroot, "total_remaining_payments", hashState);
-  invoice->total = bx_object_get_json_double(jroot, "total", hashState);
-  invoice->total_rounding_difference =
-      bx_object_get_json_double(jroot, "total_rounding_difference", hashState);
   invoice->total_gross =
       bx_object_get_json_double(jroot, "total_gross", hashState);
   invoice->total_net = bx_object_get_json_double(jroot, "total_net", hashState);
@@ -224,7 +209,6 @@ void *bx_object_invoice_decode(void *object) {
   invoice->title = bx_object_get_json_string(jroot, "title", hashState);
   invoice->network_link =
       bx_object_get_json_string(jroot, "network_link", hashState);
-  invoice->tva_is_net = bx_object_get_json_bool(jroot, "tva_is_net", hashState);
 
   invoice->checksum = XXH3_64bits_digest(hashState);
 
@@ -514,12 +498,23 @@ static BXillError invoice_fetch_missed(bXill *app, MYSQL *conn, Cache *cache) {
   return NoError;
 }
 
-BXillError bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache) {
+BXillError bx_invoice_fetch_missed(bXill *app, MYSQL *conn, Cache *cache) {
+  return invoice_fetch_missed(app, conn, cache);
+}
+
+BXillError bx_invoice_walk_list(bXill *app, MYSQL *conn, Cache *cache,
+                                int64_t start_offset, bx_walk_page_fn on_page,
+                                void *page_ctx) {
   bx_log_debug("BX Walk Invoice Items");
-  BXillError e = bx_walk_pages(app, conn, WALK_INVOICE_PATH, NULL, NULL,
-                               invoice_page_item, cache);
+  return bx_walk_pages_from(app, conn, WALK_INVOICE_PATH, NULL, NULL,
+                            invoice_page_item, cache, start_offset, on_page,
+                            page_ctx);
+}
+
+BXillError bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache) {
+  BXillError e = bx_invoice_walk_list(app, conn, cache, 0, NULL, NULL);
   if (e != NoError) {
     return e;
   }
-  return invoice_fetch_missed(app, conn, cache);
+  return bx_invoice_fetch_missed(app, conn, cache);
 }

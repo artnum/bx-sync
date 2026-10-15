@@ -2,6 +2,7 @@
 #define BX_CONF_H__
 
 #include "bx_mutex.h"
+#include <mysql/mysql.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -48,7 +49,10 @@ int bx_conf_get_int(BXConf *conf, const char *key);
 bool bx_conf_loadfile(BXConf *conf, const char *filepath);
 /* Overlay _configuration. mysql-* names stay as loaded from the file. */
 bool bx_conf_load_database(BXConf *conf);
-/* Insert or replace one row and update the in-memory value. */
+/* Insert or replace one row on an existing connection and update memory. */
+bool bx_conf_put_database_conn(BXConf *conf, MYSQL *conn, const char *name,
+                               enum e_BXConfValueType type, void *value);
+/* Same write, opening its own connection. */
 bool bx_conf_put_database(BXConf *conf, const char *name,
                           enum e_BXConfValueType type, void *value);
 

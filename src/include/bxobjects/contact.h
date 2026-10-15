@@ -2,6 +2,7 @@
 #define BX_OBJECT_CONTACT_H__
 
 #include "../bx_ids_cache.h"
+#include "../bx_walk.h"
 #include "../bx_object.h"
 #include "../bx_object_value.h"
 #include "../bxill.h"
@@ -56,6 +57,11 @@ void bx_object_contact_store(MYSQL *mysql, BXObjectContact *contact);
 BXillError bx_contact_sync_item(bXill *app, MYSQL *conn, BXGeneric *item,
                                 BXBool show_archived, Cache *c);
 BXillError bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c);
+/* One archive pass. archived selects show_archived. start_offset 0 is the
+ * first page. */
+BXillError bx_contact_walk_pass(bXill *app, MYSQL *conn, Cache *c, bool archived,
+                                int64_t start_offset, bx_walk_page_fn on_page,
+                                void *page_ctx);
 BXillError bx_contact_is_in_database(MYSQL *conn, BXGeneric *item,
                                      bool *present);
 #endif /* BX_OBJECT_CONTACT_H__ */

@@ -4,6 +4,7 @@
 #include "../bx_ids_cache.h"
 #include "../bx_object.h"
 #include "../bx_object_value.h"
+#include "../bx_walk.h"
 #include "../bxill.h"
 #include "position.h"
 
@@ -51,7 +52,6 @@ struct s_BXObjectInvoice {
   BXUInteger payment_type_id;
   BXUInteger esr_id;
   BXUInteger qr_invoice_id;
-  BXUInteger tva_type;
   BXUInteger kb_item_status_id;
   BXUInteger mwst_type;
   BXUInteger mwst_is_net;
@@ -65,8 +65,6 @@ struct s_BXObjectInvoice {
   BXFloat total_remaining_payments;
   BXFloat total;
   BXFloat total_rounding_difference;
-
-  BXBool tva_is_net;
 
   BXString title;
   BXString reference;
@@ -94,5 +92,10 @@ void bx_object_invoice_dump(void *data);
  * @param[in] cache Cache object for this endpoint.
  */
 BXillError bx_invoice_walk_items(bXill *app, MYSQL *conn, Cache *cache);
+/* List pages only. Does not GET missed ids. */
+BXillError bx_invoice_walk_list(bXill *app, MYSQL *conn, Cache *cache,
+                                int64_t start_offset, bx_walk_page_fn on_page,
+                                void *page_ctx);
+BXillError bx_invoice_fetch_missed(bXill *app, MYSQL *conn, Cache *cache);
 
 #endif /* BX_OBJECT_INVOICE_H__ */

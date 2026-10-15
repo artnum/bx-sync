@@ -12,6 +12,8 @@ they end up like Winbiz (which I am more and more confident that they will).
  - Continuous, you are backing up in near real time
  - Use MySQL to store in a relationnal fashion with foreign key and all
 
+`make test` checks invoice JSON decoding and chain resume without MySQL or the network.
+
 ## Configuration
 
 `mysql-host`, `mysql-user`, `mysql-password` and `mysql-database` stay in the
@@ -66,6 +68,35 @@ stop the service, run `--login` again, then start it. `oauth-scope` is
 optional; when omitted, the read scopes used by the sync are requested,
 including `offline_access`.
 
+## Resume
+
+One thread runs active contacts, archived contacts, projects, the invoice
+list, then missed invoice ids. The position is one `_configuration` value,
+`sync-chain`, so a restart continues at the next page instead of listing
+every contact again. The value is `phase:offset`, for example
+`invoice-list:500`. Phases are `contact-active`, `contact-archived`,
+`project`, `invoice-list`, and `invoice-missed`. Offset `0` is the first
+page. Missed-ids keep offset `0`.
+
+This is runtime progress, not a setting. A `_configuration` row overrides
+the JSON file, so do not put `sync-chain` in the config. Rows named
+`sync-chain-step`, `sync-chain-offset`, and `sync-chain-cycle` are read
+only when `sync-chain` is absent, then the next save writes `sync-chain`.
+No migration: the table already exists (created at startup if it is missing).
+
+After each page whose rows all synced, the offset becomes the next request.
+A failed page does not move it. When missed invoice ids finish, the state
+returns to `contact-active:0`. The thread sleeps 250 ms after archived
+contacts, after projects, and after invoices.
+
+A phase resumed in the middle is not pruned. Rows from pages synced before
+the restart were not marked seen in this process, and prune would delete
+them. They are pruned on the next walk of that resource that starts at
+offset 0. A resumed invoice list also skips missed-id fetches: that GET
+would request every cached invoice the skipped pages did not show. A list
+that starts at offset 0 still fetches missed ids. Paths and limits are
+unchanged.
+
 ## Todo
  
  - Add proxy support : you can request like if it is Bexio, goes to local
@@ -111,6 +142,8 @@ des données sur votre serveur, ou machine, local n'est pas du luxe.
  - Sauvegarde en temps quasi-réel.
  - Stoque les données dans une base de données relationnelles en respectant la
    structure (MySQL), permet donc une meilleure intégration à votre ERP.
+
+`make test` vérifie le décodage JSON des factures et la reprise de la chaîne, sans MySQL ni réseau.
 
 ## Configuration
 
@@ -162,6 +195,37 @@ renouveler. `--login` ne se lance pas via systemd. Si un
 renouvellement est refusé, arrêter le service, relancer `--login`, puis
 redémarrer. `oauth-scope` est optionnel ; sans cette clé, les scopes de
 lecture utilisés par la synchro sont demandés, y compris `offline_access`.
+
+## Reprise
+
+Un thread enchaîne les contacts actifs, les contacts archivés, les
+projets, la liste des factures, puis les ids de facture manqués. La
+position est une valeur de `_configuration`, `sync-chain` : un redémarrage
+continue à la page suivante au lieu de relister tous les contacts. La
+valeur est `phase:offset`, par exemple `invoice-list:500`. Les phases sont
+`contact-active`, `contact-archived`, `project`, `invoice-list` et
+`invoice-missed`. L'offset `0` est la première page. Les ids manqués
+gardent l'offset `0`.
+
+Ce n'est pas un réglage. Une ligne de `_configuration` remplace le fichier
+JSON : ne pas y mettre `sync-chain`. Les lignes `sync-chain-step`,
+`sync-chain-offset` et `sync-chain-cycle` sont lues seulement si
+`sync-chain` est absent ; l'enregistrement suivant écrit `sync-chain`.
+Aucune migration : la table existe déjà (créée au démarrage si besoin).
+
+Après chaque page dont toutes les lignes ont été synchronisées, l'offset
+devient la prochaine requête. Une page en erreur ne le fait pas avancer.
+Quand les ids manqués sont chargés, l'état revient à `contact-active:0`.
+Le thread dort 250 ms après les contacts archivés, après les projets et
+après les factures.
+
+Une phase reprise au milieu n'est pas purgée. Les lignes des pages déjà
+faites avant l'arrêt n'ont pas été vues dans le cache de ce processus, et
+le prune les supprimerait. Elles le sont au prochain parcours de cette
+ressource qui part de l'offset 0. Une liste de factures reprise saute aussi
+les ids manqués : ce GET demanderait chaque facture en cache que les pages
+sautées n'ont pas montrée. Une liste qui part de l'offset 0 charge toujours
+les ids manqués. Chemins et limites ne changent pas.
 
 ## À faire
 

@@ -596,18 +596,22 @@ static BXillError contact_page_item(bXill *app, MYSQL *conn, json_t *item,
   return NoError;
 }
 
-BXillError bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c) {
+BXillError bx_contact_walk_pass(bXill *app, MYSQL *conn, Cache *c, bool archived,
+                                int64_t start_offset, bx_walk_page_fn on_page,
+                                void *page_ctx) {
   bx_log_debug("BX Walk Contact Items");
   contact_walk_ctx ctx = {
       .cache = c,
-      .archived = {.type = BX_OBJECT_TYPE_BOOL, .isset = true, .value = false}};
-  BXillError e =
-      bx_walk_pages(app, conn, WALK_CONTACT_PATH, (BXGeneric *)&ctx.archived,
-                    NULL, contact_page_item, &ctx);
+      .archived = {.type = BX_OBJECT_TYPE_BOOL, .isset = true, .value = archived}};
+  return bx_walk_pages_from(app, conn, WALK_CONTACT_PATH,
+                            (BXGeneric *)&ctx.archived, NULL, contact_page_item,
+                            &ctx, start_offset, on_page, page_ctx);
+}
+
+BXillError bx_contact_walk_items(bXill *app, MYSQL *conn, Cache *c) {
+  BXillError e = bx_contact_walk_pass(app, conn, c, false, 0, NULL, NULL);
   if (e != NoError) {
     return e;
   }
-  ctx.archived.value = true;
-  return bx_walk_pages(app, conn, WALK_CONTACT_PATH, (BXGeneric *)&ctx.archived,
-                       NULL, contact_page_item, &ctx);
+  return bx_contact_walk_pass(app, conn, c, true, 0, NULL, NULL);
 }

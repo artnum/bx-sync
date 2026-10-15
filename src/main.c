@@ -1,3 +1,4 @@
+#include "include/bx_chain.h"
 #include "include/bx_conf.h"
 #include "include/bx_database.h"
 #include "include/bx_ids_cache.h"
@@ -43,36 +44,6 @@
 #define MAX_COMMAND_LEN 100
 extern BXMutex io_mutex;
 
-/* contact → project → invoice: each cycle waits for the parent walk. */
-static pthread_mutex_t sync_order_mu = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t sync_order_cv = PTHREAD_COND_INITIALIZER;
-static unsigned contact_cycle;
-static unsigned project_cycle;
-
-static void sync_order_wake(void) {
-  pthread_mutex_lock(&sync_order_mu);
-  pthread_cond_broadcast(&sync_order_cv);
-  pthread_mutex_unlock(&sync_order_mu);
-}
-
-static void sync_order_advance(unsigned *counter) {
-  pthread_mutex_lock(&sync_order_mu);
-  (*counter)++;
-  pthread_cond_broadcast(&sync_order_cv);
-  pthread_mutex_unlock(&sync_order_mu);
-}
-
-static void sync_order_wait(unsigned *seen, unsigned *counter, bXill *app) {
-  pthread_mutex_lock(&sync_order_mu);
-  while (*seen == *counter &&
-         atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
-    pthread_cond_wait(&sync_order_cv, &sync_order_mu);
-  }
-  if (*seen != *counter) {
-    *seen = *counter;
-  }
-  pthread_mutex_unlock(&sync_order_mu);
-}
 extern BXMutex MTX_COUNTRY_LIST;
 const struct timespec THREAD_SLEEP_TIME = {
     .tv_nsec = MS_TO_NS(BXILL_THREAD_SLEEP_MS), .tv_sec = 0};
@@ -168,6 +139,21 @@ static bool rebuild_prune_query(PruningParameters *param, MYSQL *conn,
   bx_database_free_query(param->query);
   param->query = bx_database_new_query(conn, sql);
   return param->query != NULL;
+}
+
+static int hydrate_cache(bXill *app, MYSQL **conn, Cache *cache,
+                         const char *sql) {
+  PruningParameters hydrate = {.cache = cache,
+                               .query = bx_database_new_query(*conn, sql)};
+  if (bx_cache_hydrate(app, &hydrate) == ErrorSQLReconnect) {
+    *conn = thread_reconnect(*conn, app);
+    if (*conn == NULL) {
+      bx_database_free_query(hydrate.query);
+      return -1;
+    }
+  }
+  bx_database_free_query(hydrate.query);
+  return 0;
 }
 
 void *random_item_thread(void *arg) {
@@ -327,14 +313,17 @@ void *file_thread(void *arg) {
   return (void *)(intptr_t)RetVal;
 }
 
-void *contact_thread(void *arg) {
+/* Contacts, then projects, then invoices. One phase per loop. */
+void *chain_thread(void *arg) {
   bXill *app = (bXill *)arg;
   int RetVal = EXIT_SUCCESS;
   int error_counter = 0;
+  MYSQL *conn = NULL;
+  Cache *contact_cache = NULL;
+  Cache *project_cache = NULL;
+  Cache *invoice_cache = NULL;
 
   thread_blocks_signals();
-  /* mysql init */
-  MYSQL *conn = NULL;
   conn = thread_setup_mysql(app);
   if (!conn) {
     thread_teardown_mysql(conn);
@@ -342,36 +331,36 @@ void *contact_thread(void *arg) {
     return (void *)EXIT_FAILURE;
   }
 
-  /* init cache from database */
-  Cache *my_cache;
-  my_cache = cache_create();
-  if (my_cache == NULL) {
+  contact_cache = cache_create();
+  project_cache = cache_create();
+  invoice_cache = cache_create();
+  if (contact_cache == NULL || project_cache == NULL || invoice_cache == NULL) {
     bx_log_error("Cache init failed");
+    cache_destroy(contact_cache);
+    cache_destroy(project_cache);
+    cache_destroy(invoice_cache);
     thread_teardown_mysql(conn);
     return (void *)EXIT_FAILURE;
   }
-  PruningParameters hydrate = {
-      .cache = my_cache,
-      .query =
-          bx_database_new_query(conn, "SELECT id, _checksum FROM contact")};
-  /* sync */
-  if (bx_cache_hydrate(app, &hydrate) == ErrorSQLReconnect) {
-    conn = thread_reconnect(conn, app);
-    if (!conn) {
-      cache_destroy(my_cache);
-      bx_database_free_query(hydrate.query);
-      thread_teardown_mysql(conn);
-      bx_log_error("Cannot set up MYSQL");
-      return (void *)EXIT_FAILURE;
-    }
+  if (hydrate_cache(app, &conn, contact_cache,
+                    "SELECT id, _checksum FROM contact") != 0 ||
+      hydrate_cache(app, &conn, project_cache,
+                    "SELECT id, _checksum FROM pr_project") != 0 ||
+      hydrate_cache(app, &conn, invoice_cache,
+                    "SELECT id, _checksum FROM invoice") != 0) {
+    bx_log_error("Cannot set up MYSQL");
+    cache_destroy(contact_cache);
+    cache_destroy(project_cache);
+    cache_destroy(invoice_cache);
+    thread_teardown_mysql(conn);
+    return (void *)EXIT_FAILURE;
   }
-  bx_database_free_query(hydrate.query);
-
-  /* load language */
   if (bx_language_load(app, conn) == ErrorSQLReconnect) {
     conn = thread_reconnect(conn, app);
     if (!conn) {
-      cache_destroy(my_cache);
+      cache_destroy(contact_cache);
+      cache_destroy(project_cache);
+      cache_destroy(invoice_cache);
       thread_teardown_mysql(conn);
       bx_log_error("Cannot set up MYSQL");
       return (void *)EXIT_FAILURE;
@@ -381,202 +370,48 @@ void *contact_thread(void *arg) {
   PruningParameters contact_prune = {
       .query =
           bx_database_new_query(conn, "DELETE FROM contact WHERE id = :id"),
-      .cache = my_cache};
-  bx_log_debug("Contact data thread %lx", pthread_self());
-  time_t cycle_ts = 0;
-  while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
-    while (atomic_load(&app->queue->standby)) {
-      sleep(BXILL_STANDBY_SECONDS);
-    }
-    bx_walker_cycle_mark(&cycle_ts, "contact");
-    BXillError e = NoError;
-    MYSQL *prev_conn = conn;
-    (void)((e = bx_contact_walk_items(app, conn, my_cache)) == NoError &&
-           (e = bx_prune_items(app, &contact_prune)) == NoError);
-    sync_order_advance(&contact_cycle);
-    if (thread_handle_error(e, app, &conn)) {
-      error_counter = 0;
-      if (conn != prev_conn &&
-          !rebuild_prune_query(&contact_prune, conn,
-                               "DELETE FROM contact WHERE id = :id")) {
-        bx_log_error("Cannot rebuild prune query after reconnect");
-        RetVal = EXIT_FAILURE;
-        break;
-      }
-    } else {
-      if (error_counter++ > BXILL_THREAD_EXIT_MAX_COUNT) {
-        bx_log_error("Too much error, exiting");
-        RetVal = EXIT_FAILURE;
-        break;
-      }
-    }
-
-    cache_next_version(my_cache);
-
-    thrd_sleep(&THREAD_SLEEP_TIME, NULL);
-  }
-  bx_database_free_query(contact_prune.query);
-  thread_teardown_mysql(conn);
-  cache_destroy(my_cache);
-  sync_order_advance(&contact_cycle);
-  return (void *)(intptr_t)RetVal;
-}
-
-/**
- * Thread to synchronize pr_project endpoint
- */
-void *project_thread(void *arg) {
-  bXill *app = (bXill *)arg;
-  int RetVal = EXIT_SUCCESS;
-  int error_counter = 0;
-  thread_blocks_signals();
-  /* mysql setup */
-  MYSQL *conn = NULL;
-  conn = thread_setup_mysql(app);
-  if (!conn) {
-    return (void *)EXIT_FAILURE;
-  }
-
-  /* init cache from database */
-  Cache *my_cache = cache_create();
-  if (!my_cache) {
-    bx_log_error("Cache init failed");
-    thread_teardown_mysql(conn);
-    return 0;
-  }
-
-  PruningParameters hydrate = {
-      .cache = my_cache,
-      .query =
-          bx_database_new_query(conn, "SELECT id, _checksum FROM pr_project")};
-  /* sync */
-  if (bx_cache_hydrate(app, &hydrate) == ErrorSQLReconnect) {
-    conn = thread_reconnect(conn, app);
-    if (!conn) {
-      cache_destroy(my_cache);
-      bx_database_free_query(hydrate.query);
-      thread_teardown_mysql(conn);
-      bx_log_error("Cannot set up MYSQL");
-      return (void *)EXIT_FAILURE;
-    }
-  }
-  bx_database_free_query(hydrate.query);
-
+      .cache = contact_cache};
   PruningParameters project_prune = {
       .query =
           bx_database_new_query(conn, "DELETE FROM pr_project WHERE id = :id"),
-      .cache = my_cache};
-
-  bx_log_debug("Project data thread %ld", pthread_self());
-  time_t cycle_ts = 0;
-  unsigned seen_contact = 0;
-  while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
-    while (atomic_load(&app->queue->standby)) {
-      sleep(BXILL_STANDBY_SECONDS);
-    }
-    sync_order_wait(&seen_contact, &contact_cycle, app);
-    if (!atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
-      break;
-    }
-    bx_walker_cycle_mark(&cycle_ts, "project");
-    BXillError e = NoError;
-    MYSQL *prev_conn = conn;
-    (void)((e = bx_project_walk_item(app, conn, my_cache)) == NoError &&
-           (e = bx_prune_items(app, &project_prune)) == NoError);
-    sync_order_advance(&project_cycle);
-    if (thread_handle_error(e, app, &conn)) {
-      error_counter = 0;
-      if (conn != prev_conn &&
-          !rebuild_prune_query(&project_prune, conn,
-                               "DELETE FROM pr_project WHERE id = :id")) {
-        bx_log_error("Cannot rebuild prune query after reconnect");
-        RetVal = EXIT_FAILURE;
-        break;
-      }
-    } else {
-      if (error_counter++ > BXILL_THREAD_EXIT_MAX_COUNT) {
-        bx_log_error("Too much error, exiting");
-        RetVal = EXIT_FAILURE;
-        break;
-      }
-    }
-
-    cache_next_version(my_cache);
-
-    thrd_sleep(&THREAD_SLEEP_TIME, NULL);
-  }
-  bx_database_free_query(project_prune.query);
-  thread_teardown_mysql(conn);
-  cache_destroy(my_cache);
-  sync_order_advance(&project_cycle);
-  return (void *)(intptr_t)RetVal;
-}
-
-void *invoice_thread(void *arg) {
-  bXill *app = (bXill *)arg;
-  MYSQL *conn = NULL;
-  BXillError RetVal = NoError;
-  int error_counter = 0;
-  thread_blocks_signals();
-  /* mysql setup */
-  conn = thread_setup_mysql(app);
-  if (!conn) {
-    return (void *)EXIT_FAILURE;
-  }
-
-  /* init cache from database */
-  Cache *my_cache;
-  my_cache = cache_create();
-  if (my_cache == NULL) {
-    bx_log_error("Cache init failed");
-    thread_teardown_mysql(conn);
-    return (void *)EXIT_FAILURE;
-  }
-
-  PruningParameters hydrate = {
-      .cache = my_cache,
-      .query =
-          bx_database_new_query(conn, "SELECT id, _checksum FROM invoice")};
-  /* sync */
-  if (bx_cache_hydrate(app, &hydrate) == ErrorSQLReconnect) {
-    conn = thread_reconnect(conn, app);
-    if (!conn) {
-      cache_destroy(my_cache);
-      bx_database_free_query(hydrate.query);
-      thread_teardown_mysql(conn);
-      bx_log_error("Cannot set up MYSQL");
-      return (void *)EXIT_FAILURE;
-    }
-  }
-  bx_database_free_query(hydrate.query);
-
+      .cache = project_cache};
   PruningParameters invoice_prune = {
       .query =
           bx_database_new_query(conn, "DELETE FROM invoice WHERE id = :id"),
-      .cache = my_cache};
-
-  bx_log_debug("Invoice data thread %ld", pthread_self());
+      .cache = invoice_cache};
+  bx_log_debug("Sync chain thread %lx", pthread_self());
   time_t cycle_ts = 0;
-  unsigned seen_project = 0;
   while (atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
+    BXChainCursor mark;
+    BXillError e = NoError;
+    MYSQL *prev_conn = conn;
+    BXChainResult cr;
+
     while (atomic_load(&app->queue->standby)) {
       sleep(BXILL_STANDBY_SECONDS);
     }
-    sync_order_wait(&seen_project, &project_cycle, app);
-    if (!atomic_load_explicit(&(app->queue->run), memory_order_acquire)) {
-      break;
+    bx_chain_read(&mark);
+    bx_walker_cycle_mark(&cycle_ts, bx_chain_phase_name(mark.phase));
+    cr = bx_chain_sync(app, conn, contact_cache, project_cache, invoice_cache);
+    e = cr.error;
+    if (e == NoError && cr.prune_contact) {
+      e = bx_prune_items(app, &contact_prune);
     }
-    bx_walker_cycle_mark(&cycle_ts, "invoice");
-    BXillError e = NoError;
-    MYSQL *prev_conn = conn;
-    (void)((e = bx_invoice_walk_items(app, conn, my_cache)) == NoError &&
-           (e = bx_prune_items(app, &invoice_prune)) == NoError);
-
+    if (e == NoError && cr.prune_project) {
+      e = bx_prune_items(app, &project_prune);
+    }
+    if (e == NoError && cr.prune_invoice) {
+      e = bx_prune_items(app, &invoice_prune);
+    }
     if (thread_handle_error(e, app, &conn)) {
       error_counter = 0;
       if (conn != prev_conn &&
-          !rebuild_prune_query(&invoice_prune, conn,
-                               "DELETE FROM invoice WHERE id = :id")) {
+          (!rebuild_prune_query(&contact_prune, conn,
+                                "DELETE FROM contact WHERE id = :id") ||
+           !rebuild_prune_query(&project_prune, conn,
+                                "DELETE FROM pr_project WHERE id = :id") ||
+           !rebuild_prune_query(&invoice_prune, conn,
+                                "DELETE FROM invoice WHERE id = :id"))) {
         bx_log_error("Cannot rebuild prune query after reconnect");
         RetVal = EXIT_FAILURE;
         break;
@@ -588,13 +423,25 @@ void *invoice_thread(void *arg) {
         break;
       }
     }
-
-    cache_next_version(my_cache);
-
-    thrd_sleep(&THREAD_SLEEP_TIME, NULL);
+    if (cr.bump_contact) {
+      cache_next_version(contact_cache);
+    }
+    if (cr.bump_project) {
+      cache_next_version(project_cache);
+    }
+    if (cr.bump_invoice) {
+      cache_next_version(invoice_cache);
+    }
+    if (e == NoError && cr.pause) {
+      thrd_sleep(&THREAD_SLEEP_TIME, NULL);
+    }
   }
+  bx_database_free_query(contact_prune.query);
+  bx_database_free_query(project_prune.query);
   bx_database_free_query(invoice_prune.query);
-  cache_destroy(my_cache);
+  cache_destroy(contact_cache);
+  cache_destroy(project_cache);
+  cache_destroy(invoice_cache);
   thread_teardown_mysql(conn);
   return (void *)(intptr_t)RetVal;
 }
@@ -882,9 +729,9 @@ int main(int argc, char **argv) {
   }
 
   /* RUN CODE TO UPDATE DATABASE */
-  pthread_create(&threads[CONTACT_THREAD], NULL, contact_thread, (void *)&app);
-  pthread_create(&threads[PROJECT_THREAD], NULL, project_thread, (void *)&app);
-  pthread_create(&threads[INVOICE_THREAD], NULL, invoice_thread, (void *)&app);
+  bx_chain_init(&app);
+
+  pthread_create(&threads[CHAIN_THREAD], NULL, chain_thread, (void *)&app);
   pthread_create(&threads[CONTACT_SECTOR_THREAD], NULL, contact_sector_thread,
                  (void *)&app);
   pthread_create(&threads[RANDOM_ITEM_THREAD], NULL, random_item_thread,
@@ -899,7 +746,6 @@ int main(int argc, char **argv) {
   }
   bx_log_info("Kill signal received");
   atomic_store_explicit(&queue->run, 0, memory_order_release);
-  sync_order_wake();
   sleep(5);
 
   pthread_cond_signal(&queue->in_cond);

@@ -1,4 +1,8 @@
 -- ** Process configuration. The MySQL connection stays in the JSON file. **
+-- Runtime chain progress (not a setting; do not put this name in the JSON
+-- file): sync-chain = "<phase>:<offset>". Older rows sync-chain-step,
+-- sync-chain-offset and sync-chain-cycle are still read when sync-chain
+-- is absent. No extra migration: the row lives in this table.
 CREATE TABLE IF NOT EXISTS _configuration (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     name VARCHAR(191) NOT NULL,

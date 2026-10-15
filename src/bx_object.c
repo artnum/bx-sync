@@ -87,6 +87,8 @@ BXUInteger bx_object_get_json_uint(json_t *object, const char *key,
     i.value = (uint64_t)strtoll(json_string_value(value), NULL, 10);
   } else if (json_is_integer(value)) {
     i.value = (uint64_t)json_integer_value(value);
+  } else if (json_is_boolean(value)) {
+    i.value = json_is_true(value) ? 1 : 0;
   }
   if (state != NULL) {
     XXH3_64bits_update(state, &i.value, sizeof(i.value));
