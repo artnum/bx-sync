@@ -35,11 +35,13 @@ build/%.o: src/*/%.c
 TEST_BIN=build/test_invoice_decode
 TEST_CHAIN=build/test_sync_chain
 TEST_LIBS=`pkg-config --libs jansson libxxhash` -lpthread
+TEST_OBJ=$(filter-out build/main.o,$(OBJFILES))
 
 .PHONY: test
-test: $(TEST_BIN) $(TEST_CHAIN)
+test: $(TEST_BIN) $(TEST_CHAIN) build/test_oauth_decide
 	./$(TEST_BIN)
 	./$(TEST_CHAIN)
+	./build/test_oauth_decide
 
 $(TEST_BIN): tests/test_invoice_decode.c src/bxobjects/invoice.c src/bx_object.c \
 		src/include/bxobjects/invoice.h
@@ -53,5 +55,10 @@ $(TEST_CHAIN): tests/test_sync_chain.c src/bx_chain.c src/bx_walk.c \
 	$(CC) $(CFLAGS) -o $@ tests/test_sync_chain.c src/bx_chain.c src/bx_walk.c \
 		$(TEST_LIBS)
 
+build/test_oauth_decide: test/oauth_decide.c $(TEST_OBJ)
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc test/oauth_decide.c $(TEST_OBJ) -o $@ $(LIBS)
+
 clean:
-	$(RM) $(wildcard $(OBJFILES) $(NAME) $(TEST_BIN) $(TEST_CHAIN))
+	$(RM) $(wildcard $(OBJFILES) $(NAME) $(TEST_BIN) $(TEST_CHAIN) \
+		build/test_oauth_decide)

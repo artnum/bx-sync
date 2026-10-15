@@ -3,6 +3,7 @@
 
 #include "bx_conf.h"
 #include <stdbool.h>
+#include <time.h>
 
 typedef struct s_BXOAuth BXOAuth;
 
@@ -11,6 +12,19 @@ typedef enum e_BXOauthStatus {
   BX_OAUTH_NEED_LOGIN,
   BX_OAUTH_FAILED
 } BXOauthStatus;
+
+typedef enum e_BXOauthAction {
+  BX_OAUTH_ACT_USE = 0,
+  BX_OAUTH_ACT_REFRESH,
+  BX_OAUTH_ACT_NEED_LOGIN
+} BXOauthAction;
+
+/* Usable access token: non-empty and now + BX_OAUTH_SKEW_SEC < expires_at.
+ * The skew is 60. A string of length 0 is missing. A missing rejected
+ * argument differs from any stored access token. */
+BXOauthAction bx_oauth_decide(bool force, const char *rejected,
+                              const char *access, const char *refresh,
+                              time_t expires_at, time_t now);
 
 BXOAuth *bx_oauth_init(BXConf *conf);
 void bx_oauth_destroy(BXOAuth **oauth);

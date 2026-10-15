@@ -619,6 +619,32 @@ BXOauthStatus bx_oauth_startup(BXOAuth *oauth) {
   return BX_OAUTH_OK;
 }
 
+static bool token_present(const char *s) {
+  return s != NULL && s[0] != '\0';
+}
+
+BXOauthAction bx_oauth_decide(bool force, const char *rejected,
+                              const char *access, const char *refresh,
+                              time_t expires_at, time_t now) {
+  bool access_ok = false;
+  bool refresh_ok = false;
+
+  access_ok = token_present(access) &&
+              now + (time_t)BX_OAUTH_SKEW_SEC < expires_at;
+  refresh_ok = token_present(refresh);
+  if (!force && access_ok) {
+    return BX_OAUTH_ACT_USE;
+  }
+  if (force && access_ok &&
+      (!token_present(rejected) || strcmp(rejected, access) != 0)) {
+    return BX_OAUTH_ACT_USE;
+  }
+  if (!refresh_ok) {
+    return BX_OAUTH_ACT_NEED_LOGIN;
+  }
+  return BX_OAUTH_ACT_REFRESH;
+}
+
 bool bx_oauth_ensure(BXOAuth *oauth, bool force) {
   if (oauth == NULL) {
     return false;
