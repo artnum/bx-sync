@@ -4,6 +4,16 @@
 #include <string.h>
 #include <threads.h>
 
+static void log_item_failure(const json_t *item, BXillError err) {
+  json_t *id = item != NULL ? json_object_get(item, "id") : NULL;
+  if (id != NULL && json_is_integer(id)) {
+    bx_log_error("Walk item %lld failed (%d), continuing page",
+                 (long long)json_integer_value(id), (int)err);
+    return;
+  }
+  bx_log_error("Walk item failed (%d), continuing page", (int)err);
+}
+
 static json_t *as_array(json_t *root) {
   if (json_is_array(root)) {
     return root;
@@ -56,12 +66,30 @@ BXillError bx_walk_pages_from(bXill *app, MYSQL *conn, const char *path_fmt,
       return ErrorJSON;
     }
     arr_len = json_array_size(arr);
+    size_t ok_count = 0;
+    size_t fail_count = 0;
+    BXillError first_error = NoError;
     for (size_t i = 0; i < arr_len; i++) {
-      BXillError e = sync(app, conn, json_array_get(arr, i), ctx);
-      if (e != NoError) {
+      json_t *item = json_array_get(arr, i);
+      BXillError e = sync(app, conn, item, ctx);
+      if (e == NoError) {
+        ok_count++;
+        continue;
+      }
+      /* The connection is dead. The rest of this page was not processed. */
+      if (e == ErrorSQLReconnect) {
         bx_net_request_free(request);
         return e;
       }
+      if (first_error == NoError) {
+        first_error = e;
+      }
+      fail_count++;
+      log_item_failure(item, e);
+    }
+    if (arr_len > 0 && ok_count == 0 && fail_count > 0) {
+      bx_net_request_free(request);
+      return first_error;
     }
     int64_t next = offset.value;
     if (paged) {

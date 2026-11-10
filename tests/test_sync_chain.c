@@ -58,6 +58,10 @@ static int saves_before_fail = -1;
 static int saves_done = 0;
 static int poison_kind = -1;
 static int poison_page = -1;
+/* -1 fails the whole poisoned page. Any other index fails only that item. */
+static int poison_item = -1;
+static int items_per_page = 1;
+static int synced;
 static int g_poison;
 
 static BXChainCursor saved;
@@ -170,10 +174,15 @@ BXNetRequest *bx_do_request(BXNetRequestList *queue, json_t *body,
     return NULL;
   }
   if (page_index < pages) {
-    item = json_pack("{s:i}", "id", page_index);
-    if (item == NULL || json_array_append_new(arr, item) != 0) {
-      json_decref(arr);
-      return NULL;
+    int nitems = items_per_page > 0 ? items_per_page : 1;
+    int i = 0;
+    for (i = 0; i < nitems; i++) {
+      int id = nitems == 1 ? page_index : page_index * 1000 + i;
+      item = json_pack("{s:i,s:i}", "id", id, "slot", i);
+      if (item == NULL || json_array_append_new(arr, item) != 0) {
+        json_decref(arr);
+        return NULL;
+      }
     }
   }
   request = calloc(1, sizeof(*request));
@@ -196,10 +205,19 @@ void bx_net_request_free(BXNetRequest *request) {
 static BXillError test_sync(bXill *app, MYSQL *conn, json_t *item, void *ctx) {
   (void)app;
   (void)conn;
-  (void)item;
   (void)ctx;
-  if (g_poison) {
+  synced++;
+  if (!g_poison) {
+    return NoError;
+  }
+  if (poison_item < 0) {
     return ErrorNet;
+  }
+  if (item != NULL) {
+    json_t *slot = json_object_get(item, "slot");
+    if (slot != NULL && json_integer_value(slot) == poison_item) {
+      return ErrorNet;
+    }
   }
   return NoError;
 }
@@ -277,6 +295,9 @@ static int count_kind(int kind) {
 static void boot(bXill *app) {
   poison_kind = -1;
   poison_page = -1;
+  poison_item = -1;
+  items_per_page = 1;
+  synced = 0;
   missed_fail = 0;
   save_fail = 0;
   saves_before_fail = -1;
@@ -463,6 +484,32 @@ static void test_resume_mid_project(bXill *app, MYSQL *conn) {
   CHECK(cur.offset == 0);
 }
 
+static void test_partial_item_failure_advances(bXill *app, MYSQL *conn) {
+  BXChainCursor cur;
+  BXChainResult list;
+
+  set_pages(0, 0, 0, 2);
+  saved = (BXChainCursor){.phase = BX_CHAIN_INVOICE_LIST, .offset = 0};
+  saved_present = true;
+  boot(app);
+  items_per_page = 3;
+  poison_kind = KIND_INVOICE;
+  poison_page = 0;
+  poison_item = 1;
+
+  list = bx_chain_sync(app, conn, NULL, NULL, NULL);
+  CHECK(list.error == NoError);
+  CHECK(synced == 6);
+  CHECK(ncalls == 3);
+  CHECK(calls[0].kind == KIND_INVOICE);
+  CHECK(calls[0].offset == 0);
+  CHECK(calls[1].offset == BXILL_LIST_LIMIT);
+  CHECK(calls[2].offset == 2 * BXILL_LIST_LIMIT);
+  bx_chain_read(&cur);
+  CHECK(cur.phase == BX_CHAIN_INVOICE_MISSED);
+  CHECK(cur.offset == 0);
+}
+
 static void test_page_error_does_not_advance(bXill *app, MYSQL *conn) {
   BXChainCursor cur;
   BXChainResult project;
@@ -620,6 +667,7 @@ int main(void) {
   test_full_cycle_matches_old_walker(&app, conn);
   test_second_cycle_lists_invoices_again(&app, conn);
   test_resume_mid_project(&app, conn);
+  test_partial_item_failure_advances(&app, conn);
   test_page_error_does_not_advance(&app, conn);
   test_resume_mid_invoice_skips_missed(&app, conn);
   test_missed_error_does_not_relist(&app, conn);
